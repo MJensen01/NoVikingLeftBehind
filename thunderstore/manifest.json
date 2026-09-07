@@ -1,8 +1,8 @@
 {
   "name": "NoVikingLeftBehind",
-  "version_number": "0.4.6",
+  "version_number": "0.4.7",
   "website_url": "https://github.com/MJensen01/NoVikingLeftBehind",
-  "description": "Fixes the bronze crunch: cheaper crafting, faster smelting/mining, ore regrowth, portal-friendly ore, extra inventory slots, dual powers, corpse-run help & more. Every number is a live server setting.",
+  "description": "The ultimate Valheim quality-of-life mod! 26 modules, one install: catch-up mechanics, extra slots, loadouts, fists+shield, chest crafting, corpse-run help & more. Every setting is live on the server.",
   "dependencies": [
     "denikson-BepInExPack_Valheim-5.4.2333"
   ]

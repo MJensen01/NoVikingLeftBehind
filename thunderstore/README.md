@@ -1,12 +1,22 @@
-# NoVikingLeftBehind
+# NoVikingLeftBehind — the ultimate Valheim quality-of-life mod!
+
+**One install. Twenty-six modules. Zero arguments about config.** NoVikingLeftBehind is the
+all-in-one quality-of-life mod for co-op Valheim: extra inventory slots, one-key loadouts, fist
+weapons with a shield, crafting straight from your chests, food that never decays, a compass back
+to your corpse, dual guardian powers, ore that grows back, portals that carry your metal — and a
+catch-up system that keeps the whole crew playing together even when half of them only get online
+on weekends. It replaces six other mods and plays nicely with the content mods you already run.
+
+Every number below is a server setting, and every one of them can be changed **while the server is
+running** — save the cfg file and it applies within a second, no restart, no client re-download.
+The server enforces the settings, so nobody has to agree on config by hand.
+
+## Why it exists
 
 For co-op groups where nobody can play every night. If half your crew is deep in iron and the
 other half only gets online on weekends, this mod stops the gap from turning into a wall — no
 more "the bronze crunch": ore mined out, the forge moved on, and the latecomer stuck ranging the
-coast for scraps of copper everyone else abandoned weeks ago. One install replaces six other mods
-and adds two dozen quality-of-life features on top. Every number below is a server setting, and
-every one of them can be changed **while the server is running** — save the cfg file and it
-applies within a second, no restart, no client re-download.
+coast for scraps of copper everyone else abandoned weeks ago.
 
 ## How it thinks
 

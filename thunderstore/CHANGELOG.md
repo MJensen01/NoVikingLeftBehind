@@ -1,5 +1,10 @@
 # Changelog — NoVikingLeftBehind
 
+## 0.4.7 (2026-09-07)
+- Docs only: the mod page now leads with what it is — the ultimate Valheim quality-of-life mod — with the catch-up
+  story as the "why" underneath. No code change. Version bumped so Thunderstore takes the new page; the server's
+  version check means everyone updates to 0.4.7 together (r2modman → Update, or import the zip).
+
 ## 0.4.6 (2026-09-07)
 - **FistsAndShields** `[Fists]` (new module): fist weapons can be used with a shield. Vanilla declares every fist weapon
   `ItemType.TwoHandedWeapon`, and `Humanoid.EquipItem` branches on that type, so equipping fists drops your shield and

@@ -1,9 +1,11 @@
-# NoVikingLeftBehind
+# NoVikingLeftBehind — the ultimate Valheim quality-of-life mod
 
 A BepInEx 5 mod for Valheim 0.221.12, built and maintained for a small dedicated-server group
 and released here for anyone to use. MIT licensed.
 
-Server-enforced quality-of-life and catch-up mechanics. One DLL, installed on the server and by
+All-in-one, server-enforced quality-of-life and catch-up mechanics: 26 modules covering inventory,
+loadouts, combat (fists + shield), crafting from chests, food, corpse runs, guardian powers, ore
+regrowth, portals and a frontier-based catch-up system. One DLL, installed on the server and by
 every player. The server enforces every setting (via [ServerSync](https://github.com/blaxxun-boop/ServerSync)),
 so nobody has to agree on config by hand.
 
