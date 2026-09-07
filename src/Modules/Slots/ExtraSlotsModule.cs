@@ -38,6 +38,9 @@ namespace NoVikingLeftBehind
         private ConfigEntry<bool> _autoEat;
         private ConfigEntry<bool> _showUi;
         private ConfigEntry<string> _quickKeys;
+        private ConfigEntry<float> _panelOffsetX;
+        private ConfigEntry<float> _panelOffsetY;
+        private ConfigEntry<float> _panelScale;
 
         private static KeyCode[] _keys = new KeyCode[0];
         private static readonly ItemDrop.ItemData[] ExtraUtility = new ItemDrop.ItemData[3];
@@ -75,9 +78,17 @@ namespace NoVikingLeftBehind
                 "(Z, X, C, F1, Keypad1 ...). Use None to leave a quick slot without a hotkey. " +
                 "Never synced, so each player picks their own.");
             _showUi = BindLocal("ShowUI", true,
-                "Local: draw the extra slots in the inventory window (labels + a taller panel). " +
+                "Local: draw the extra slots in their own panel beside the inventory window. " +
                 "Turn off if a game update breaks the layout - the items stay exactly where they " +
-                "are, only the drawing stops.");
+                "are and stay reachable, they just fall back to plain extra rows under the bag.");
+            _panelOffsetX = BindLocal("PanelOffsetX", 0f,
+                "Local: nudge the extra-slot panel right (negative moves it left, towards the " +
+                "inventory window). Pixels at 100% UI scale.");
+            _panelOffsetY = BindLocal("PanelOffsetY", 0f,
+                "Local: nudge the extra-slot panel down. Pixels at 100% UI scale.");
+            _panelScale = BindLocal("PanelScale", 1f,
+                "Local: size of the extra-slot panel relative to the inventory grid (0.4-2.5). " +
+                "1 draws the slots exactly the size of the bag's own slots.");
 
             ParseKeys();
             RebuildLayout();
@@ -245,7 +256,23 @@ namespace NoVikingLeftBehind
             Harmony.Patch(containerAwake, postfix: new HarmonyMethod(self, nameof(ContainerAwakePostfix)));
             Harmony.Patch(termInit, postfix: new HarmonyMethod(self, nameof(RegisterCommand)));
 
-            SlotsUi.Install(Harmony, () => Inst != null && Inst.Active && Inst._showUi.Value);
+            SlotsUi.Install(Harmony,
+                () => Inst != null && Inst.Active && Inst._showUi.Value,
+                () => Inst == null ? Vector2.zero
+                                   : new Vector2(Inst._panelOffsetX.Value, Inst._panelOffsetY.Value),
+                () => Inst == null ? 1f : Inst._panelScale.Value,
+                QuickKeyLabel);
+        }
+
+        /// <summary>
+        /// What to print on quick slot <paramref name="index"/> (0-based): its own hotkey, so the
+        /// panel reads "Z X C" out of the box and follows [Slots] QuickSlotKeys if it is changed.
+        /// </summary>
+        private static string QuickKeyLabel(int index)
+        {
+            if (index < 0 || index >= _keys.Length) return "";
+            var key = _keys[index];
+            return key == KeyCode.None ? "" : key.ToString();
         }
 
         private static void Require(MethodBase m, string what)

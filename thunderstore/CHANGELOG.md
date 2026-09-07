@@ -1,5 +1,13 @@
 # Changelog — NoVikingLeftBehind
 
+## 0.4.1 (2026-09-07)
+- **ExtraSlots**: proper side panel UI in the vanilla style, adapted from shudnal's ExtraSlots (public domain); main grid back
+  to 4 rows. The extra slots now sit in their own wooden panel beside the inventory window — equipment in columns
+  (Head/Chest/Legs, Back/Utility/Utility), a food column with fork icons, an ammo column with arrow icons, and the quick slots
+  labelled with their own hotkeys underneath. Short horizontal labels instead of the vertical text of 0.4.0.
+- New per-player settings `[Slots] PanelOffsetX`, `PanelOffsetY`, `PanelScale`. `[Slots] ShowUI = false` still turns the
+  drawing off; the slots then fall back to plain extra rows under the bag and every item stays reachable.
+
 ## 0.4.0 (2026-09-07)
 - **ExtraSlots** `[Slots]`: equipment slots (helmet/chest/legs/cape), 2 utility slots (Megingjord + Wishbone together), 3 food
   slots (auto-eat), 2 ammo slots, 3 quick slots (Z/X/C). Items are stored in the character's custom data, never in the vanilla

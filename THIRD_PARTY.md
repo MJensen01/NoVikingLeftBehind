@@ -26,6 +26,20 @@
   is close enough in structure that it is credited here as adapted code, not merely as an idea.
   MIT-0 requires no attribution; this entry is voluntary.
 
+### ExtraSlots
+
+- Author: **shudnal**
+- Source: https://github.com/shudnal/ExtraSlots (Thunderstore: `shudnal/ExtraSlots`)
+- License: **Unlicense** (public domain)
+- NoVikingLeftBehind's extra-slot **panel UI** (`src/Modules/Slots/SlotsUi.cs`, plus the panel
+  geometry in `SlotLayout.ComputePanel`) is adapted from shudnal's `EquipmentPanel.cs`: the idea of
+  re-positioning the vanilla `InventoryGrid` cells for the extra rows into a panel of their own
+  instead of building a second grid, the background cloned from the inventory window's `Bkg` and
+  `Darken`, the `binding`-label stretch that makes the captions render horizontally, the drag
+  "unfit" tint, the quarter-tile slot geometry, and the empty-food-slot fork hint. The storage
+  model underneath (`SlotStore` / `SlotBlob` / `SlotsRescue`) is NoVikingLeftBehind's own and
+  shares no code with ExtraSlots. The Unlicense requires no attribution; this entry is voluntary.
+
 ## Runtime dependency (not bundled)
 
 - **BepInEx** / **BepInExPack_Valheim** (denikson), 5.4.2333 — LGPL-2.1 (BepInEx core). Not
