@@ -1,5 +1,9 @@
 # Changelog — NoVikingLeftBehind
 
+## 0.4.4 (2026-09-07)
+- TestCommands module (server-gated `[Debug] AllowTestCommands`, default off): `nvlb.give`, `nvlb.power`, `nvlb.tier`
+  for testing on private servers.
+
 ## 0.4.3 (2026-09-07)
 - Docs: rewritten Thunderstore page (features by theme, customization guide). No code changes.
 

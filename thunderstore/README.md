@@ -117,6 +117,10 @@ Two console commands round it out: `nvlb.status` (client) prints the live world 
 module's current settings, and `nvlb.slots.restore` rolls your `ExtraSlots` storage back to one of
 its automatic backups if something ever looks wrong.
 
+On a private test server the admin can add `[Debug] AllowTestCommands = true` to unlock three
+helper commands for connected players - `nvlb.give`, `nvlb.power` and `nvlb.tier` - which a dedicated
+server's console otherwise refuses; it is off by default, so nobody can hand themselves items.
+
 ## Install
 
 **Players** — install via r2modman or the in-game Thunderstore mod manager (Online tab): search

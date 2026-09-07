@@ -2,11 +2,11 @@
 
 `src/Plugin.cs` (`DiscoverModules()`) reflects over the assembly at `Awake` and instantiates every
 non-abstract subclass of `FeatureModule` (`src/FeatureModule.cs`) it finds — there is no registry
-to edit; dropping a new file with such a class is enough. There are exactly 24 such classes. Each
+to edit; dropping a new file with such a class is enough. There are exactly 25 such classes. Each
 module owns its own Harmony instance, binds its own config section, and declares a `Side` (Server /
 Client / Both) — a module whose side doesn't match the running half (dedicated server vs. player
 client) is never configured or patched, and shows `disabled(side)` in `nvlb.status`. The table below
-adds a 25th row, `Tiers`, for the one piece of shared config that isn't a `FeatureModule` at all
+adds a 26th row, `Tiers`, for the one piece of shared config that isn't a `FeatureModule` at all
 (see the note after the table).
 
 **Enabled-toggle restart rule** (same mechanism for every module — see `FeatureModule.TryEnable` /
@@ -55,9 +55,10 @@ diagnostic that runs once per world load.
 | OreRegrowth | Server | Regrowth | Mined-out ore nodes whose material tier is behind the frontier come back after N in-game days. Server-only: destruction is recorded and respawn ZDOs are created entirely server-side, persisted to `nvlb/regrowth.json`. | `Prefabs="rock4_copper:1,MineRock_Tin:1,silvervein:3,MineRock_Obsidian:3,MineRock_Meteorite:4"`; `RegrowDays=7`; `CheckIntervalSec=60`; `MinPlayerDistance=64m` (never respawn with a player this close); `MaxPerTick=5`; local `DryRun=false`; local `SelfTest=false` | yes (Prefabs re-resolves the allowlist on next sweep) | on: restart / off: live |
 | CombatRecharge | Client | Recharge | Landing or taking a hit shaves seconds off your Forsaken power cooldown(s), rate-capped per real second so multi-hit AoE/DoT can't dump a cooldown instantly. Composes with DualPowers' extra slots. | `SecondsPerHitDealt=2`; `SecondsPerHitTaken=3`; `MaxPerSecond=10` (hard cap on reduction per real second); `AffectAllSlots=true` (also shorten DualPowers' extra slots); `CountPlayerTargets=false` | yes | on: restart / off: live |
 | DualPowers | Client (Both only while `[Powers] SelfTest=true`) | Powers | Carry two (optionally three) Forsaken powers at once, each with its own cooldown; routes the boss-stone altar to the first empty slot (or replaces the last), and adds a second/third activation hotkey. | `Slots=2` (1–3); `IndependentCooldowns=true` (false=one shared cooldown); `CooldownMultiplier=1.0`; local `SecondSlotKey="G"`; `ThirdSlotKey="None"`; `ShowHud=true`; local `SelfTest=false` | yes | on: restart / off: live |
+| TestCommands | Client | Debug | Admin-only test helpers for a private server: `nvlb.give <ItemPrefab> [amount] [quality]`, `nvlb.power <list\|GP_Name> [1\|2]` and `nvlb.tier`. They exist because a dedicated server refuses vanilla cheat commands for clients (`Terminal.IsCheatsEnabled()` needs `ZNet.IsServer()`), so client-side features like DualPowers could not be tested from a connected client. Everything acts on the LOCAL player only - inventory and guardian powers are client-side state, no RPC and no world edits. | `AllowTestCommands=false` (**server-synced master switch**; while false every command prints "disabled by server") | yes (the flag is read per command) | on: restart / off: live |
 | Tiers | n/a (shared config, not a `FeatureModule`) | Tiers | Holds the material → tier map every catch-up/economy module keys off (`Tiers.IsBehind`, `Tiers.OfItem`, etc.). Bound directly from `Plugin.Awake` via `Tiers.BindConfig()`, before module discovery runs, because several modules read it while binding their own config. | `MaterialTiers="..."` (comma-separated `PrefabName:tier` pairs, default covering tiers 1–6: Copper/Tin/Bronze… through FlametalNew/Grausten/MoltenCore…; anything unlisted is tier 0, never "behind the frontier") | yes (re-parsed and re-validated against ObjectDB on change) | n/a — always active, no `Enabled` toggle |
 
-`Tiers` (`src/Tiers.cs`, `internal static class Tiers`) is the 25th entry above but is plugin-level
+`Tiers` (`src/Tiers.cs`, `internal static class Tiers`) is the 26th entry above but is plugin-level
 shared configuration, not a `FeatureModule` subclass: it has no `Side` and no `[Section] Enabled`
-toggle of its own, and is not independently toggleable the way the other 24 modules are — it is
+toggle of its own, and is not independently toggleable the way the other 25 modules are — it is
 simply always bound and always active.
