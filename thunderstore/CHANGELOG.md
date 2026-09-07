@@ -1,5 +1,8 @@
 # Changelog — NoVikingLeftBehind
 
+## 0.4.3 (2026-09-07)
+- Docs: rewritten Thunderstore page (features by theme, customization guide). No code changes.
+
 ## 0.4.2 (2026-09-07)
 - **FoodNoDecay**: decay is now removed at the source. 0.4.1 let vanilla decay a food and then raised the value back afterwards,
   which pushed a rising max through `SetMaxHealth`/`SetMaxStamina`/`SetMaxEitr` every second and made the health/stamina bars

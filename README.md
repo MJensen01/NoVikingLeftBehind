@@ -33,38 +33,72 @@ Pre-release (see version plan below), built and tested against Valheim `0.221.12
 
 24 modules, each with its own `[Section] Enabled` toggle, plus `Tiers` (shared config, always on,
 no toggle of its own) — 25 rows in `docs/MODULES.md`, the full per-module table (side, section,
-settings, defaults, hot-reload). Highlights:
+settings, defaults, hot-reload). Every gameplay number is server-synced and hot-reloads (edit the
+cfg, it applies within a second — `Enabled` toggles need a restart to turn *on*, off is instant);
+hotkeys and HUD offsets (`ExtraSlots`, `Loadouts`, `CorpseRunPlus`) are per-player, local settings.
 
-Server-authoritative, synced to clients:
-- `ServerKeys` — skill XP rate, skill loss on death, free build/craft, unlockable recipes.
-- `Frontier` / `Tiers` — world tier from boss keys, per-material tier map; drives every
-  "behind the frontier" catch-up module below.
-- `TrailingTierDiscount`, `RichSmelting`, `TraderStock` — cheaper/faster progression for
-  materials behind the group's frontier.
-- `OreRegrowth` — mined-out nodes behind the frontier respawn after a cooldown.
-- `VanguardShadow` — a damage/XP/stamina buff for under-geared players near a stronger ally.
-- `PlaytimeRubberBand`, `GroupSkillCatchup` — catch-up bonuses scaled off the group's own
-  hours/skill levels, not fixed numbers.
-- `CombatRecharge`, `DualPowers` — forsaken powers: cooldown shaved by combat, and two powers
-  carried at once with independent cooldowns.
-- `FoodNoDecay`, `LongFires` — food keeps its value far longer; fireplace fuel and hand torches
-  burn much longer.
-- `FastMining`, `PortalTrail` — behind-the-frontier ore mines faster, and normally
-  non-teleportable materials behind the frontier go through portals.
-- `CraftFromChests` — crafting, building, smelters and fires pull materials from nearby
-  containers (adapted from AzuCraftyBoxes, MIT-0 — see `THIRD_PARTY.md`).
-- `ExtraSlots` — dedicated equipment (helmet/chest/legs/cape), 2 utility, 3 food, 2 ammo and
-  2 plain generic slots outside the vanilla grid, so a vanilla client can't delete them
-  (`QuickSlots` defaults to 0; raise it to bring back a hotkeyed row instead of the generic
-  slots). 3 rolling backups + `nvlb.slots.restore`.
-- `Loadouts` — Ctrl+V / Ctrl+B save the weapon+shield in hand; V / B equip both with one key.
-- `CorpseRunPlus` — grave compass, respawn fed + Rested, Grave Pull stamina boost, and the
-  vanilla Corpse Run buff scaled by distance from grave to home.
-- `EnforceClientMod` — require every connecting client to run a matching version.
-- `HotReload` — cfg edits on a running server are picked up live, no restart.
+### Catching up
 
-Every gameplay number above is server-synced and hot-reloads; hotkeys and HUD offsets
-(`ExtraSlots`, `CorpseRunPlus`) are per-player, local settings.
+World tier = highest boss killed; anything at or behind it is "behind the frontier" and gets
+easier — the newest tier is never touched.
+
+- **TrailingTierDiscount** `[Discount]` — recipes/pieces behind the frontier cost less
+  (`CostMultiplier=0.5`, `ExtraPerTierBehind=0.0`, `MinAmount=1`).
+- **RichSmelting** `[Smelting]` — smelter output and bar-recipe yield ×2 behind the frontier
+  (`OutputMultiplier=2`, `RecipeYieldMultiplier=2`).
+- **FastMining** `[Mining]` — behind-the-frontier ore mines faster, optionally ignores the
+  tool-tier gate (`SpeedMultiplier=3.0`, `DropMultiplier=1.0`, `IgnoreToolTier=false`).
+- **OreRegrowth** `[Regrowth]` — mined-out nodes behind the frontier respawn after a cooldown
+  when nobody's nearby (`RegrowDays=7`, `MinPlayerDistance=64m`, `MaxPerTick=5`).
+- **TraderStock** `[Trader]` — Haldor sells bars of behind-the-frontier metals, boss-key gated
+  (`Items="Bronze:5:60,Iron:5:80,Silver:5:120,BlackMetal:5:150"`).
+- **PortalTrail** `[Portals]` — normally non-teleportable materials behind the frontier go
+  through portals (`AllowBehindFrontier=true`, `ExtraTiersBehind=0`).
+- **PlaytimeRubberBand** `[Playtime]` — players below the group's median tracked hours get up
+  to +100% gather/XP (`MaxBonus=1.0`, `MinGroupSize=3`, `WindowDays=14`).
+- **GroupSkillCatchup** `[SkillCatchup]` — skills below the group's best level up faster, capped
+  (`Bonus=1.0`, `MaxFactor=3.0`).
+- **VanguardShadow** `[Vanguard]` — near a better-geared ally: less damage taken, more skill XP,
+  faster stamina regen (`Radius=20`, `TierGap=1`, `DamageReduction=0.25`, `XpBonus=0.5`).
+
+### Combat & powers
+
+- **DualPowers** `[Powers]` — carry two (optionally three) Forsaken powers with independent
+  cooldowns and a second hotkey (`Slots=2`, `IndependentCooldowns=true`, local `SecondSlotKey="G"`).
+- **CombatRecharge** `[Recharge]` — dealing/taking damage shaves seconds off power cooldowns,
+  rate-capped (`SecondsPerHitDealt=2`, `SecondsPerHitTaken=3`, `MaxPerSecond=10`).
+
+### Inventory
+
+- **ExtraSlots** `[Slots]` — dedicated equipment (helmet/chest/legs/cape), 2 utility, 3 food
+  (auto-eat), 2 ammo and 2 plain generic slots outside the vanilla grid, so a vanilla client
+  can't delete them (`QuickSlots` defaults to 0; raise it to swap the generic slots for a
+  hotkeyed row instead). 3 rolling backups + `nvlb.slots.restore`; rescues items left behind by
+  shudnal's ExtraSlots.
+- **Loadouts** `[Loadouts]` — Ctrl+V / Ctrl+B save the weapon+shield in hand; V / B equip both
+  with one key (`Slots=2`).
+- **CraftFromChests** `[Chests]` — crafting, building, smelters and fires pull materials from
+  nearby containers (`Range=20`); cooking racks never pull (`PullForCookingStations=false`) so
+  saved meat stays saved (adapted from AzuCraftyBoxes, MIT-0).
+
+### Survival & world
+
+- **FoodNoDecay** `[Food]` — food holds its full value until it expires instead of decaying
+  linearly (`KeepFraction=1.0`, `HidePulse=true`).
+- **LongFires** `[Fires]` — fireplace fuel and hand torches last much longer
+  (`FuelDurationMultiplier=5`, `HandTorchDurabilityMultiplier=5`).
+- **CorpseRunPlus** `[CorpseRun]` — grave compass, respawn fed (Bread) + Rested
+  (`RestedMinutes=10`), Grave Pull stamina boost that fades as you near your grave
+  (`PullMinDistance=50m`, `PullFullDistance=1000m`), and the vanilla Corpse Run buff scaled by
+  distance grave-to-home (`ScaledDurationPer100m=0.2`).
+
+### Server-side knobs that need no client mod
+
+- **ServerKeys** `[ServerKeys]` — skill XP rate, skill loss on death, free build/craft keys
+  pushed to vanilla clients (`SkillGainRate=1.0`, `SkillReductionRate=1.0`, `NoBuildCost=false`,
+  `NoCraftCost=false`).
+- **EnforceClientMod** `[General]` — require every connecting client to run a matching version.
+- **HotReload** `[General]` — cfg edits on a running server are picked up live, no restart.
 
 ## Mods this replaces
 
@@ -103,7 +137,7 @@ python scripts\package.py   # builds thunderstore/dist zip
 
 ## Versioning
 
-Currently `0.4.2`. See [`thunderstore/CHANGELOG.md`](thunderstore/CHANGELOG.md) for the full
+Currently `0.4.3`. See [`thunderstore/CHANGELOG.md`](thunderstore/CHANGELOG.md) for the full
 version history, including the 0.3.0 rename from the project's original name (`OrionQoL`) and
 its one-time config-migration notes.
 
