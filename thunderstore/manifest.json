@@ -1,6 +1,6 @@
 {
   "name": "NoVikingLeftBehind",
-  "version_number": "0.4.5",
+  "version_number": "0.4.6",
   "website_url": "https://github.com/MJensen01/NoVikingLeftBehind",
   "description": "Fixes the bronze crunch: cheaper crafting, faster smelting/mining, ore regrowth, portal-friendly ore, extra inventory slots, dual powers, corpse-run help & more. Every number is a live server setting.",
   "dependencies": [

@@ -68,10 +68,12 @@ namespace NoVikingLeftBehind
             sb.Append("\n  toggles: ").Append(CraftFromChestsModule.Numbers());
 
             // ---- (1) which prefabs are cooking stations, and where do they land? ----------------
+            // The CookingStation gate is per PREFAB since 0.4.6: PullForCookingStations covers
+            // every one of them, PullForOvens covers only the prefabs named in OvenPrefabs.
             sb.Append("\n  PullForCookingStations=").Append(CraftFromChestsModule.PullCooking)
-              .Append(" -> cooking stations take the ")
-              .Append(CraftFromChestsModule.PullCooking ? "PULL" : "NO-PULL")
-              .Append(" path (both the cookable item and the station's own fuel)");
+              .Append(" (all CookingStation prefabs), PullForOvens=").Append(CraftFromChestsModule.PullOvens)
+              .Append(" OvenPrefabs=[").Append(string.Join(",", Names(CraftFromChestsModule.OvenPrefabs).ToArray()))
+              .Append("] -> a station pulls when EITHER applies (cookable item AND its own fuel)");
 
             var scene = ZNetScene.instance;
             if (scene == null || scene.m_prefabs == null)
@@ -88,21 +90,33 @@ namespace NoVikingLeftBehind
                     if (cs == null) continue;
                     string fuel = cs.m_fuelItem != null ? cs.m_fuelItem.name : "none";
                     found.Add(go.name + " (fuel=" + fuel + ", conversions=" +
-                              (cs.m_conversion != null ? cs.m_conversion.Count : 0) + ")");
+                              (cs.m_conversion != null ? cs.m_conversion.Count : 0) + ") -> " + Gate(cs));
                 }
                 sb.Append("\n  CookingStation prefabs in ZNetScene: ").Append(found.Count);
-                foreach (var f in found)
-                    sb.Append("\n    ").Append(f).Append(" -> ")
-                      .Append(CraftFromChestsModule.PullCooking ? "pull" : "NO PULL (default)");
+                foreach (var f in found) sb.Append("\n    ").Append(f);
 
                 foreach (var want in new[] { "piece_cookingstation", "piece_cookingstation_iron", "piece_oven" })
                 {
                     var go = scene.GetPrefab(want);
-                    bool isCs = go != null && go.GetComponent<CookingStation>() != null;
+                    var cs = go != null ? go.GetComponent<CookingStation>() : null;
                     sb.Append("\n    expected ").Append(want).Append(": ")
                       .Append(go == null ? "MISSING from ZNetScene"
-                                         : (isCs ? "present, CookingStation -> gated by PullForCookingStations"
-                                                 : "present but NOT a CookingStation"));
+                                         : (cs != null ? "present, CookingStation -> " + Gate(cs)
+                                                       : "present but NOT a CookingStation"));
+                }
+
+                // The cauldron and CookingAdditions' pot are CraftingStations, not CookingStations:
+                // they never reach the cooking gate and are already covered by PullForCrafting.
+                foreach (var want in new[] { "piece_cauldron", "BCA_CookingPot" })
+                {
+                    var go = scene.GetPrefab(want);
+                    if (go == null) { sb.Append("\n    ").Append(want).Append(": not in ZNetScene (mod not installed)"); continue; }
+                    bool craft = go.GetComponent<CraftingStation>() != null;
+                    bool cook = go.GetComponent<CookingStation>() != null;
+                    sb.Append("\n    ").Append(want).Append(": CraftingStation=").Append(craft)
+                      .Append(" CookingStation=").Append(cook).Append(" -> ")
+                      .Append(craft && !cook ? "PullForCrafting (never reaches the cooking gate)"
+                                             : "UNEXPECTED - check the cooking gate");
                 }
 
                 // The smelter family and the fires must NOT be caught by the cooking gate.
@@ -122,6 +136,23 @@ namespace NoVikingLeftBehind
 
             sb.Append("\n[SelfTest][Chests] --- end ---");
             return sb.ToString();
+        }
+
+        /// <summary>Which gate (if any) lets this station prefab pull, in words.</summary>
+        private static string Gate(CookingStation cs)
+        {
+            if (CraftFromChestsModule.PullCooking) return "PULL (PullForCookingStations=true)";
+            string prefab = CraftFromChestsModule.PrefabNameOf(cs);
+            if (CraftFromChestsModule.PullOvens && CraftFromChestsModule.OvenPrefabs.Contains(prefab))
+                return "PULL (PullForOvens, listed in OvenPrefabs)";
+            return "NO PULL (not an oven; PullForCookingStations=false)";
+        }
+
+        private static List<string> Names(HashSet<string> set)
+        {
+            var l = new List<string>(set);
+            l.Sort(StringComparer.OrdinalIgnoreCase);
+            return l;
         }
 
         private static string CoreTest()

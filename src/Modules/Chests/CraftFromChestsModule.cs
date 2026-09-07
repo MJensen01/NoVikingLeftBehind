@@ -17,11 +17,19 @@ namespace NoVikingLeftBehind
     /// Crafting, upgrading and building may consume materials straight out of nearby chests, and
     /// smelters / fires may be fed from them, with one toggle per station family.
     ///
-    /// COOKING STATIONS ARE OFF BY DEFAULT. Meat racks, the iron cooking station and the oven all
-    /// carry a CookingStation component, and the group wants raw meat kept for recipes rather than
-    /// silently vanishing onto the nearest rack. The hooks exist and are complete - they are simply
-    /// gated on [Chests] PullForCookingStations, so the behaviour is a server-side config flip
-    /// rather than a mod update.
+    /// COOKING STATIONS ARE OFF BY DEFAULT, THE OVEN IS ON. Meat racks, the iron cooking station
+    /// and the stone oven all carry a CookingStation component, and the group wants raw meat kept
+    /// for recipes rather than silently vanishing onto the nearest rack. So the CookingStation
+    /// gate is split in two:
+    ///
+    ///   PullForCookingStations (false)  every CookingStation prefab, racks included
+    ///   PullForOvens (true) + OvenPrefabs ("piece_oven")  only the named prefabs
+    ///
+    /// A station pulls if EITHER is satisfied, so PullForCookingStations keeps its old
+    /// "all of them" meaning and the oven can bake bread out of a chest while the racks stay
+    /// manual. The cauldron (piece_cauldron) and CookingAdditions' BCA_CookingPot are
+    /// CraftingStations, not CookingStations - they never reach this gate at all and already pull
+    /// via PullForCrafting.
     ///
     /// HOW IT COMPOSES WITH TrailingTierDiscount
     /// -----------------------------------------
@@ -55,6 +63,8 @@ namespace NoVikingLeftBehind
         private static ConfigEntry<bool> _pullSmelters;
         private static ConfigEntry<bool> _pullFires;
         private static ConfigEntry<bool> _pullCooking;
+        private static ConfigEntry<bool> _pullOvens;
+        private static ConfigEntry<string> _ovenPrefabs;
         private static ConfigEntry<bool> _leaveOne;
         private static ConfigEntry<bool> _includeVehicles;
         private static ConfigEntry<string> _excludedContainers;
@@ -68,7 +78,47 @@ namespace NoVikingLeftBehind
         private static KeyCode _keyMain = KeyCode.None;
         private static KeyCode[] _keyMods = new KeyCode[0];
 
+        /// <summary>Parsed OvenPrefabs, case-insensitive. Rebuilt by PushSettings on every change.</summary>
+        private static HashSet<string> _ovenSet = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
         internal static bool PullCooking => _pullCooking != null && _pullCooking.Value;
+        internal static bool PullOvens => _pullOvens != null && _pullOvens.Value;
+        internal static HashSet<string> OvenPrefabs => _ovenSet;
+
+        /// <summary>
+        /// The CookingStation gate. Meat racks and the oven share one component, so the decision is
+        /// per PREFAB, not per component: pull if PullForCookingStations covers everything, or if
+        /// PullForOvens is on and this station's prefab is named in OvenPrefabs.
+        /// </summary>
+        internal static bool CookingPullAllowed(CookingStation station)
+        {
+            if (PullCooking) return true;
+            if (!PullOvens || _ovenSet.Count == 0 || station == null) return false;
+            return _ovenSet.Contains(PrefabNameOf(station));
+        }
+
+        /// <summary>Prefab name of a live station, with the Unity "(Clone)" suffix stripped.</summary>
+        internal static string PrefabNameOf(Component c)
+        {
+            if (c == null) return "";
+            try
+            {
+                // ZNetView knows the prefab it was spawned from; Utils.GetPrefabName is the
+                // fallback for a prefab asset (ObjectDB/ZNetScene) that was never instantiated.
+                var cs = c as CookingStation;
+                if (cs != null && cs.m_nview != null && cs.m_nview.IsValid())
+                {
+                    var zdo = cs.m_nview.GetZDO();
+                    if (zdo != null)
+                    {
+                        var go = ZNetScene.instance != null ? ZNetScene.instance.GetPrefab(zdo.GetPrefab()) : null;
+                        if (go != null) return go.name;
+                    }
+                }
+            }
+            catch { /* fall through to the name-based answer */ }
+            return Utils.GetPrefabName(c.gameObject);
+        }
 
         /// <summary>Patches installed, config on, we are a client, and the player has not toggled off.</summary>
         private static bool Live()
@@ -102,9 +152,22 @@ namespace NoVikingLeftBehind
                 "nearby containers.");
 
             _pullCooking = BindSynced("PullForCookingStations", false,
-                "COOKING STATIONS: meat racks, the iron cooking station and the oven. FALSE by " +
-                "default on purpose - the group keeps raw meat for recipes, and an auto-feeding " +
-                "rack empties the chests. Covers BOTH the cookable item and the station's fuel.");
+                "EVERY cooking station: meat racks, the iron cooking station AND the oven. FALSE " +
+                "by default on purpose - the group keeps raw meat for recipes, and an auto-feeding " +
+                "rack empties the chests. Covers BOTH the cookable item and the station's fuel. " +
+                "Leave this false and use PullForOvens to let just the oven pull.");
+
+            _pullOvens = BindSynced("PullForOvens", true,
+                "OVENS ONLY: the stone oven pulls bread dough, pies and its fuel from nearby " +
+                "containers even while PullForCookingStations is false, so baking works through " +
+                "the storage wall while meat racks stay manual. Which prefabs count as an oven is " +
+                "OvenPrefabs. Ignored (already covered) when PullForCookingStations is true.");
+
+            _ovenPrefabs = BindSynced("OvenPrefabs", "piece_oven",
+                "Which CookingStation PREFABS PullForOvens applies to, comma-separated. Default " +
+                "is the vanilla stone oven. The meat racks are piece_cookingstation and " +
+                "piece_cookingstation_iron - adding them here is the same as turning " +
+                "PullForCookingStations on.");
 
             _leaveOne = BindSynced("LeaveOneItem", false,
                 "Always leave one of an item behind in a container instead of emptying the stack. " +
@@ -143,6 +206,7 @@ namespace NoVikingLeftBehind
             ChestSource.IncludeVehicles = _includeVehicles.Value;
             ChestSource.ExcludedContainers = ChestSource.ParseNames(_excludedContainers.Value);
             ChestSource.ExcludedItems = ChestSource.ParseNames(_excludedItems.Value);
+            _ovenSet = ChestSource.ParseNames(_ovenPrefabs.Value);
             ParseKey(_toggleKey.Value);
         }
 
@@ -242,7 +306,7 @@ namespace NoVikingLeftBehind
                  new[] { typeof(Humanoid), typeof(bool), typeof(bool) }, "Fireplace.Interact");
             Harmony.Patch(m, prefix: M(nameof(FireplaceInteractPre)));
 
-            // --- cooking stations: installed, but gated on PullForCookingStations (false) ----------
+            // --- cooking stations: installed, gated per prefab (PullForCookingStations / PullForOvens) -
             Need(ref m, typeof(CookingStation), "OnAddFuelSwitch",
                  new[] { typeof(Switch), typeof(Humanoid), typeof(ItemDrop.ItemData) }, "CookingStation.OnAddFuelSwitch");
             Harmony.Patch(m, prefix: M(nameof(CookingAddFuelPre)));
@@ -641,12 +705,12 @@ namespace NoVikingLeftBehind
             return true;
         }
 
-        // ---- cooking stations: complete, and off by default ------------------------------------------------------
+        // ---- cooking stations: racks off by default, ovens on ----------------------------------------------------
 
         private static bool CookingAddFuelPre(CookingStation __instance, Humanoid user, ItemDrop.ItemData item,
                                               ref bool __result)
         {
-            if (!Live() || !PullCooking) return true;
+            if (!Live() || !CookingPullAllowed(__instance)) return true;
             if (user == null || user != (Humanoid)Player.m_localPlayer) return true;
             if (__instance.m_fuelItem == null) return true;
 
@@ -683,7 +747,7 @@ namespace NoVikingLeftBehind
         private static void CookingFindCookablePost(CookingStation __instance, ref ItemDrop.ItemData __result)
         {
             if (__result != null) return;
-            if (!Live() || !PullCooking) return;
+            if (!Live() || !CookingPullAllowed(__instance)) return;
 
             try
             {
@@ -731,6 +795,8 @@ namespace NoVikingLeftBehind
               .Append(" fires=").Append(_pullFires.Value)
               .Append(" cookingStations=").Append(_pullCooking.Value)
               .Append(_pullCooking.Value ? "" : " (meat stays in the chests)")
+              .Append(" ovens=").Append(_pullOvens.Value)
+              .Append("[").Append(_ovenPrefabs.Value).Append("]")
               .Append(", leaveOne=").Append(_leaveOne.Value)
               .Append(" vehicles=").Append(_includeVehicles.Value)
               .Append(" showCounts=").Append(_showNearbyCount.Value)

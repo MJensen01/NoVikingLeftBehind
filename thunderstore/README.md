@@ -56,6 +56,10 @@ all. The mod never makes the leaders' game easier; it only softens the trail beh
   `nvlb.power swap` fix a power in the wrong slot. `Tune it:` `[Powers] Slots=2`, `IndependentCooldowns=true`, `CooldownMultiplier=1.0`, local `SecondSlotKey="G"`, local `Slot1Modifier="LeftShift"`
 - **CombatRecharge** — every hit you land or take visibly chips seconds off your power's
   cooldown bar, so a hard fight brings your power back around, not the clock. `Tune it:` `[Recharge] SecondsPerHitDealt=2`, `SecondsPerHitTaken=3`, `MaxPerSecond=10`, `AffectAllSlots=true`
+- **FistsAndShields** — put the Flesh Rippers (or Hugo's bronze knuckles) in one hand and a
+  shield in the other. Vanilla calls every fist weapon two-handed, so equipping one drops your
+  shield — even though bare fists and a shield have always worked fine together. Now they don't
+  fight each other, and a torch will sit in your off-hand too. `Tune it:` `[Fists] ExtraPrefabs=""`, `ExcludePrefabs=""`
 
 ### Inventory
 
@@ -68,8 +72,9 @@ all. The mod never makes the leaders' game easier; it only softens the trail beh
 - **Loadouts** — hold Ctrl and tap V to save your current weapon+shield, then just tap V later to
   snap both back into your hands mid-fight without opening the inventory. `Tune it:` `[Loadouts] Slots=2`, local `Loadout1Key="V"`, `Loadout2Key="B"`, `SaveModifier="LeftControl"`
 - **CraftFromChests** — stand at the forge near your storage wall and craft straight through it —
-  no more running back and forth for one more bar. Cooking racks never pull, so the raw meat you
-  stashed for a recipe is still there when you go looking for it. `Tune it:` `[Chests] Range=20`, `PullForCrafting=true`, `PullForBuilding=true`, `PullForSmelters=true`, `PullForFires=true`, `PullForCookingStations=false`, local `ToggleKey="LeftAlt+O"`
+  no more running back and forth for one more bar. The stone oven bakes straight out of the chests
+  too, while meat racks never pull, so the raw meat you stashed for a recipe is still there when
+  you go looking for it. `Tune it:` `[Chests] Range=20`, `PullForCrafting=true`, `PullForBuilding=true`, `PullForSmelters=true`, `PullForFires=true`, `PullForCookingStations=false`, `PullForOvens=true`, `OvenPrefabs="piece_oven"`, local `ToggleKey="LeftAlt+O"`
 
 ### Survival & world
 

@@ -31,8 +31,8 @@ Pre-release (see version plan below), built and tested against Valheim `0.221.12
 
 ## Config overview
 
-24 modules, each with its own `[Section] Enabled` toggle, plus `Tiers` (shared config, always on,
-no toggle of its own) — 25 rows in `docs/MODULES.md`, the full per-module table (side, section,
+26 modules, each with its own `[Section] Enabled` toggle, plus `Tiers` (shared config, always on,
+no toggle of its own) — 27 rows in `docs/MODULES.md`, the full per-module table (side, section,
 settings, defaults, hot-reload). Every gameplay number is server-synced and hot-reloads (edit the
 cfg, it applies within a second — `Enabled` toggles need a restart to turn *on*, off is instant);
 hotkeys and HUD offsets (`ExtraSlots`, `Loadouts`, `CorpseRunPlus`) are per-player, local settings.
@@ -67,6 +67,9 @@ easier — the newest tier is never touched.
   cooldowns and a second hotkey (`Slots=2`, `IndependentCooldowns=true`, local `SecondSlotKey="G"`).
 - **CombatRecharge** `[Recharge]` — dealing/taking damage shaves seconds off power cooldowns,
   rate-capped (`SecondsPerHitDealt=2`, `SecondsPerHitTaken=3`, `MaxPerSecond=10`).
+- **FistsAndShields** `[Fists]` — fist weapons stop being two-handed, so Flesh Rippers or Hugo's
+  Armory knuckles go in one hand and a shield in the other (`ExtraPrefabs=""`,
+  `ExcludePrefabs=""`). Everything with the Unarmed skill is found automatically in `ObjectDB`.
 
 ### Inventory
 
@@ -77,9 +80,10 @@ easier — the newest tier is never touched.
   shudnal's ExtraSlots.
 - **Loadouts** `[Loadouts]` — Ctrl+V / Ctrl+B save the weapon+shield in hand; V / B equip both
   with one key (`Slots=2`).
-- **CraftFromChests** `[Chests]` — crafting, building, smelters and fires pull materials from
-  nearby containers (`Range=20`); cooking racks never pull (`PullForCookingStations=false`) so
-  saved meat stays saved (adapted from AzuCraftyBoxes, MIT-0).
+- **CraftFromChests** `[Chests]` — crafting, building, smelters, fires and the stone oven pull
+  materials from nearby containers (`Range=20`, `PullForOvens=true`, `OvenPrefabs="piece_oven"`);
+  meat racks never pull (`PullForCookingStations=false`) so saved meat stays saved (adapted from
+  AzuCraftyBoxes, MIT-0).
 
 ### Survival & world
 

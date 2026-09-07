@@ -1,5 +1,34 @@
 # Changelog — NoVikingLeftBehind
 
+## 0.4.6 (2026-09-07)
+- **FistsAndShields** `[Fists]` (new module): fist weapons can be used with a shield. Vanilla declares every fist weapon
+  `ItemType.TwoHandedWeapon`, and `Humanoid.EquipItem` branches on that type, so equipping fists drops your shield and
+  equipping a shield drops your fists — even though bare fists (which are not an item at all) have always worked with a
+  shield, which is the proof that the unarmed animation set is shield-compatible. The module flips one field per item
+  prefab in `ObjectDB` — `m_shared.m_itemType` `TwoHandedWeapon` → `OneHandedWeapon` — for everything whose skill is
+  `Unarmed`, so vanilla's Flesh Rippers and every modded fist weapon (Hugo's Armory / Shapekeys_and_More leather, deer,
+  bronze, iron, silver and black-metal fists) are covered automatically; `[Fists] ExtraPrefabs` / `ExcludePrefabs` adjust
+  the list by prefab name or item name. `SharedData` is per-prefab, so items already in a chest or on a character pick it
+  up with no migration.
+  What the change does and does not touch, from a grep of the whole decompile (`TwoHandedWeapon` appears in three files,
+  `IsTwoHanded` in two): damage, skill, attack, block values and the fist weapon's own animation state are untouched
+  fields; with a shield the animation state comes from the shield, exactly as vanilla bare-fists-plus-shield already does;
+  `GetCurrentBlocker` still blocks with the fists when no shield is held; `IsTwoHanded()` is used in exactly one place
+  (auto-equip on pickup) and only against the *left* hand, which fist weapons never occupy; the in-hand claw visual is
+  attached by hand slot and item hash, never by item type. Two visible side effects, both intended: the tooltip now says
+  one-handed instead of two-handed, and a torch will now sit in your off-hand alongside fists. Nothing serialises the item
+  type — a save/ZDO stores the prefab name and `m_shared` is resolved from the prefab on load — so there is no migration
+  and no ServerSync compatibility concern.
+- **CraftFromChests**: the stone oven pulls from nearby chests, meat racks still do not. `[Chests]
+  PullForCookingStations` gated every prefab carrying a `CookingStation` component together — the meat racks
+  (`piece_cookingstation`, `piece_cookingstation_iron`) *and* the oven (`piece_oven`) — so bread dough could not be baked
+  through the storage wall without also feeding the group's raw meat to the racks. New `[Chests] PullForOvens=true` +
+  `OvenPrefabs="piece_oven"` is a per-prefab exception: a cooking station pulls if `PullForCookingStations` is true **or**
+  if `PullForOvens` is on and its prefab is listed. `PullForCookingStations` keeps its old "all of them" meaning. The
+  cauldron (`piece_cauldron`) and CookingAdditions' `BCA_CookingPot` are `CraftingStation`s, not `CookingStation`s — they
+  never reached this gate and already pull via `PullForCrafting=true`. `[Chests] SelfTest` now prints the gate that
+  applies to every cooking-station prefab in the build, and confirms the cauldron/pot are crafting stations.
+
 ## 0.4.5 (2026-09-07)
 - **FastMining/OreRegrowth**: fractured ore stages (`rock4_copper_frac` etc.) handled — mining is now fast after the first hit
   and regrowth records the fully-mined frac, respawning the original vein; **DualPowers**: Shift+interact sets slot 1, altar
