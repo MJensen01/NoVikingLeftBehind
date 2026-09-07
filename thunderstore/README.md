@@ -30,9 +30,10 @@ all. The mod never makes the leaders' game easier; it only softens the trail beh
 - **RichSmelting** — drop copper in a behind-the-frontier smelter and watch it spit out twice the
   bars per ore; craft a bronze recipe and get double the yield per craft. `Tune it:` `[Smelting] OutputMultiplier=2`, `RecipeYieldMultiplier=2`
 - **FastMining** — a behind-the-frontier vein melts under your pickaxe instead of eating your
-  stamina bar. `Tune it:` `[Mining] SpeedMultiplier=3.0`, `DropMultiplier=1.0`, `IgnoreToolTier=false`, `OreNodes="rock4_copper:1,MineRock_Tin:1,silvervein:3,MineRock_Obsidian:3,MineRock_Meteorite:4"`
+  stamina bar. `Tune it:` `[Mining] SpeedMultiplier=3.0`, `DropMultiplier=1.0`, `IgnoreToolTier=false`, `OreNodes="rock4_copper:1,rock4_copper_frac:1,MineRock_Tin:1,silvervein:3,silvervein_frac:3,MineRock_Obsidian:3,MineRock_Meteorite:4"`
 - **OreRegrowth** — that copper vein your group stripped bare a month ago is standing again next
-  time someone new needs it, quietly regrown while nobody was near. `Tune it:` `[Regrowth] RegrowDays=7`, `CheckIntervalSec=60`, `MinPlayerDistance=64m`, `MaxPerTick=5`
+  time someone new needs it, quietly regrown while nobody was near — and only once the whole vein
+  is gone, never while a half-mined chunk of it is still standing. `Tune it:` `[Regrowth] RegrowDays=7`, `CheckIntervalSec=60`, `MinPlayerDistance=64m`, `MaxPerTick=5`, `Prefabs="rock4_copper_frac:1:rock4_copper,silvervein_frac:3:silvervein,MineRock_Tin:1,MineRock_Obsidian:3,MineRock_Meteorite:4"`
 - **TraderStock** — Haldor has bronze and iron bars on his shelf now, not just the trinkets he's
   always sold, and only once your group has actually earned the right (boss-key gated). `Tune it:` `[Trader] Items="Bronze:5:60,Iron:5:80,Silver:5:120,BlackMetal:5:150"`, `TraderNames="Haldor"`
 - **PortalTrail** — that stack of iron you'd normally have to lug home on foot? Toss it through
@@ -47,8 +48,12 @@ all. The mod never makes the leaders' game easier; it only softens the trail beh
 
 ### Combat & powers
 
-- **DualPowers** — carry two Forsaken powers at once, each on its own cooldown, and hit a second
-  hotkey to fire the other one mid-fight instead of waiting out the first. `Tune it:` `[Powers] Slots=2`, `IndependentCooldowns=true`, `CooldownMultiplier=1.0`, local `SecondSlotKey="G"`
+- **DualPowers** — carry two Forsaken powers at once, each on its own cooldown, and hit **G** to
+  fire the other one mid-fight instead of waiting out the first (the key is written on the second
+  power icon, so you never have to guess). At a boss altar, interacting normally fills the first
+  empty slot — hold **Shift** while interacting to put the power in slot 1 (**F**) instead, and
+  the game tells you which slot and which key it landed on. `nvlb.power clear 1|2` and
+  `nvlb.power swap` fix a power in the wrong slot. `Tune it:` `[Powers] Slots=2`, `IndependentCooldowns=true`, `CooldownMultiplier=1.0`, local `SecondSlotKey="G"`, local `Slot1Modifier="LeftShift"`
 - **CombatRecharge** — every hit you land or take visibly chips seconds off your power's
   cooldown bar, so a hard fight brings your power back around, not the clock. `Tune it:` `[Recharge] SecondsPerHitDealt=2`, `SecondsPerHitTaken=3`, `MaxPerSecond=10`, `AffectAllSlots=true`
 
@@ -77,6 +82,10 @@ all. The mod never makes the leaders' game easier; it only softens the trail beh
   running; **Grave Pull** boosts your stamina regen the farther you are from your loot, easing off
   as you close in; and vanilla's own Corpse Run buff scales up the farther your grave was from
   home, so a death way out in the mountains actually helps on the long walk back. `Tune it:` `[CorpseRun] CompassEnabled=true`, `RespawnRestedEnabled=true (RestedMinutes=10)`, `RespawnFoodEnabled=true (RespawnFoods="Bread")`, `PullEnabled=true (PullMinDistance=50m, PullFullDistance=1000m)`, `ScaledEnabled=true (ScaledDurationPer100m=0.2)`
+  The grave marker is an off-screen waypoint: it sits on your corpse while the corpse is on
+  screen and slides to the edge of the screen in its direction when it is not, so it only
+  points dead ahead when you are actually walking at it. Hold **Delete** for a second and a
+  half to dismiss a grave you have given up on, no console needed.
 
 ### Server-side knobs that need no client mod
 

@@ -17,6 +17,14 @@ namespace NoVikingLeftBehind
     /// the parent changes, the anchors are set explicitly (centre/centre) instead of being
     /// inherited, so the configured offset means the same thing at every resolution.
     ///
+    /// Since 0.4.5 the marker is an OFF-SCREEN WAYPOINT (CompassMode = Edge, the default): the
+    /// grave is projected to screen space, and while it is on screen the marker sits on it, while
+    /// off screen (or behind you) the marker slides out to the screen edge along the direction to
+    /// it. Dead centre therefore means "you are walking straight at it", which is the whole point.
+    /// CompassMode = Fixed restores the pre-0.4.5 static arrow at CompassOffsetX/Y - which is also
+    /// the fallback whenever the projection cannot be done (no Camera.main, no parent rect).
+    /// A third, smaller label under the compass carries the hold-to-dismiss prompt and progress.
+    ///
     /// The arrow is a plain character (default "^") in its own label, rotated about Z by the
     /// bearing to the grave relative to the camera. A rotated RectTransform is the only way to get
     /// a smooth 360-degree arrow without shipping a sprite, and "^" is ASCII so it is guaranteed
@@ -32,21 +40,40 @@ namespace NoVikingLeftBehind
         public static string ArrowChar = "^";
         public static float ArrowScale = 1.6f;
 
+        /// <summary>Edge = off-screen waypoint marker (0.4.5 default). Fixed = the old static spot.</summary>
+        public static bool EdgeMode = true;
+
+        /// <summary>Pixels of inset kept between the marker and the edge of the screen.</summary>
+        public static float EdgeMargin = 60f;
+
         private static Hud _hud;
         private static GameObject _arrowGo;
         private static GameObject _labelGo;
+        private static GameObject _hintGo;
         private static RectTransform _arrowRt;
         private static RectTransform _labelRt;
+        private static RectTransform _hintRt;
         private static TMP_Text _arrow;
         private static TMP_Text _label;
+        private static TMP_Text _hint;
         private static bool _built;
         private static bool _failed;
         private static bool _visible;
+        private static string _hintText = "";
 
         public static bool Failed { get { return _failed; } }
         public static bool Visible { get { return _visible; } }
 
-        /// <summary>Point the compass at <paramref name="target"/>. Called from the module tick.</summary>
+        /// <summary>Small line under the compass ("Hold Delete to dismiss grave"). "" hides it.</summary>
+        public static void SetHint(string text)
+        {
+            _hintText = text ?? "";
+        }
+
+        /// <summary>
+        /// Point the compass at <paramref name="target"/>. Called from the module tick, every frame
+        /// in Edge mode so the marker tracks the camera smoothly.
+        /// </summary>
         public static void Show(Player me, Vector3 target, float distance)
         {
             if (_failed || me == null) return;
@@ -68,9 +95,27 @@ namespace NoVikingLeftBehind
                 // an up-pointing glyph is turned by -bearing to face it.
                 float bearing = Vector3.SignedAngle(fwd, to, Vector3.up);
 
-                if (_arrowRt != null) _arrowRt.localRotation = Quaternion.Euler(0f, 0f, -bearing);
+                Vector2 pos;
+                float rotZ;
+                if (!EdgeMode || !ScreenMarker(target, bearing, out pos, out rotZ))
+                {
+                    pos = Offset;
+                    rotZ = -bearing;
+                }
+
+                if (_arrowRt != null)
+                {
+                    _arrowRt.anchoredPosition = pos;
+                    _arrowRt.localRotation = Quaternion.Euler(0f, 0f, rotZ);
+                }
+                if (_labelRt != null) _labelRt.anchoredPosition = pos + new Vector2(0f, -34f);
+                if (_hintRt != null) _hintRt.anchoredPosition = pos + new Vector2(0f, -60f);
+
                 if (_arrow != null && _arrow.text != ArrowChar) _arrow.text = ArrowChar;
                 if (_label != null) _label.text = Mathf.RoundToInt(distance) + " m";
+                if (_hint != null && _hint.text != _hintText) _hint.text = _hintText;
+                if (_hintGo != null && _hintGo.activeSelf != (_hintText.Length > 0))
+                    _hintGo.SetActive(_hintText.Length > 0);
 
                 if (!_visible)
                 {
@@ -85,6 +130,70 @@ namespace NoVikingLeftBehind
             }
         }
 
+        /// <summary>
+        /// The off-screen-waypoint maths.
+        ///
+        /// Camera.main.WorldToScreenPoint gives the grave's pixel position; z &lt; 0 means it is
+        /// BEHIND the camera, where the projection mirrors through the centre, so the point is
+        /// flipped about the screen centre before it is used (the standard fix - without it a grave
+        /// directly behind you points the wrong way). The pixel position is then expressed as a
+        /// fraction of the screen and multiplied by the parent RectTransform's own size, so the
+        /// result is correct at any resolution and under any CanvasScaler without reading one.
+        ///
+        /// On screen: the marker sits on the grave, clamped to the margin. Off screen (or behind):
+        /// it is pushed out along the direction from the screen centre until it touches whichever
+        /// inset edge it reaches first, so a grave to your left floats on the left edge; the arrow
+        /// is rotated to point that way. Dead centre only happens when you are walking at it.
+        /// </summary>
+        private static bool ScreenMarker(Vector3 target, float bearing, out Vector2 pos, out float rotZ)
+        {
+            pos = Vector2.zero;
+            rotZ = -bearing;
+
+            var cam = Camera.main;
+            if (cam == null || _arrowRt == null) return false;
+            var parent = _arrowRt.parent as RectTransform;
+            if (parent == null) return false;
+
+            float sw = Screen.width, sh = Screen.height;
+            if (sw < 1f || sh < 1f) return false;
+
+            Vector3 sp = cam.WorldToScreenPoint(target);
+            bool behind = sp.z <= 0f;
+            if (behind) { sp.x = sw - sp.x; sp.y = sh - sp.y; }
+
+            // Screen pixels -> this RectTransform's units, centre-relative.
+            float halfW = parent.rect.width * 0.5f;
+            float halfH = parent.rect.height * 0.5f;
+            float ux = parent.rect.width / sw;
+            float uy = parent.rect.height / sh;
+            Vector2 p = new Vector2((sp.x - sw * 0.5f) * ux, (sp.y - sh * 0.5f) * uy);
+
+            float mx = Mathf.Max(0f, halfW - EdgeMargin * ux);
+            float my = Mathf.Max(0f, halfH - EdgeMargin * uy);
+
+            bool onScreen = !behind && Mathf.Abs(p.x) <= mx && Mathf.Abs(p.y) <= my;
+            if (onScreen)
+            {
+                pos = p;
+                rotZ = -bearing;               // it is sitting on the grave; keep the world bearing
+                return true;
+            }
+
+            // Push out along the direction from the centre until it hits the inset rectangle.
+            Vector2 dir = p;
+            if (dir.sqrMagnitude < 0.0001f) dir = new Vector2(0f, 1f);
+            dir.Normalize();
+
+            float tx = Mathf.Abs(dir.x) > 0.0001f ? mx / Mathf.Abs(dir.x) : float.MaxValue;
+            float ty = Mathf.Abs(dir.y) > 0.0001f ? my / Mathf.Abs(dir.y) : float.MaxValue;
+            pos = dir * Mathf.Min(tx, ty);
+
+            // The glyph points up at 0 degrees, so subtract 90 from the direction's own angle.
+            rotZ = Mathf.Atan2(dir.y, dir.x) * Mathf.Rad2Deg - 90f;
+            return true;
+        }
+
         public static void Hide()
         {
             if (_failed) return;
@@ -97,6 +206,7 @@ namespace NoVikingLeftBehind
             if (!_visible) return;
             if (_arrowGo != null) _arrowGo.SetActive(false);
             if (_labelGo != null) _labelGo.SetActive(false);
+            if (_hintGo != null) _hintGo.SetActive(false);
             _visible = false;
         }
 
@@ -134,6 +244,8 @@ namespace NoVikingLeftBehind
 
             _arrowGo = Build(donor, parent, "NVLB_GraveCompassArrow", out _arrowRt, out _arrow);
             _labelGo = Build(donor, parent, "NVLB_GraveCompassLabel", out _labelRt, out _label);
+            _hintGo = Build(donor, parent, "NVLB_GraveCompassHint", out _hintRt, out _hint);
+            if (_hint != null) _hint.fontSize = donor.fontSize * 0.75f;
             if (_arrow == null || _label == null)
             {
                 Fail("cloned compass label carries no TMP_Text - no grave compass.");
@@ -148,6 +260,7 @@ namespace NoVikingLeftBehind
             Reposition();
             _arrowGo.SetActive(false);
             _labelGo.SetActive(false);
+            if (_hintGo != null) _hintGo.SetActive(false);
             _visible = false;
             _hud = hud;
             _built = true;
@@ -199,6 +312,7 @@ namespace NoVikingLeftBehind
         {
             if (_arrowRt != null) _arrowRt.anchoredPosition = Offset;
             if (_labelRt != null) _labelRt.anchoredPosition = Offset + new Vector2(0f, -34f);
+            if (_hintRt != null) _hintRt.anchoredPosition = Offset + new Vector2(0f, -60f);
         }
 
         public static void SetOffset(Vector2 offset, string arrowChar, float arrowScale)
@@ -230,13 +344,16 @@ namespace NoVikingLeftBehind
             {
                 if (_arrowGo != null) UnityEngine.Object.Destroy(_arrowGo);
                 if (_labelGo != null) UnityEngine.Object.Destroy(_labelGo);
+                if (_hintGo != null) UnityEngine.Object.Destroy(_hintGo);
             }
             catch (Exception e)
             {
                 NoVikingLeftBehindPlugin.Log.LogWarning("[CorpseRun] compass teardown: " + e.Message);
             }
-            _arrowGo = null; _labelGo = null; _arrowRt = null; _labelRt = null;
-            _arrow = null; _label = null; _hud = null; _built = false; _visible = false;
+            _arrowGo = null; _labelGo = null; _hintGo = null;
+            _arrowRt = null; _labelRt = null; _hintRt = null;
+            _arrow = null; _label = null; _hint = null;
+            _hud = null; _built = false; _visible = false;
         }
 
         /// <summary>Allow a retry after a transient failure (config toggle).</summary>

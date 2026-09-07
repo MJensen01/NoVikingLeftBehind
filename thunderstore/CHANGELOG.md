@@ -1,5 +1,15 @@
 # Changelog — NoVikingLeftBehind
 
+## 0.4.5 (2026-09-07)
+- **FastMining/OreRegrowth**: fractured ore stages (`rock4_copper_frac` etc.) handled — mining is now fast after the first hit
+  and regrowth records the fully-mined frac, respawning the original vein; **DualPowers**: Shift+interact sets slot 1, altar
+  messages name the slot and key, HUD shows the slot-2 key, `nvlb.power clear/swap`.
+- **CorpseRunPlus**: the grave compass is an off-screen waypoint — it sits on the grave while the grave is on screen and slides
+  to the screen edge in its direction when it is not (`[CorpseRun] CompassMode=Edge`, `CompassEdgeMargin=60`; `Fixed` restores
+  the old static arrow), and holding `[CorpseRun] ClearGraveKey` (default `Delete`) for `ClearGraveHoldSec` dismisses the grave
+  marker and Grave Pull without the console.
+
+
 ## 0.4.4 (2026-09-07)
 - TestCommands module (server-gated `[Debug] AllowTestCommands`, default off): `nvlb.give`, `nvlb.power`, `nvlb.tier`
   for testing on private servers.

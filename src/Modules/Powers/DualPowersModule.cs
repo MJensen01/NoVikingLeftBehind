@@ -57,6 +57,7 @@ namespace NoVikingLeftBehind
         private ConfigEntry<int> _slots;
         private ConfigEntry<string> _secondSlotKey;
         private ConfigEntry<string> _thirdSlotKey;
+        private ConfigEntry<string> _slot1Modifier;
         private ConfigEntry<bool> _independentCooldowns;
         private ConfigEntry<float> _cooldownMultiplier;
         private ConfigEntry<bool> _showHud;
@@ -66,6 +67,9 @@ namespace NoVikingLeftBehind
 
         /// <summary>Parsed hotkeys, index 0 -> slot 1 (the second slot).</summary>
         private static readonly KeyCode[] Keys = new KeyCode[PowerSlots.MaxSlots - 1];
+
+        /// <summary>Held while interacting with an altar = "put it in slot 1".</summary>
+        private static KeyCode _modifier = KeyCode.LeftShift;
 
         private static float _suppressUntil;
         private static bool _skippedVanilla;
@@ -108,6 +112,11 @@ namespace NoVikingLeftBehind
             _thirdSlotKey = BindLocal("ThirdSlotKey", "None",
                 "Machine-local. KeyCode for a third slot, only used when Slots = 3. " +
                 "'None' disables it.");
+            _slot1Modifier = BindLocal("Slot1Modifier", "LeftShift",
+                "Machine-local. Hold this while interacting with a boss altar to put the power in " +
+                "SLOT 1 (the vanilla F slot). Without it the altar fills the first empty slot and, " +
+                "when both are full, replaces the last one. 'None' disables the modifier. " +
+                "LeftShift/LeftControl/LeftAlt also accept their right-hand twin.");
             _showHud = BindLocal("ShowHud", true,
                 "Machine-local. Clone the vanilla power icon so slot 2 gets its own icon, name " +
                 "and cooldown readout. Turn off if it clashes with another HUD mod.");
@@ -130,7 +139,57 @@ namespace NoVikingLeftBehind
             PowerSlots.CooldownMultiplier = Mathf.Clamp(_cooldownMultiplier.Value, 0f, 100f);
             Keys[0] = ParseKey(_secondSlotKey.Value, KeyCode.G, "SecondSlotKey");
             if (Keys.Length > 1) Keys[1] = ParseKey(_thirdSlotKey.Value, KeyCode.None, "ThirdSlotKey");
+            _modifier = ParseKey(_slot1Modifier.Value, KeyCode.LeftShift, "Slot1Modifier");
             PowerHud.SetOffset(new Vector2(_hudOffsetX.Value, _hudOffsetY.Value));
+            // The whole point of 0.4.5's Powers half: the key is written ON the icon, so nobody has
+            // to read the config to discover that the second power is on G.
+            PowerHud.KeyLabel = KeyLabel(1);
+        }
+
+        /// <summary>Printable name of the key that fires a slot. Slot 0 asks ZInput for vanilla's own binding.</summary>
+        internal static string KeyLabel(int slot)
+        {
+            if (slot == 0)
+            {
+                try
+                {
+                    var zi = ZInput.instance;
+                    if (zi != null)
+                    {
+                        string s = zi.GetBoundKeyString("GP", true);
+                        if (!string.IsNullOrEmpty(s)) return s;
+                    }
+                }
+                catch { /* fall through to the vanilla default */ }
+                return "F";
+            }
+            if (slot < 1 || slot > Keys.Length) return "";
+            return Keys[slot - 1] == KeyCode.None ? "" : Keys[slot - 1].ToString();
+        }
+
+        /// <summary>Printable name of the altar modifier ("LeftShift" -> "Shift").</summary>
+        internal static string ModifierLabel()
+        {
+            if (_modifier == KeyCode.None) return "";
+            string s = _modifier.ToString();
+            if (s.StartsWith("Left", StringComparison.Ordinal)) s = s.Substring(4);
+            else if (s.StartsWith("Right", StringComparison.Ordinal)) s = s.Substring(5);
+            return s;
+        }
+
+        /// <summary>Is the slot-1 altar modifier down? Left/Right twins count as the same key.</summary>
+        private static bool ModifierHeld()
+        {
+            if (_modifier == KeyCode.None) return false;
+            if (ZInput.GetKey(_modifier, false)) return true;
+            KeyCode twin = _modifier == KeyCode.LeftShift ? KeyCode.RightShift
+                         : _modifier == KeyCode.RightShift ? KeyCode.LeftShift
+                         : _modifier == KeyCode.LeftControl ? KeyCode.RightControl
+                         : _modifier == KeyCode.RightControl ? KeyCode.LeftControl
+                         : _modifier == KeyCode.LeftAlt ? KeyCode.RightAlt
+                         : _modifier == KeyCode.RightAlt ? KeyCode.LeftAlt
+                         : KeyCode.None;
+            return twin != KeyCode.None && ZInput.GetKey(twin, false);
         }
 
         private static KeyCode ParseKey(string s, KeyCode fallback, string what)
@@ -208,7 +267,9 @@ namespace NoVikingLeftBehind
             Harmony.Patch(odbCopy, postfix: odbPost);
 
             Log.LogInfo("[DualPowers] slots=" + PowerSlots.SlotCount +
-                        " key2=" + Keys[0] + (PowerSlots.SlotCount > 2 ? " key3=" + Keys[1] : "") +
+                        " key1=" + KeyLabel(0) + " key2=" + Keys[0] +
+                        (PowerSlots.SlotCount > 2 ? " key3=" + Keys[1] : "") +
+                        " altarSlot1Modifier=" + _modifier +
                         " independentCooldowns=" + PowerSlots.IndependentCooldowns +
                         " cooldownMultiplier=" + PowerSlots.CooldownMultiplier +
                         " hud=" + _showHud.Value + " storage=" + PowerSlots.NameKey(1) + "/" +
@@ -235,16 +296,44 @@ namespace NoVikingLeftBehind
                 string power = __instance.m_guardianPower.name;
                 string label = Localization.instance.Localize(__instance.m_guardianPower.m_name);
 
+                // ---- the two explicit rules, 0.4.5 -------------------------------------------
+                //  * interact normally      -> first EMPTY slot, else replace the LAST slot (2)
+                //  * hold Slot1Modifier     -> replace slot 1, the vanilla F slot
+                // Whatever happens, say so in the centre of the screen AND name the key, because
+                // "which slot did that go in, and how do I fire it" was the whole complaint.
+                bool wantSlot1 = ModifierHeld();
+
                 int have = PowerSlots.FindSlot(me, power);
-                if (have >= 0)
+                if (have >= 0 && !(wantSlot1 && have != 0))
                 {
-                    me.Message(MessageHud.MessageType.Center, label + " is already in power slot " + (have + 1));
+                    me.Message(MessageHud.MessageType.Center,
+                        label + " is already in slot " + (have + 1) + " (" + KeyLabel(have) + "). " +
+                        HintLine());
                     return false;
                 }
 
-                int target = PowerSlots.FirstEmptySlot(me);
-                if (target < 0) target = PowerSlots.ExtraCount;   // every slot full -> replace the last
-                if (target == 0) return true;                     // vanilla handles slot 1 (and its stats)
+                int target;
+                if (wantSlot1) target = 0;
+                else
+                {
+                    target = PowerSlots.FirstEmptySlot(me);
+                    if (target < 0) target = PowerSlots.ExtraCount;   // all full -> replace the last
+                }
+
+                if (target == 0)
+                {
+                    // Vanilla handles slot 1, including its per-boss PlayerStat bookkeeping, so let
+                    // it run - we only add the message. If the power was sitting in slot 2, clear it
+                    // there so it does not end up in two slots at once.
+                    if (have > 0) PowerSlots.SetPower(me, have, "");
+                    string had1 = PowerSlots.GetName(me, 0);
+                    me.Message(MessageHud.MessageType.Center,
+                        "Power of " + label + " set to slot 1 (" + KeyLabel(0) + ")" +
+                        (string.IsNullOrEmpty(had1) ? "" : ", replacing " + had1) + ".");
+                    Log.LogInfo("[DualPowers] altar granted '" + power + "' to slot 1 (modifier held)" +
+                                (string.IsNullOrEmpty(had1) ? "" : ", replacing '" + had1 + "'"));
+                    return true;
+                }
 
                 string replaced = PowerSlots.GetName(me, target);
                 PowerSlots.SetPower(me, target, power);
@@ -252,8 +341,8 @@ namespace NoVikingLeftBehind
                 catch (Exception e) { Log.LogWarning("[DualPowers] stat increment failed: " + e.Message); }
 
                 me.Message(MessageHud.MessageType.Center,
-                    label + " -> power slot " + (target + 1) +
-                    (string.IsNullOrEmpty(replaced) ? "" : " (replaced " + replaced + ")"));
+                    "Power of " + label + " set to slot " + (target + 1) + " (" + KeyLabel(target) + ")" +
+                    (string.IsNullOrEmpty(replaced) ? "" : ", replacing " + replaced) + ". " + HintLine());
                 Log.LogInfo("[DualPowers] altar granted '" + power + "' to slot " + (target + 1) +
                             (string.IsNullOrEmpty(replaced) ? "" : ", replacing '" + replaced + "'"));
                 return false;
@@ -265,6 +354,14 @@ namespace NoVikingLeftBehind
             }
         }
 
+        /// <summary>"Hold Shift when choosing to set slot 1 (F)." - appended to every altar message.</summary>
+        private static string HintLine()
+        {
+            string mod = ModifierLabel();
+            if (mod.Length == 0) return "";
+            return "Hold " + mod + " when choosing to set slot 1 (" + KeyLabel(0) + ").";
+        }
+
         private static void StandActivePostfix(ItemStand __instance, Humanoid user, ref bool __result)
         {
             if (__result || _inst == null || !_inst.Active || !ClientActive()) return;
@@ -272,7 +369,11 @@ namespace NoVikingLeftBehind
             {
                 var p = user as Player;
                 if (p == null || p != Player.m_localPlayer || __instance.m_guardianPower == null) return;
-                if (PowerSlots.FindSlot(p, __instance.m_guardianPower.name) >= 0) __result = true;
+                int slot = PowerSlots.FindSlot(p, __instance.m_guardianPower.name);
+                // Holding the modifier is an explicit "move this into slot 1", so the altar must
+                // stay usable for a power already parked in slot 2.
+                if (slot > 0 && ModifierHeld()) return;
+                if (slot >= 0) __result = true;
             }
             catch (Exception e) { Log.LogWarning("[DualPowers] IsGuardianPowerActive postfix: " + e.Message); }
         }
@@ -306,7 +407,7 @@ namespace NoVikingLeftBehind
         /// ZInput.GetKeyDown reads the raw Input System device, so - unlike ZInput.GetButtonDown -
         /// it does NOT know about chat, the console or an open menu. Do that gating ourselves.
         /// </summary>
-        private static bool InputAllowed(Player me)
+        internal static bool InputAllowed(Player me)
         {
             if (!me.TakeInput()) return false;
             if (Hud.InRadial() || Hud.IsPieceSelectionVisible()) return false;
@@ -478,11 +579,42 @@ namespace NoVikingLeftBehind
         {
             var me = Player.m_localPlayer;
             string slots = (me != null) ? PowerSlots.Describe(me) : "slots=(no local player)";
+            var keys = new List<string>();
+            for (int s = 0; s < Mathf.Clamp(PowerSlots.SlotCount, 1, PowerSlots.MaxSlots); s++)
+                keys.Add("slot" + (s + 1) + ":" + (KeyLabel(s).Length == 0 ? "-" : KeyLabel(s)));
             return slots +
-                   "  key2=" + Keys[0] + (PowerSlots.SlotCount > 2 ? " key3=" + Keys[1] : "") +
+                   "  keys=" + string.Join("/", keys.ToArray()) +
+                   " altarSlot1=" + (ModifierLabel().Length == 0 ? "-" : ModifierLabel() + "+interact") +
                    " independent=" + PowerSlots.IndependentCooldowns +
                    " cdx" + PowerSlots.CooldownMultiplier +
                    " uses=" + _activations;
+        }
+
+        // ---- player actions the console exposes (nvlb.power clear/swap) ------------------------
+
+        /// <summary>Empty one slot. Slot 0 is vanilla's. Returns what was there, "" when nothing.</summary>
+        internal static string ClearSlot(Player me, int slot)
+        {
+            if (me == null) return "";
+            string had = PowerSlots.GetName(me, slot);
+            PowerSlots.SetPower(me, slot, "");
+            if (slot != 0) PowerSlots.SetCooldown(me, slot, 0f);
+            else me.m_guardianPowerCooldown = 0f;
+            return had ?? "";
+        }
+
+        /// <summary>Exchange slot 1 and slot 2, cooldowns included.</summary>
+        internal static void SwapSlots(Player me)
+        {
+            if (me == null) return;
+            string a = PowerSlots.GetName(me, 0);
+            string b = PowerSlots.GetName(me, 1);
+            float ca = PowerSlots.GetCooldown(me, 0);
+            float cb = PowerSlots.GetCooldown(me, 1);
+            PowerSlots.SetPower(me, 0, b);
+            PowerSlots.SetPower(me, 1, a);
+            PowerSlots.SetCooldown(me, 0, cb);
+            PowerSlots.SetCooldown(me, 1, ca);
         }
 
         // ---- self test (headless, 0 players) ----------------------------------------------------

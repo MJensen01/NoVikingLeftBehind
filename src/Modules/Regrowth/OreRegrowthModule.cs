@@ -69,16 +69,36 @@ namespace NoVikingLeftBehind
         private ConfigEntry<bool> _dryRun;
         private ConfigEntry<bool> _selfTest;
 
+        /// <summary>
+        /// `recordPrefab:tier[:respawnPrefab]`.
+        ///
+        /// FRACTURED STAGES. A copper vein is TWO prefabs: `rock4_copper` (a Destructible) is
+        /// swapped for `rock4_copper_frac` (the MineRock5 you actually mine) on the FIRST pickaxe
+        /// hit, via Destructible.m_spawnWhenDestroyed (Destructible.cs:166-168). Recording on the
+        /// Destructible's destroy - what 0.4.4 did - therefore fired one hit into the vein, while
+        /// the fractured copy was still standing and still full of ore: the node "regrew" beside
+        /// its own live remains and the ore could be taken twice. So the RECORD prefab is the
+        /// `_frac` stage (its ZDO dies only when every hit area is mined out) and the RESPAWN
+        /// prefab is the original vein. Ores with no fractured stage (tin, obsidian, meteorite)
+        /// keep the 0.4.4 behaviour: one name, recorded and respawned as itself.
+        /// </summary>
         public const string DefaultPrefabs =
-            "rock4_copper:1,MineRock_Tin:1,silvervein:3,MineRock_Obsidian:3,MineRock_Meteorite:4";
+            "rock4_copper_frac:1:rock4_copper,silvervein_frac:3:silvervein," +
+            "MineRock_Tin:1,MineRock_Obsidian:3,MineRock_Meteorite:4";
+
+        /// <summary>Metres: a node is not respawned if one is already standing this close.</summary>
+        private const float DedupeRadius = 4f;
 
         // ---- state --------------------------------------------------------------------
 
         internal static OreRegrowthModule Instance;
 
-        /// <summary>prefab name hash -> material tier. Rebuilt from config, resolved against ZNetScene.</summary>
+        /// <summary>RECORD prefab hash -> entry. Rebuilt from config, resolved against ZNetScene.</summary>
         private readonly Dictionary<int, RegrowthPrefab> _allow = new Dictionary<int, RegrowthPrefab>();
+        /// <summary>respawn prefab hash -> its fractured stage's hash, for the dedupe guard.</summary>
+        private readonly Dictionary<int, int> _fracOf = new Dictionary<int, int>();
         private bool _allowResolved;
+        private bool _fracLogged;
         private string _allowSummary = "(not resolved yet)";
 
         private readonly List<RegrowthEntry> _pending = new List<RegrowthEntry>();
@@ -100,9 +120,16 @@ namespace NoVikingLeftBehind
         protected override void Bind()
         {
             _prefabs = BindSynced("Prefabs", DefaultPrefabs,
-                "Ore node prefabs that regrow, as name:tier,name:tier. The tier is the material " +
-                "tier used against the frontier (see [Tiers]/[Frontier]). Names are resolved " +
-                "against ZNetScene's prefab list at runtime; unknown names are logged and ignored.");
+                "Ore nodes that regrow, as recordPrefab:tier[:respawnPrefab], comma separated. " +
+                "recordPrefab is the prefab whose destruction means 'this node is mined out' - for " +
+                "copper and silver that is the FRACTURED stage (rock4_copper_frac / silvervein_frac), " +
+                "because the un-fractured vein is destroyed on the very first pickaxe hit. " +
+                "respawnPrefab is what comes back; omit it and the recorded prefab comes back as " +
+                "itself (correct for tin/obsidian/meteorite, which have no fractured stage). The " +
+                "tier is the material tier used against the frontier (see [Tiers]/[Frontier]). " +
+                "The old two-part form name:tier is still accepted and is migrated automatically " +
+                "when a <name>_frac prefab exists. Names are resolved against ZNetScene's prefab " +
+                "list at runtime; unknown names are logged and ignored.");
 
             _regrowDays = BindSynced("RegrowDays", 7,
                 "In-game days a mined-out node stays gone before it may regrow.");
@@ -214,10 +241,12 @@ namespace NoVikingLeftBehind
                 RegrowthPrefab info;
                 if (!self._allow.TryGetValue(zdo.GetPrefab(), out info)) return;
 
+                // The entry stores the RESPAWN prefab, not the recorded one - so regrowth.json is
+                // unchanged in shape and every pre-0.4.5 pending record still respawns correctly.
                 var e = new RegrowthEntry
                 {
-                    prefabHash = info.Hash,
-                    name = info.Name,
+                    prefabHash = info.RespawnHash,
+                    name = info.RespawnName,
                     tier = info.Tier,
                     day = CurrentDay(),
                     x = zdo.GetPosition().x,
@@ -231,8 +260,10 @@ namespace NoVikingLeftBehind
                 self._dirty = true;
                 self.SaveStore();
 
-                Log.LogInfo("[OreRegrowth] recorded destroyed " + info.Name + " tier=" + info.Tier +
-                            " at " + Fmt(e.Pos) + " day=" + e.day + " (pending=" + self._pending.Count + ")");
+                Log.LogInfo("[OreRegrowth] recorded destroyed " + info.Name +
+                            (info.RespawnName == info.Name ? "" : " -> will respawn " + info.RespawnName) +
+                            " tier=" + info.Tier + " at " + Fmt(e.Pos) + " day=" + e.day +
+                            " (pending=" + self._pending.Count + ")");
             }
             catch (Exception ex)
             {
@@ -248,9 +279,10 @@ namespace NoVikingLeftBehind
             if (ZNetScene.instance == null) return;   // not ready yet; try again next tick
 
             _allow.Clear();
+            _fracOf.Clear();
             var resolved = new List<string>();
             var missing = new List<string>();
-            var noMineRock = new List<string>();
+            var migrated = new List<string>();
 
             var spec = _prefabs == null ? DefaultPrefabs : _prefabs.Value;
             foreach (var raw in spec.Split(','))
@@ -270,26 +302,54 @@ namespace NoVikingLeftBehind
                     tier = 1;
                 }
 
+                // Third part = what comes back. Absent -> the recorded prefab respawns as itself,
+                // unless this is a pre-0.4.5 two-part entry that we can migrate (below).
+                string respawn = parts.Length > 2 && parts[2].Trim().Length > 0 ? parts[2].Trim() : name;
+
+                if (parts.Length <= 2)
+                {
+                    // MIGRATION of the old `name:tier` form, transparent and log-once:
+                    //   rock4_copper:1       -> record rock4_copper_frac, respawn rock4_copper
+                    //   rock4_copper_frac:1  -> record rock4_copper_frac, respawn rock4_copper
+                    // Anything with no fractured stage (MineRock_Tin...) is left exactly as it was.
+                    if (!name.EndsWith("_frac", StringComparison.Ordinal) &&
+                        ZNetScene.instance.GetPrefab((name + "_frac").GetStableHashCode()) != null)
+                    {
+                        migrated.Add(name + ":" + tier + " -> " + name + "_frac:" + tier + ":" + name);
+                        respawn = name;
+                        name = name + "_frac";
+                    }
+                    else if (name.EndsWith("_frac", StringComparison.Ordinal))
+                    {
+                        var b = name.Substring(0, name.Length - 5);
+                        if (ZNetScene.instance.GetPrefab(b.GetStableHashCode()) != null)
+                        {
+                            migrated.Add(name + ":" + tier + " -> " + name + ":" + tier + ":" + b);
+                            respawn = b;
+                        }
+                    }
+                }
+
                 int hash = name.GetStableHashCode();
                 var go = ZNetScene.instance.GetPrefab(hash);
                 if (go == null) { missing.Add(name); continue; }
 
-                // MineRock5 is usually on a child of the prefab root, not the root itself
-                // (the root carries the ZNetView), so search the whole hierarchy incl. inactive.
-                bool isMineRock = go.GetComponentInChildren<MineRock5>(true) != null ||
-                                  go.GetComponentInChildren<MineRock>(true) != null;
-                if (!isMineRock)
+                int respawnHash = respawn.GetStableHashCode();
+                if (ZNetScene.instance.GetPrefab(respawnHash) == null)
                 {
-                    var comps = go.GetComponentsInChildren<MonoBehaviour>(true);
-                    var names = new List<string>();
-                    for (int c = 0; c < comps.Length && names.Count < 12; c++)
-                        if (comps[c] != null) names.Add(comps[c].GetType().Name);
-                    noMineRock.Add(name + "[" + string.Join("+", names.ToArray()) +
-                                   (comps.Length > names.Count ? "+..." : "") + "]");
+                    missing.Add(respawn + "(respawn target of " + name + ")");
+                    continue;
                 }
 
-                _allow[hash] = new RegrowthPrefab { Hash = hash, Name = name, Tier = tier };
-                resolved.Add(name + ":" + tier + "(" + hash + (isMineRock ? "" : ",noMineRock") + ")");
+                _allow[hash] = new RegrowthPrefab
+                {
+                    Hash = hash, Name = name, Tier = tier,
+                    RespawnHash = respawnHash, RespawnName = respawn
+                };
+                if (respawnHash != hash) _fracOf[respawnHash] = hash;
+
+                resolved.Add(name + ":" + tier + (respawn == name ? "" : ":" + respawn) +
+                             "(" + FamilyOf(go) + ")");
             }
 
             _allowResolved = true;
@@ -297,17 +357,60 @@ namespace NoVikingLeftBehind
 
             Log.LogInfo("[OreRegrowth] prefab allowlist resolved: " +
                         (resolved.Count == 0 ? "(none)" : string.Join(", ", resolved.ToArray())));
+            if (migrated.Count > 0)
+                Log.LogInfo("[OreRegrowth] migrated pre-0.4.5 Prefabs entries to the fractured form: " +
+                            string.Join(", ", migrated.ToArray()) +
+                            " (the config file itself is left alone)");
             if (missing.Count > 0)
                 Log.LogWarning("[OreRegrowth] prefab names NOT found in ZNetScene (ignored): " +
                                string.Join(", ", missing.ToArray()));
-            if (noMineRock.Count > 0)
-                // Expected for copper/tin/silver/obsidian: on 0.221.12 those are plain
-                // Destructible nodes, not MineRock5. Informational, never a failure - we key
-                // off the prefab hash and both component families destroy the whole ZDO the
-                // same way (ZNetScene.Destroy -> ZDOMan.DestroyZDO -> HandleDestroyedZDO).
-                Log.LogInfo("[OreRegrowth] allowlisted prefabs that are Destructible rather than " +
-                            "MineRock/MineRock5 (fine, same destroy funnel): " +
-                            string.Join(", ", noMineRock.ToArray()));
+
+            LogFracCandidates();
+        }
+
+        /// <summary>Component family of a prefab, for the allowlist log. Same shape FastMining uses.</summary>
+        private static string FamilyOf(GameObject go)
+        {
+            // MineRock5 usually sits on a child of the prefab root (the root carries the ZNetView),
+            // so search the whole hierarchy incl. inactive children.
+            if (go.GetComponentInChildren<MineRock5>(true) != null) return "MineRock5";
+            if (go.GetComponentInChildren<MineRock>(true) != null) return "MineRock";
+            if (go.GetComponentInChildren<Destructible>(true) != null) return "Destructible";
+            return "unknown-family";
+        }
+
+        /// <summary>
+        /// One-off inventory of every ZNetScene prefab whose name ends in "_frac" and which carries
+        /// a MineRock/MineRock5 - i.e. every candidate fractured mining stage the game ships. Logged
+        /// once so the ore list can be extended (mistlands/ashlands ores, modded nodes) from evidence
+        /// rather than guesswork.
+        /// </summary>
+        private void LogFracCandidates()
+        {
+            if (_fracLogged) return;
+            _fracLogged = true;
+            try
+            {
+                var names = new List<string>();
+                var prefabs = ZNetScene.instance.m_prefabs;
+                if (prefabs == null) return;
+                for (int i = 0; i < prefabs.Count; i++)
+                {
+                    var go = prefabs[i];
+                    if (go == null || !go.name.EndsWith("_frac", StringComparison.Ordinal)) continue;
+                    if (go.GetComponentInChildren<MineRock5>(true) == null &&
+                        go.GetComponentInChildren<MineRock>(true) == null) continue;
+                    names.Add(go.name + "(" + FamilyOf(go) +
+                              (_allow.ContainsKey(go.name.GetStableHashCode()) ? ",listed" : "") + ")");
+                }
+                names.Sort(StringComparer.OrdinalIgnoreCase);
+                Log.LogInfo("[OreRegrowth] ZNetScene fractured mining stages (" + names.Count + "): " +
+                            (names.Count == 0 ? "(none)" : string.Join(", ", names.ToArray())));
+            }
+            catch (Exception e)
+            {
+                Log.LogWarning("[OreRegrowth] could not enumerate fractured prefabs: " + e.Message);
+            }
         }
 
         // ---- the sweep ----------------------------------------------------------------
@@ -330,6 +433,20 @@ namespace NoVikingLeftBehind
                 if (today - e.day < _regrowDays.Value) continue;
                 if (!Tiers.IsBehind(e.tier)) continue;
                 if (PlayerWithin(e.Pos, _minPlayerDistance.Value)) continue;
+
+                // Dedupe guard: never stack a second vein on top of a node that is already there.
+                // Both stages count - a standing rock4_copper OR a half-mined rock4_copper_frac at
+                // that spot means this record is stale (double-recorded, or the world was rolled
+                // back), so drop it instead of duplicating the ore.
+                if (NodeAlreadyThere(e))
+                {
+                    _pending.RemoveAt(i);
+                    _dirty = true;
+                    Log.LogInfo("[OreRegrowth] dropped a stale record for " + e.name + " at " +
+                                Fmt(e.Pos) + ": a node is already standing within " +
+                                DedupeRadius.ToString("0.#") + "m");
+                    continue;
+                }
 
                 if (_dryRun.Value)
                 {
@@ -357,6 +474,33 @@ namespace NoVikingLeftBehind
 
             if (_dirty) SaveStore();
             return done;
+        }
+
+        /// <summary>
+        /// True when a ZDO of the entry's prefab - or of that prefab's fractured stage - already
+        /// exists within DedupeRadius of the recorded position. One linear pass over
+        /// ZDOMan.m_objectsByID; only ever run for an entry that has already passed the day, tier
+        /// and player-distance gates, at most MaxPerTick times per sweep.
+        /// </summary>
+        internal bool NodeAlreadyThere(RegrowthEntry e)
+        {
+            var man = ZDOMan.instance;
+            if (man == null || man.m_objectsByID == null) return false;
+
+            int frac;
+            bool haveFrac = _fracOf.TryGetValue(e.prefabHash, out frac);
+            float sq = DedupeRadius * DedupeRadius;
+            var pos = e.Pos;
+
+            foreach (var kv in man.m_objectsByID)
+            {
+                var z = kv.Value;
+                if (z == null) continue;
+                int p = z.GetPrefab();
+                if (p != e.prefabHash && !(haveFrac && p == frac)) continue;
+                if ((z.GetPosition() - pos).sqrMagnitude <= sq) return true;
+            }
+            return false;
         }
 
         /// <summary>Create the ZDO exactly the way ZNetView.Awake does for a brand-new object.</summary>
@@ -479,6 +623,13 @@ namespace NoVikingLeftBehind
 
         // ---- headless self test ---------------------------------------------------------
 
+        /// <summary>
+        /// Proves the 0.4.5 contract end to end on a headless server, with no players:
+        ///   1. a rock4_copper_frac ZDO destroyed through the real funnel records "rock4_copper";
+        ///   2. the sweep then respawns the ORIGINAL vein, not the fractured stage;
+        ///   3. a second, identical record at the same spot is dropped by the dedupe guard.
+        /// Everything it creates is destroyed again, so the throwaway world is left as it was.
+        /// </summary>
         internal void RunSelfTest()
         {
             _selfTestDone = true;
@@ -491,108 +642,133 @@ namespace NoVikingLeftBehind
                     return;
                 }
 
-                const string probe = "rock4_copper";
-                int hash = probe.GetStableHashCode();
+                const string record = "rock4_copper_frac";
+                int recordHash = record.GetStableHashCode();
                 RegrowthPrefab info;
-                if (!_allow.TryGetValue(hash, out info))
+                if (!_allow.TryGetValue(recordHash, out info))
                 {
-                    Log.LogWarning("[OreRegrowth][SelfTest] " + probe + " is not in the allowlist, skipped");
+                    Log.LogWarning("[OreRegrowth][SelfTest] " + record +
+                                   " is not in the allowlist, skipped");
                     return;
                 }
+                Log.LogInfo("[OreRegrowth][SelfTest] step 0: record=" + info.Name +
+                            " respawn=" + info.RespawnName + " tier=" + info.Tier);
 
-                // (1) find an existing copper node in the loaded world.
-                ZDO found = null;
+                // (1) somewhere real but empty: 25 m from an existing copper vein, so the dedupe
+                //     guard has nothing to trip over and the spot is inside a loaded zone.
+                ZDO anchor = null;
+                int baseHash = info.RespawnHash;
                 foreach (var kv in ZDOMan.instance.m_objectsByID)
                 {
-                    if (kv.Value != null && kv.Value.GetPrefab() == hash) { found = kv.Value; break; }
+                    if (kv.Value != null && kv.Value.GetPrefab() == baseHash) { anchor = kv.Value; break; }
                 }
-                if (found == null)
+                if (anchor == null)
                 {
-                    Log.LogWarning("[OreRegrowth][SelfTest] no existing " + probe +
-                                   " ZDO in the world (" + ZDOMan.instance.m_objectsByID.Count + " ZDOs), skipped");
+                    Log.LogWarning("[OreRegrowth][SelfTest] no existing " + info.RespawnName +
+                                   " ZDO in the world (" + ZDOMan.instance.m_objectsByID.Count +
+                                   " ZDOs), skipped");
                     return;
                 }
-                var pos = found.GetPosition();
-                var oldId = found.m_uid;
-                Log.LogInfo("[OreRegrowth][SelfTest] step 1: found existing " + probe +
-                            " zdo=" + oldId + " at " + Fmt(pos));
+                var pos = anchor.GetPosition() + new Vector3(0f, 0f, 25f);
+                Log.LogInfo("[OreRegrowth][SelfTest] step 1: anchor " + info.RespawnName +
+                            " zdo=" + anchor.m_uid + "; test spot " + Fmt(pos));
 
-                // (2) fake a long-overdue destroy record for it.
-                var euler = found.GetRotation().eulerAngles;
-                var e = new RegrowthEntry
+                // (2) build a fractured stage there and push it through the REAL destroy funnel.
+                var fracEntry = new RegrowthEntry
                 {
-                    prefabHash = hash, name = probe, tier = info.Tier, day = -999,
-                    x = pos.x, y = pos.y, z = pos.z, rx = euler.x, ry = euler.y, rz = euler.z
+                    prefabHash = recordHash, name = record, tier = info.Tier, day = -999,
+                    x = pos.x, y = pos.y, z = pos.z
                 };
-                _pending.Add(e);
-                _dirty = true;
-                Log.LogInfo("[OreRegrowth][SelfTest] step 2: recorded fake entry tier=" + e.tier +
-                            " day=" + e.day + " today=" + CurrentDay() + " (" + DaySource() + ")" +
-                            " frontier: " + Frontier.Describe() + " IsBehind(" + e.tier + ")=" +
-                            Tiers.IsBehind(e.tier));
-
-                if (!Tiers.IsBehind(e.tier))
-                    Log.LogWarning("[OreRegrowth][SelfTest] tier " + e.tier + " is NOT behind the " +
-                                   "frontier right now, so the sweep will (correctly) refuse. Set " +
-                                   "[Frontier] TierOverride >= " + (e.tier + 1) + " to exercise the respawn.");
-
-                // Snapshot every ZDO of this prefab already sitting at that spot, so step 4 can
-                // only ever find something the sweep itself created.
-                var before4 = new HashSet<ZDOID>();
-                foreach (var kv in ZDOMan.instance.m_objectsByID)
+                var fracZdo = Respawn(fracEntry);
+                if (fracZdo == null)
                 {
-                    var z = kv.Value;
-                    if (z != null && z.GetPrefab() == hash && (z.GetPosition() - pos).sqrMagnitude <= 1f)
-                        before4.Add(z.m_uid);
+                    Log.LogError("[OreRegrowth][SelfTest] step 2: FAIL - could not create a " +
+                                 record + " ZDO");
+                    return;
                 }
+                var fracId = fracZdo.m_uid;
+                int before = _pending.Count;
+                ZDOMan.instance.HandleDestroyedZDO(fracId);
+                bool recorded = _pending.Count == before + 1;
+                var entry = recorded ? _pending[_pending.Count - 1] : null;
+                Log.LogInfo("[OreRegrowth][SelfTest] step 2: destroyed " + record + " zdo=" + fracId +
+                            " -> " + (recorded ? "RECORDED as " + entry.name : "NOT RECORDED") +
+                            ", zdo gone=" + (ZDOMan.instance.GetZDO(fracId) == null));
+                if (!recorded)
+                {
+                    Log.LogError("[OreRegrowth][SelfTest] step 2: FAIL - the frac destroy was not recorded");
+                    return;
+                }
+                if (entry.name != info.RespawnName || entry.prefabHash != info.RespawnHash)
+                    Log.LogError("[OreRegrowth][SelfTest] step 2: FAIL - recorded " + entry.name +
+                                 ", wanted the ORIGINAL vein " + info.RespawnName);
 
-                // (3) one sweep.
+                // (3) age it and sweep.
+                entry.day = -999;
+                _dirty = true;
+                Log.LogInfo("[OreRegrowth][SelfTest] step 3: today=" + CurrentDay() + " (" + DaySource() +
+                            ") frontier: " + Frontier.Describe() + " IsBehind(" + entry.tier + ")=" +
+                            Tiers.IsBehind(entry.tier));
+                if (!Tiers.IsBehind(entry.tier))
+                    Log.LogWarning("[OreRegrowth][SelfTest] tier " + entry.tier + " is NOT behind the " +
+                                   "frontier right now, so the sweep will (correctly) refuse. Set " +
+                                   "[Frontier] TierOverride >= " + (entry.tier + 1) + " to exercise the respawn.");
+
                 int n = RunSweep();
                 Log.LogInfo("[OreRegrowth][SelfTest] step 3: sweep respawned " + n + " node(s)");
 
-                // (4) confirm a NEW ZDO of that prefab exists near the position.
+                // (4) the thing that came back must be the ORIGINAL prefab, at the spot.
                 ZDO fresh = null;
                 foreach (var kv in ZDOMan.instance.m_objectsByID)
                 {
                     var z = kv.Value;
-                    if (z == null || z.GetPrefab() != hash) continue;
-                    if (before4.Contains(z.m_uid)) continue;   // was already there before the sweep
+                    if (z == null || z.GetPrefab() != info.RespawnHash) continue;
                     if ((z.GetPosition() - pos).sqrMagnitude > 1f) continue;
                     fresh = z; break;
                 }
                 if (fresh == null)
                 {
-                    Log.LogError("[OreRegrowth][SelfTest] step 4: FAIL - the sweep created no new " +
-                                 probe + " ZDO within 1 m of " + Fmt(pos) +
-                                 " (sweep respawned " + n + "; IsBehind(" + e.tier + ")=" +
-                                 Tiers.IsBehind(e.tier) + ")");
+                    Log.LogError("[OreRegrowth][SelfTest] step 4: FAIL - no new " + info.RespawnName +
+                                 " ZDO within 1 m of " + Fmt(pos) + " (sweep respawned " + n + ")");
                 }
                 else
                 {
                     var back = ZDOMan.instance.GetZDO(fresh.m_uid);
                     Log.LogInfo("[OreRegrowth][SelfTest] step 4: PASS - new zdo=" + fresh.m_uid +
-                                " prefab=" + fresh.GetPrefab() + " at " + Fmt(fresh.GetPosition()) +
-                                " persistent=" + fresh.Persistent + " distant=" + fresh.Distant +
-                                " type=" + fresh.Type + " owner=" + fresh.GetOwner() +
-                                " GetZDO(round-trip)=" + (back != null));
-                }
+                                " prefab=" + fresh.GetPrefab() + " (" + info.RespawnName + ") at " +
+                                Fmt(fresh.GetPosition()) + " persistent=" + fresh.Persistent +
+                                " distant=" + fresh.Distant + " type=" + fresh.Type +
+                                " owner=" + fresh.GetOwner() + " GetZDO(round-trip)=" + (back != null));
 
-                // (5) exercise the RECORDING half through the real funnel, on the node we just
-                // made - which also removes the duplicate we added to the world.
-                if (fresh != null)
-                {
-                    int before = _pending.Count;
+                    // (5) dedupe: a second identical record must be dropped, not duplicated.
+                    var dupe = new RegrowthEntry
+                    {
+                        prefabHash = info.RespawnHash, name = info.RespawnName, tier = info.Tier,
+                        day = -999, x = pos.x, y = pos.y, z = pos.z
+                    };
+                    _pending.Add(dupe);
+                    _dirty = true;
+                    bool blocked = NodeAlreadyThere(dupe);
+                    int n2 = RunSweep();
+                    bool dropped = !_pending.Contains(dupe);
+                    Log.LogInfo("[OreRegrowth][SelfTest] step 5: dedupe guard sees a node within " +
+                                DedupeRadius.ToString("0.#") + "m = " + blocked +
+                                ", sweep respawned " + n2 + " (want 0), stale record dropped=" + dropped +
+                                (blocked && n2 == 0 && dropped ? "  PASS" : "  *** FAIL ***"));
+                    _pending.Remove(dupe);
+
+                    // (6) tidy up: the base vein is not a RECORD prefab, so destroying it leaves
+                    //     no new entry behind - the throwaway world ends exactly as it started.
                     var freshId = fresh.m_uid;          // ZDOPool.Release resets m_uid, capture first
+                    int p0 = _pending.Count;
                     ZDOMan.instance.HandleDestroyedZDO(freshId);
-                    bool recorded = _pending.Count == before + 1;
-                    Log.LogInfo("[OreRegrowth][SelfTest] step 5: HandleDestroyedZDO(" + freshId + ") -> " +
-                                (recorded ? "RECORDED" : "NOT RECORDED") +
-                                ", zdo gone=" + (ZDOMan.instance.GetZDO(freshId) == null));
-                    if (recorded) _pending.RemoveAt(_pending.Count - 1);
+                    Log.LogInfo("[OreRegrowth][SelfTest] step 6: cleanup destroyed " + info.RespawnName +
+                                " zdo=" + freshId + ", gone=" + (ZDOMan.instance.GetZDO(freshId) == null) +
+                                ", new records=" + (_pending.Count - p0) + " (want 0)");
                 }
 
                 // Leave nothing behind in the store.
-                _pending.Remove(e);
+                _pending.Remove(entry);
                 _dirty = true;
                 SaveStore();
             }
@@ -603,12 +779,18 @@ namespace NoVikingLeftBehind
         }
     }
 
-    /// <summary>One allowlisted ore prefab.</summary>
+    /// <summary>
+    /// One allowlisted ore prefab. Hash/Name are the RECORD prefab (the one whose ZDO dying means
+    /// "mined out" - the fractured stage where there is one); RespawnHash/RespawnName are what the
+    /// sweep puts back. They are equal for ores with no fractured stage.
+    /// </summary>
     internal sealed class RegrowthPrefab
     {
         public int Hash;
         public string Name;
         public int Tier;
+        public int RespawnHash;
+        public string RespawnName;
     }
 
     /// <summary>One mined-out node waiting to come back. Unity-JsonUtility serialisable (flat fields).</summary>

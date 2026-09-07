@@ -70,8 +70,17 @@ namespace NoVikingLeftBehind
             "optionally drops more). Runs on the node-owning client - the same for every player " +
             "who has the mod.";
 
+        /// <summary>
+        /// FRACTURED STAGES (0.221.12+, found on Matt's first live test): a copper vein
+        /// `rock4_copper` is a Destructible whose m_spawnWhenDestroyed swaps it for
+        /// `rock4_copper_frac` on the FIRST pickaxe hit (Destructible.cs:166-168); the frac object
+        /// is the MineRock5 you actually mine out. `silvervein` -> `silvervein_frac` likewise. So
+        /// without the _frac names in this list only the very first hit of a vein was fast and the
+        /// rest was vanilla speed. Both stages are listed, at the same tier.
+        /// </summary>
         public const string DefaultOreNodes =
-            "rock4_copper:1,MineRock_Tin:1,silvervein:3,MineRock_Obsidian:3,MineRock_Meteorite:4";
+            "rock4_copper:1,rock4_copper_frac:1,MineRock_Tin:1,silvervein:3,silvervein_frac:3," +
+            "MineRock_Obsidian:3,MineRock_Meteorite:4";
 
         private ConfigEntry<float> _speedMult;
         private ConfigEntry<float> _dropMult;
@@ -82,6 +91,8 @@ namespace NoVikingLeftBehind
         private static FastMiningModule _self;
 
         private readonly Dictionary<int, OrePrefab> _allow = new Dictionary<int, OrePrefab>();
+        /// <summary>Prefab hashes already reported at Debug, so the per-node line is logged once.</summary>
+        private readonly HashSet<int> _logged = new HashSet<int>();
         private bool _allowResolved;
         private string _allowSummary = "(not resolved yet)";
         private bool _selfTestDone;
@@ -222,6 +233,7 @@ namespace NoVikingLeftBehind
             if (ZNetScene.instance == null) return;   // not ready yet; try again next call
 
             _allow.Clear();
+            _logged.Clear();
             var resolved = new List<string>();
             var missing = new List<string>();
 
@@ -290,7 +302,7 @@ namespace NoVikingLeftBehind
                 if (!_self._allow.TryGetValue(zdo.GetPrefab(), out var info)) return;
                 if (!Tiers.IsBehind(info.Tier)) return;
 
-                Apply(hit, __instance.m_minToolTier);
+                Apply(hit, __instance.m_minToolTier, info);
             }
             catch (Exception e)
             {
@@ -312,7 +324,7 @@ namespace NoVikingLeftBehind
                 if (!_self._allow.TryGetValue(zdo.GetPrefab(), out var info)) return;
                 if (!Tiers.IsBehind(info.Tier)) return;
 
-                Apply(hit, __instance.m_minToolTier);
+                Apply(hit, __instance.m_minToolTier, info);
             }
             catch (Exception e)
             {
@@ -334,7 +346,7 @@ namespace NoVikingLeftBehind
                 if (!_self._allow.TryGetValue(zdo.GetPrefab(), out var info)) return;
                 if (!Tiers.IsBehind(info.Tier)) return;
 
-                Apply(hit, __instance.m_minToolTier);
+                Apply(hit, __instance.m_minToolTier, info);
             }
             catch (Exception e)
             {
@@ -343,8 +355,16 @@ namespace NoVikingLeftBehind
         }
 
         /// <summary>Shared effect once a hit is confirmed on a behind-the-frontier allow-listed node.</summary>
-        private static void Apply(HitData hit, int minToolTier)
+        private static void Apply(HitData hit, int minToolTier, OrePrefab info)
         {
+            // One Debug line per distinct prefab per session: which node family actually reached
+            // the multiplier. This is how the fractured-stage bug (only the first hit was fast,
+            // because rock4_copper_frac was not allow-listed) shows up in a client log.
+            if (info != null && _self._logged.Add(info.Hash))
+                Log.LogDebug("[FastMining] hit matched " + info.Name + " tier=" + info.Tier +
+                             " family=" + info.Family + " -> pickaxe x" +
+                             _self._speedMult.Value.ToString("0.##"));
+
             float mult = _self._speedMult.Value;
             if (mult > 0f && mult != 1f) hit.m_damage.m_pickaxe *= mult;
 
@@ -406,7 +426,9 @@ namespace NoVikingLeftBehind
                                 " family=" + kv.Value.Family);
 
                 ProbeSpeed("rock4_copper", 30f);
+                ProbeSpeed("rock4_copper_frac", 30f);   // the stage actually mined out
                 ProbeSpeed("silvervein", 30f);
+                ProbeSpeed("silvervein_frac", 30f);
                 Log.LogInfo("[FastMining][SelfTest] --- end ---");
             }
             catch (Exception e)

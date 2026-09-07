@@ -104,8 +104,9 @@ namespace NoVikingLeftBehind
                     new Terminal.ConsoleOptionsFetcher(ItemOptions));
 
                 new Terminal.ConsoleCommand("nvlb.power",
-                    "nvlb.power <list|GP_Name> [1|2] - list guardian powers, or put one in slot 1 " +
-                    "(vanilla) or slot 2 (DualPowers)",
+                    "nvlb.power <list|clear 1|2|swap|GP_Name [1|2]> - list guardian powers, empty a " +
+                    "slot, exchange slot 1 and 2, or (with [Debug] AllowTestCommands) put a power " +
+                    "in a slot. 'clear' and 'swap' are ordinary player actions and are never gated.",
                     new Terminal.ConsoleEvent(CmdPower), false, false, false, false, false,
                     new Terminal.ConsoleOptionsFetcher(PowerOptions));
 
@@ -189,6 +190,8 @@ namespace NoVikingLeftBehind
             try
             {
                 var l = PowerNames();
+                l.Insert(0, "swap");
+                l.Insert(0, "clear");
                 l.Insert(0, "list");
                 return l;
             }
@@ -293,6 +296,21 @@ namespace NoVikingLeftBehind
         {
             try
             {
+                // `clear` and `swap` only move powers the player already earned between the slots
+                // the mod gave them - they hand out nothing - so they are NOT behind
+                // [Debug] AllowTestCommands. They are the console half of the same UX fix as the
+                // altar messages: a way out of "the wrong power is in the wrong slot".
+                if (args.Length > 1 && string.Equals(args[1], "clear", StringComparison.OrdinalIgnoreCase))
+                {
+                    CmdPowerClear(args);
+                    return;
+                }
+                if (args.Length > 1 && string.Equals(args[1], "swap", StringComparison.OrdinalIgnoreCase))
+                {
+                    CmdPowerSwap(args);
+                    return;
+                }
+
                 Player player;
                 if (!Gate(args, out player)) return;
 
@@ -308,6 +326,7 @@ namespace NoVikingLeftBehind
                     }
                     Print(args, "current: " + PowerSlots.Describe(player));
                     Print(args, "usage: nvlb.power <GP_Name> [1|2]   e.g. nvlb.power GP_TheElder 2");
+                    Print(args, "       nvlb.power clear 1|2   |   nvlb.power swap   (always allowed)");
                     return;
                 }
 
@@ -355,6 +374,57 @@ namespace NoVikingLeftBehind
                 Print(args, "nvlb.power failed: " + e.Message);
                 Log.LogError("[TestCommands] nvlb.power: " + e);
             }
+        }
+
+        /// <summary>
+        /// `nvlb.power clear 1|2` - empty one power slot. Ungated: it takes a power away, it never
+        /// gives one, so it is a legitimate player action even on a locked-down server.
+        /// </summary>
+        private static void CmdPowerClear(Terminal.ConsoleEventArgs args)
+        {
+            var me = Player.m_localPlayer;
+            if (me == null) { Print(args, "no local player - join a world first."); return; }
+
+            if (args.Length < 3)
+            {
+                Print(args, "usage: nvlb.power clear <1|2>   (slot 1 is the " +
+                            DualPowersModule.KeyLabel(0) + " power, slot 2 the " +
+                            DualPowersModule.KeyLabel(1) + " power)");
+                return;
+            }
+            int slotNo = args.TryParameterInt(2, 0);
+            if (slotNo < 1 || slotNo > PowerSlots.MaxSlots)
+            {
+                Print(args, "slot must be 1.." + PowerSlots.MaxSlots + ".");
+                return;
+            }
+            if (slotNo > 1 && !DualPowersModule.IsActive)
+            {
+                Print(args, "slot " + slotNo + " needs the DualPowers module, which is off.");
+                return;
+            }
+
+            string had = DualPowersModule.ClearSlot(me, slotNo - 1);
+            Print(args, string.IsNullOrEmpty(had)
+                ? "slot " + slotNo + " was already empty."
+                : "slot " + slotNo + " cleared (was " + had + ").");
+            Print(args, "now: " + PowerSlots.Describe(me));
+        }
+
+        /// <summary>`nvlb.power swap` - exchange slot 1 and slot 2, cooldowns included. Ungated.</summary>
+        private static void CmdPowerSwap(Terminal.ConsoleEventArgs args)
+        {
+            var me = Player.m_localPlayer;
+            if (me == null) { Print(args, "no local player - join a world first."); return; }
+            if (!DualPowersModule.IsActive || PowerSlots.ExtraCount < 1)
+            {
+                Print(args, "swapping needs the DualPowers module with at least 2 slots.");
+                return;
+            }
+
+            DualPowersModule.SwapSlots(me);
+            Print(args, "swapped slots 1 and 2.");
+            Print(args, "now: " + PowerSlots.Describe(me));
         }
 
         // ---- nvlb.tier ---------------------------------------------------------------------

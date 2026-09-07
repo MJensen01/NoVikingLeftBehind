@@ -24,6 +24,14 @@ namespace NoVikingLeftBehind
     {
         public static Vector2 Offset = new Vector2(0f, -56f);
 
+        /// <summary>
+        /// Printable name of the key that fires this slot, drawn after the power's name ("Bonemass
+        /// [G]"). Vanilla's own widget carries no key hint to clone - Hud.m_gpRoot is only icon +
+        /// name + cooldown (Hud.cs:1470-1493) - so the label goes into the name text, which is the
+        /// nearest thing to "the way vanilla shows F" that needs no shipped asset.
+        /// </summary>
+        public static string KeyLabel = "";
+
         private static Hud _hud;
         private static GameObject _clone;
         private static RectTransform _rt;
@@ -57,7 +65,8 @@ namespace NoVikingLeftBehind
                     _icon.color = (cd <= 0f) ? Color.white : Hud.s_colorRedBlueZeroAlpha;
                 }
                 if (_name != null)
-                    _name.text = Localization.instance.Localize(se.m_name);
+                    _name.text = Localization.instance.Localize(se.m_name) +
+                                 (string.IsNullOrEmpty(KeyLabel) ? "" : "  [" + KeyLabel + "]");
                 if (_cooldown != null)
                     _cooldown.text = (cd > 0f)
                         ? StatusEffect.GetTimeString(cd)

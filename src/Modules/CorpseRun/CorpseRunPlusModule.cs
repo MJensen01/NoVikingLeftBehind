@@ -67,6 +67,10 @@ namespace NoVikingLeftBehind
         private ConfigEntry<float> _compassOffsetY;
         private ConfigEntry<string> _compassArrow;
         private ConfigEntry<float> _compassArrowScale;
+        private ConfigEntry<string> _compassMode;
+        private ConfigEntry<float> _compassEdgeMargin;
+        private ConfigEntry<string> _clearGraveKey;
+        private ConfigEntry<float> _clearGraveHoldSec;
 
         private ConfigEntry<bool> _respawnFoodEnabled;
         private ConfigEntry<string> _respawnFoods;
@@ -112,6 +116,8 @@ namespace NoVikingLeftBehind
         private static StatusEffect _lastScaled;
 
         private static float _compassAcc;
+        private static KeyCode _clearKey = KeyCode.Delete;
+        private static float _clearHeld;
         private static float _pullAcc;
 
         private static float _lastDistance = -1f;
@@ -202,6 +208,26 @@ namespace NoVikingLeftBehind
                 "CorpseRunScaled: distance from home, in metres, at which ScaledExtraRegen is " +
                 "applied in full.");
 
+            _compassMode = BindLocal("CompassMode", "Edge",
+                "Machine-local. Edge = the marker is an off-screen waypoint: it sits on the grave " +
+                "while the grave is on screen and slides to the screen edge in its direction when " +
+                "it is not, so it is only ever dead centre when you are walking straight at it. " +
+                "Fixed = the pre-0.4.5 behaviour, a static arrow at CompassOffsetX/Y.");
+
+            _compassEdgeMargin = BindLocal("CompassEdgeMargin", 60f,
+                "Machine-local. Pixels of inset kept between the marker and the edge of the screen " +
+                "in Edge mode.");
+
+            _clearGraveKey = BindLocal("ClearGraveKey", "Delete",
+                "Machine-local. HOLD this key (see ClearGraveHoldSec) to dismiss the grave marker " +
+                "and Grave Pull without opening the console - the same thing nvlb.grave.clear does. " +
+                "A UnityEngine.KeyCode name; 'None' disables it. Ignored while a menu, the map, " +
+                "chat or the console has your input.");
+
+            _clearGraveHoldSec = BindLocal("ClearGraveHoldSec", 1.5f,
+                "Machine-local. Seconds ClearGraveKey must be held before the grave is dismissed. " +
+                "Long enough that a stray keypress cannot lose your grave marker.");
+
             _lootMatchDistance = BindSynced("LootMatchDistance", 20f,
                 "How close a tombstone must be to your recorded death point to count as YOUR " +
                 "grave when it is looted or emptied. Guards against another player's grave " +
@@ -230,12 +256,31 @@ namespace NoVikingLeftBehind
             GraveCompassHud.Offset = new Vector2(_compassOffsetX.Value, _compassOffsetY.Value);
             GraveCompassHud.ArrowChar = string.IsNullOrEmpty(_compassArrow.Value) ? "^" : _compassArrow.Value;
             GraveCompassHud.ArrowScale = _compassArrowScale.Value;
+            GraveCompassHud.EdgeMode = !string.Equals(_compassMode.Value, "Fixed",
+                                                      StringComparison.OrdinalIgnoreCase);
+            GraveCompassHud.EdgeMargin = Mathf.Max(0f, _compassEdgeMargin.Value);
+            _clearKey = ParseKey(_clearGraveKey.Value);
+        }
+
+        /// <summary>KeyCode name -> KeyCode; an unparsable name disables the hotkey rather than throwing.</summary>
+        private static KeyCode ParseKey(string s)
+        {
+            if (string.IsNullOrEmpty(s)) return KeyCode.None;
+            try { return (KeyCode)Enum.Parse(typeof(KeyCode), s.Trim(), true); }
+            catch
+            {
+                Log.LogWarning("[CorpseRun] ClearGraveKey = '" + s + "' is not a UnityEngine.KeyCode " +
+                               "name - the hold-to-dismiss hotkey is off.");
+                return KeyCode.None;
+            }
         }
 
         private string Numbers()
         {
-            return "compass=" + _compassEnabled.Value + "(hide<" + _compassHideDistance.Value +
-                   "m every " + _compassUpdateSec.Value + "s)" +
+            return "compass=" + _compassEnabled.Value + "(" + _compassMode.Value + " margin " +
+                   _compassEdgeMargin.Value + "px, hide<" + _compassHideDistance.Value +
+                   "m every " + _compassUpdateSec.Value + "s, dismiss=hold " + _clearKey + " " +
+                   _clearGraveHoldSec.Value + "s)" +
                    " food=" + _respawnFoodEnabled.Value + "(" + _respawnFoods.Value + " x" +
                    _respawnFoodCount.Value + ")" +
                    " rested=" + _respawnRestedEnabled.Value + "(" + _restedMinutes.Value + "min)" +
@@ -746,15 +791,22 @@ namespace NoVikingLeftBehind
             }
 
             // --- compass ---
+            // An edge waypoint has to follow the camera, so it is refreshed every frame; the
+            // CompassUpdateSec throttle still governs the fixed-position mode, where nothing moves
+            // between ticks anyway. Show() is a projection and a few assignments - no allocation.
+            bool wantCompass = c._compassEnabled.Value && dist >= 0f && dist > c._compassHideDistance.Value;
             _compassAcc += dt;
             float cEvery = c._compassUpdateSec.Value < 0.05f ? 0.05f : c._compassUpdateSec.Value;
-            if (_compassAcc >= cEvery)
+            bool due = _compassAcc >= cEvery;
+            if (due) _compassAcc = 0f;
+
+            // --- hold-to-dismiss (must run before Show, it writes the hint line) ---
+            UpdateClearHold(me, dt, wantCompass);
+
+            if (GraveCompassHud.EdgeMode || due)
             {
-                _compassAcc = 0f;
-                if (c._compassEnabled.Value && dist >= 0f && dist > c._compassHideDistance.Value)
-                    GraveCompassHud.Show(me, _grave, dist);
-                else
-                    GraveCompassHud.Hide();
+                if (wantCompass) GraveCompassHud.Show(me, _grave, dist);
+                else GraveCompassHud.Hide();
             }
 
             // --- grave pull ---
@@ -764,6 +816,55 @@ namespace NoVikingLeftBehind
             {
                 _pullAcc = 0f;
                 UpdatePull(me, dist);
+            }
+        }
+
+        /// <summary>
+        /// HOLD ClearGraveKey (default Delete) for ClearGraveHoldSec to dismiss the grave marker and
+        /// Grave Pull - the console-free version of nvlb.grave.clear, because a grave you can no
+        /// longer reach otherwise follows you around until you die again.
+        ///
+        /// It is a HOLD, not a press, so a stray key cannot cost you your grave, and it is gated on
+        /// the same chat/console/menu/map checks as the DualPowers hotkey (ZInput.GetKey reads the
+        /// raw device and knows nothing about the UI on its own). The compass carries the prompt and
+        /// the progress, so the feature is discoverable exactly when it is useful.
+        /// </summary>
+        private static void UpdateClearHold(Player me, float dt, bool compassShown)
+        {
+            var c = _inst;
+            if (!compassShown || _clearKey == KeyCode.None || !_haveGrave || _looted)
+            {
+                _clearHeld = 0f;
+                GraveCompassHud.SetHint("");
+                return;
+            }
+
+            if (!DualPowersModule.InputAllowed(me))
+            {
+                _clearHeld = 0f;
+                GraveCompassHud.SetHint("Hold " + _clearKey + " to dismiss grave");
+                return;
+            }
+
+            float need = c._clearGraveHoldSec.Value < 0.1f ? 0.1f : c._clearGraveHoldSec.Value;
+            if (ZInput.GetKey(_clearKey, false))
+            {
+                _clearHeld += dt;
+                if (_clearHeld >= need)
+                {
+                    _clearHeld = 0f;
+                    GraveCompassHud.SetHint("");
+                    ClearCommand(null);                       // the same path as nvlb.grave.clear
+                    me.Message(MessageHud.MessageType.Center, "Grave marker cleared");
+                    return;
+                }
+                GraveCompassHud.SetHint("Dismissing grave... " +
+                                        Mathf.RoundToInt(Mathf.Clamp01(_clearHeld / need) * 100f) + "%");
+            }
+            else
+            {
+                _clearHeld = 0f;
+                GraveCompassHud.SetHint("Hold " + _clearKey + " to dismiss grave");
             }
         }
 
