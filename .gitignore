@@ -1,0 +1,9 @@
+bin/
+obj/
+*.user
+.vs/
+dist/
+lib/
+depot-cache/
+*.suo
+.idea/

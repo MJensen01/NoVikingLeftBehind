@@ -1,0 +1,20 @@
+# Thunderstore CLI (tcli) config. Verified 2026-09-06 against the tcli wiki: [general]/[publish] keys
+# (repository, communities, categories) are read by `tcli publish`; namespace/name/version are passed
+# explicitly by release.yml. Categories are left unset on purpose — set them on the Thunderstore
+# website after the first upload (editable any time; names are not).
+#
+# Thunderstore team/namespace: "Nosferatu" (FINAL, decided 2026-09-06). Package namespace == team
+# name, and both the package name and the namespace are immutable once the first version is
+# uploaded (wiki.thunderstore.io/mods/updating-a-package).
+
+[package]
+namespace = "Nosferatu"
+name = "NoVikingLeftBehind"
+
+[build]
+icon = "thunderstore/icon.png"
+readme = "thunderstore/README.md"
+
+[publish]
+repository = "https://thunderstore.io"
+communities = ["valheim"]

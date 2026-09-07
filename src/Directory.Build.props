@@ -1,0 +1,136 @@
+<Project>
+  <!--
+    Shared build settings for every project under src/. This file must work in two
+    environments without edits:
+
+      1. The box lab (shroom-pi:/opt/modlab) — `scripts/sync-to-lab.sh` copies this whole
+         src/ tree to /opt/modlab/src/, so THIS file (being the nearest Directory.Build.props
+         to each .csproj) is what the lab's `./build.sh` actually builds against, not the
+         lab's own top-level /opt/modlab/Directory.Build.props. The lab's build.sh bind-mounts
+         the test server's game + BepInEx install at /game inside the container, which is why
+         that path is the default below.
+
+      2. Any machine with a real Valheim install and the .NET SDK — set the VALHEIM_MANAGED
+         (and optionally VALHEIM_BEPINEX_CORE) environment variables, or pass
+         -p:ValheimManagedDir=... -p:BepInExCoreDir=... to `dotnet build`.
+
+    CI (.github/workflows/build.yml) downloads the game assemblies + BepInEx core into a
+    flat lib/ directory and passes both properties explicitly.
+
+    Split from the combined valheim-mods repo 2026-09-07; this file now serves only
+    NoVikingLeftBehind (src/).
+  -->
+  <PropertyGroup>
+    <ValheimManagedDir Condition="'$(ValheimManagedDir)' == '' and '$(VALHEIM_MANAGED)' != ''">$(VALHEIM_MANAGED)</ValheimManagedDir>
+    <ValheimManagedDir Condition="'$(ValheimManagedDir)' == ''">/game/valheim_server_Data/Managed</ValheimManagedDir>
+
+    <BepInExCoreDir Condition="'$(BepInExCoreDir)' == '' and '$(VALHEIM_BEPINEX_CORE)' != ''">$(VALHEIM_BEPINEX_CORE)</BepInExCoreDir>
+    <BepInExCoreDir Condition="'$(BepInExCoreDir)' == ''">/game/BepInEx/core</BepInExCoreDir>
+
+    <TargetFramework Condition="'$(TargetFramework)' == '' and '$(TargetFrameworks)' == ''">net472</TargetFramework>
+    <LangVersion>latest</LangVersion>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+    <Configuration Condition="'$(Configuration)' == ''">Release</Configuration>
+    <DebugType>none</DebugType>
+    <DebugSymbols>false</DebugSymbols>
+    <ProduceReferenceAssembly>false</ProduceReferenceAssembly>
+    <CopyLocalLockFileAssemblies>false</CopyLocalLockFileAssemblies>
+    <NoWarn>$(NoWarn);CS0618;CS0649;CS0169;CS1591;MSB3277;NU1701</NoWarn>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!-- net472 reference assemblies, so a Linux SDK container (no .NET Framework installed) can
+         still target net472. Harmless, and required, on Windows too. -->
+    <PackageReference Include="Microsoft.NETFramework.ReferenceAssemblies" Version="1.0.3" PrivateAssets="all" />
+    <!-- Rewrites referenced game assemblies so private/internal members are visible
+         (Publicize="true" below). Keep this — several modules patch private methods/fields
+         (see src/Modules/**) and rely on it at compile time. -->
+    <PackageReference Include="BepInEx.AssemblyPublicizer.MSBuild" Version="0.4.1" PrivateAssets="all" />
+  </ItemGroup>
+
+  <!-- Shared game / BepInEx references. A project can opt out with <SkipValheimRefs>true</SkipValheimRefs>
+       set in its own .csproj BEFORE this file would otherwise apply (i.e. it only matters for
+       projects added later; both NoVikingLeftBehind and SmoothServer use these refs). -->
+  <ItemGroup Condition="'$(SkipValheimRefs)' != 'true'">
+    <Reference Include="assembly_valheim">
+      <HintPath>$(ValheimManagedDir)/assembly_valheim.dll</HintPath>
+      <Private>false</Private>
+      <Publicize>true</Publicize>
+    </Reference>
+    <Reference Include="assembly_utils">
+      <HintPath>$(ValheimManagedDir)/assembly_utils.dll</HintPath>
+      <Private>false</Private>
+      <Publicize>true</Publicize>
+    </Reference>
+    <Reference Include="assembly_guiutils">
+      <HintPath>$(ValheimManagedDir)/assembly_guiutils.dll</HintPath>
+      <Private>false</Private>
+      <Publicize>true</Publicize>
+    </Reference>
+    <Reference Include="assembly_postprocessing">
+      <HintPath>$(ValheimManagedDir)/assembly_postprocessing.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="com.rlabrecque.steamworks.net">
+      <HintPath>$(ValheimManagedDir)/com.rlabrecque.steamworks.net.dll</HintPath>
+      <Private>false</Private>
+      <Publicize>true</Publicize>
+    </Reference>
+    <Reference Include="assembly_googleanalytics">
+      <HintPath>$(ValheimManagedDir)/assembly_googleanalytics.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="UnityEngine">
+      <HintPath>$(ValheimManagedDir)/UnityEngine.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="UnityEngine.CoreModule">
+      <HintPath>$(ValheimManagedDir)/UnityEngine.CoreModule.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="UnityEngine.PhysicsModule">
+      <HintPath>$(ValheimManagedDir)/UnityEngine.PhysicsModule.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="UnityEngine.AnimationModule">
+      <HintPath>$(ValheimManagedDir)/UnityEngine.AnimationModule.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="UnityEngine.IMGUIModule">
+      <HintPath>$(ValheimManagedDir)/UnityEngine.IMGUIModule.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="UnityEngine.InputLegacyModule">
+      <HintPath>$(ValheimManagedDir)/UnityEngine.InputLegacyModule.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="UnityEngine.UI">
+      <HintPath>$(ValheimManagedDir)/UnityEngine.UI.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="UnityEngine.UIModule">
+      <HintPath>$(ValheimManagedDir)/UnityEngine.UIModule.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="UnityEngine.UnityWebRequestModule">
+      <HintPath>$(ValheimManagedDir)/UnityEngine.UnityWebRequestModule.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="BepInEx">
+      <HintPath>$(BepInExCoreDir)/BepInEx.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="0Harmony">
+      <HintPath>$(BepInExCoreDir)/0Harmony.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="BepInEx.Harmony">
+      <HintPath>$(BepInExCoreDir)/BepInEx.Harmony.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="Mono.Cecil">
+      <HintPath>$(BepInExCoreDir)/Mono.Cecil.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+  </ItemGroup>
+</Project>

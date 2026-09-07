@@ -1,0 +1,76 @@
+name: build
+
+on:
+  push:
+    branches: ['**']
+  pull_request:
+  workflow_dispatch:
+  workflow_call: {}   # so release.yml can reuse this exact build instead of duplicating it
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '8.0.x'
+
+      # Live Valheim dedicated-server build id (app 896660), used only to key the assembly
+      # cache so a game update busts it automatically. api.steamcmd.net verified live during
+      # research (BUILD-PIPELINE.md §5); this specific JSON path is the same one used there.
+      - name: Get live Valheim server buildid
+        id: buildid
+        run: |
+          BUILDID=$(curl -s https://api.steamcmd.net/v1/info/896660 | jq -r '.data."896660".depots.branches.public.buildid')
+          echo "buildid=$BUILDID" >> "$GITHUB_OUTPUT"
+
+      - uses: actions/cache@v4
+        id: cache
+        with:
+          path: lib/
+          key: gamelibs-${{ steps.buildid.outputs.buildid }}
+
+      # DepotDownloader: anonymous Steam login, app 896660 depot 896661 (Linux dedicated server CONTENT; 1004/1005/1006 are only the Steam runtime redist — first CI run proved that).
+      # Verified in BUILD-PIPELINE.md §2 this session; re-check `-branch` / auth requirements
+      # around the 1.0 launch (2026-09-09) per that doc's caveats.
+      - name: Fetch game assemblies + BepInEx core
+        if: steps.cache.outputs.cache-hit != 'true'
+        run: |
+          set -euo pipefail
+          mkdir -p lib depot-cache
+
+          curl -sL https://github.com/SteamRE/DepotDownloader/releases/latest/download/DepotDownloader-linux-x64.zip -o dd.zip
+          unzip -q dd.zip -d dd
+          chmod +x dd/DepotDownloader
+          ./dd/DepotDownloader -app 896660 -depot 896661 -os linux -dir ./depot-cache -validate
+
+          MANAGED="depot-cache/valheim_server_Data/Managed"
+          # Every reference src/Directory.Build.props asks for. UNVERIFIED: Unity.TextMeshPro
+          # (needed by NoVikingLeftBehind's ServerSync popup) has not been confirmed present in the
+          # DEDICATED SERVER Managed dir specifically (only observed in the box lab, which
+          # mounts the same tree) — if this cp fails, pull it from the Windows/client depot
+          # (1004) instead and adjust this step.
+          cp "$MANAGED"/{assembly_valheim,assembly_utils,assembly_guiutils,assembly_postprocessing,assembly_googleanalytics}.dll lib/
+          cp "$MANAGED"/com.rlabrecque.steamworks.net.dll lib/
+          cp "$MANAGED"/UnityEngine{,.CoreModule,.PhysicsModule,.AnimationModule,.IMGUIModule,.InputLegacyModule,.UI,.UIModule,.UnityWebRequestModule}.dll lib/
+          cp "$MANAGED"/Unity.TextMeshPro.dll lib/
+
+          curl -sL "https://thunderstore.io/package/download/denikson/BepInExPack_Valheim/5.4.2333/" -o bie.zip
+          unzip -q bie.zip -d bie
+          cp bie/BepInExPack_Valheim/BepInEx/core/{BepInEx,0Harmony,BepInEx.Harmony,Mono.Cecil}.dll lib/
+
+          rm -rf depot-cache dd.zip dd bie.zip bie
+
+      - name: Build NoVikingLeftBehind
+        run: dotnet build src -c Release -p:ValheimManagedDir="${{ github.workspace }}/lib" -p:BepInExCoreDir="${{ github.workspace }}/lib"
+
+      - name: Assemble Thunderstore package
+        run: python3 scripts/package.py
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: thunderstore-packages
+          path: dist/*.zip
+          if-no-files-found: error

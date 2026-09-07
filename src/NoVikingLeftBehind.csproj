@@ -1,0 +1,30 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <AssemblyName>NoVikingLeftBehind</AssemblyName>
+    <RootNamespace>NoVikingLeftBehind</RootNamespace>
+    <Version>0.3.0</Version>
+    <OutputPath>bin/</OutputPath>
+    <AppendTargetFrameworkToOutputPath>false</AppendTargetFrameworkToOutputPath>
+    <!-- Vendor/ServerSync.cs is written with nullable reference annotations.
+         "annotations" turns the syntax on without turning the analysis warnings on,
+         so our own code stays plain C# and the build is warning-free. -->
+    <Nullable>annotations</Nullable>
+    <!-- This repo's src/Directory.Build.props calls the game-assembly dir ValheimManagedDir;
+         the box lab's own /opt/modlab/Directory.Build.props calls it ValheimManaged. The
+         nearest Directory.Build.props has already been imported by the time this runs, so
+         this line makes the same csproj build unchanged in both places. -->
+    <ValheimManagedDir Condition="'$(ValheimManagedDir)' == ''">$(ValheimManaged)</ValheimManagedDir>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!-- Needed by Vendor/ServerSync.cs (deflate-compressed config packages, [OnDeserialized]). -->
+    <Reference Include="System.IO.Compression" />
+    <Reference Include="System.Runtime.Serialization" />
+    <!-- ServerSync's version-mismatch popup writes into a TMP_Text. JetBrains' [PublicAPI] /
+         [UsedImplicitly] need no reference: Unity ships them inside UnityEngine.CoreModule. -->
+    <Reference Include="Unity.TextMeshPro">
+      <HintPath>$(ValheimManagedDir)/Unity.TextMeshPro.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+  </ItemGroup>
+</Project>

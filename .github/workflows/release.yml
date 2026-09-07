@@ -1,0 +1,74 @@
+name: release
+
+permissions:
+  contents: write   # gh release create needs write; the default GITHUB_TOKEN is read-only on new repos
+
+on:
+  push:
+    tags: ['v*']
+
+jobs:
+  build:
+    uses: ./.github/workflows/build.yml   # same build+package steps as every push; see build.yml
+
+  publish:
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4   # only for CHANGELOG/README context if a future step needs it
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: thunderstore-packages
+          path: dist
+
+      - name: Create GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          gh release create "${{ github.ref_name }}" dist/*.zip \
+            --title "${{ github.ref_name }}" \
+            --generate-notes
+
+      # Verified 2026-09-06 against the tcli wiki (github.com/thunderstore-io/thunderstore-cli/wiki):
+      # token = env TCLI_AUTH_TOKEN (or --token); `publish --file` takes --package-namespace/--package-name/
+      # --package-version explicitly, so two packages can share one thunderstore.toml (repository + communities).
+      - name: Publish to Thunderstore
+        env:
+          TCLI_AUTH_TOKEN: ${{ secrets.TCLI_AUTH_TOKEN }}
+        run: |
+          set -euo pipefail
+          dotnet tool install -g tcli
+          export PATH="$PATH:$HOME/.dotnet/tools"
+          for zip in dist/*.zip; do
+            base="$(basename "$zip" .zip)"      # e.g. NoVikingLeftBehind-0.3.0
+            version="${base##*-}"               # e.g. 0.3.0
+            name="${base%-*}"                   # e.g. NoVikingLeftBehind
+            echo "Publishing $zip ($name $version)"
+            # tcli: --file cannot be combined with --package-* flags (they are read from the config),
+            # so write a per-package config. Description/website come from the zip's manifest.json.
+            cat > "tcli-$name.toml" <<EOF
+          [config]
+          schemaVersion = "0.0.1"
+
+          [package]
+          namespace = "Nosferatu"
+          name = "$name"
+          versionNumber = "$version"
+          description = "see manifest.json"
+          websiteUrl = "https://github.com/MJensen01/NoVikingLeftBehind"
+          containsNsfwContent = false
+
+          [build]
+          icon = "thunderstore/icon.png"
+          readme = "thunderstore/README.md"
+          outdir = "dist"
+
+          [publish]
+          repository = "https://thunderstore.io"
+          communities = ["valheim"]
+          EOF
+            sed -i 's/^          //' "tcli-$name.toml"
+            tcli publish --file "$zip" --config-path "tcli-$name.toml"
+          done
