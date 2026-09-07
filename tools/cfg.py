@@ -8,6 +8,7 @@ Usage:
   cfg.py list <mod> [section]
   cfg.py get <mod> [Section] <Key>
   cfg.py set <mod> <Section.Key|Key> <value> [--server test|live] [--no-wait] [--force] [--dry-run]
+  cfg.py preset ss fastlink|default|custom [--server test|live] [--no-wait] [--dry-run]
   cfg.py diff <mod> [--server test|live]
   cfg.py restore <mod> [backup] [--server test|live]
   cfg.py players [--server test|live]
@@ -498,6 +499,26 @@ def cmd_set(args):
     return 0
 
 
+PRESETS = {"fastlink": "FastLink", "default": "Default", "custom": "Custom"}
+
+
+def cmd_preset(args):
+    """Set [Profiles] Profile -- SmoothServer 0.4.0's whole-mod tuning preset.
+
+    Thin wrapper over `set`: the plugin does the work (it rewrites the keys the
+    profile owns and logs the applied set), so there is nothing to do here but
+    write the one value and let cmd_set confirm the live reload.
+    """
+    name = PRESETS.get(args.name.strip().lower())
+    if name is None:
+        print("error: unknown preset %r -- use one of: %s" %
+              (args.name, ", ".join(sorted(PRESETS))), file=sys.stderr)
+        return 1
+    return cmd_set(argparse.Namespace(
+        mod=args.mod, target="Profiles.Profile", value=name, server=args.server,
+        no_wait=args.no_wait, force=False, dry_run=args.dry_run))
+
+
 def cmd_diff(args):
     mod_key, info = resolve_mod(args.mod)
     server = resolve_server(args.server)
@@ -627,6 +648,14 @@ def build_parser():
     sp.add_argument("--force", action="store_true", help="skip type/range validation")
     sp.add_argument("--dry-run", action="store_true")
     sp.set_defaults(func=cmd_set)
+
+    sp = sub.add_parser("preset", help="set the whole-mod tuning profile (SmoothServer)")
+    sp.add_argument("mod")
+    sp.add_argument("name", help="fastlink | default | custom")
+    sp.add_argument("--server", default="test", choices=["test", "live"])
+    sp.add_argument("--no-wait", action="store_true")
+    sp.add_argument("--dry-run", action="store_true")
+    sp.set_defaults(func=cmd_preset)
 
     sp = sub.add_parser("diff", help="every key whose value != default")
     sp.add_argument("mod")
