@@ -409,6 +409,7 @@ namespace NoVikingLeftBehind
                 case SlotKind.Food: return "Only food fits here. It is eaten automatically when the buff runs out.";
                 case SlotKind.Ammo: return "Only arrows and bolts fit here.";
                 case SlotKind.Quick: return "Anything fits here. Press its key to use it.";
+                case SlotKind.Generic: return "Anything fits here. Plain storage - no hotkey.";
                 case SlotKind.Utility: return "Only utility items fit here - a belt, the Wishbone.";
                 default: return "Only " + slot.Label.ToLowerInvariant() + " armour fits here. It is worn while it sits in the slot.";
             }

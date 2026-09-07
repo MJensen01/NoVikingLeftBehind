@@ -1,5 +1,7 @@
 using System;
+using System.Collections.Generic;
 using System.Reflection;
+using System.Reflection.Emit;
 using System.Text;
 using BepInEx.Configuration;
 using HarmonyLib;
@@ -11,36 +13,43 @@ namespace NoVikingLeftBehind
     /// Eaten food keeps its full health/stamina/eitr contribution until it expires instead of
     /// fading toward the end of its timer.
     ///
-    /// Patch point (0.221.12): postfix on the private <c>Player.UpdateFood(float dt, bool
-    /// forceUpdate)</c>. Vanilla's batch (once <c>m_foodUpdateTimer &gt;= 1f</c>) does, for every
-    /// entry in <c>m_foods</c>:
-    ///   <c>food.m_time -= 1f; f = pow(clamp01(m_time / burnTime), 0.3f);
-    ///      m_health = shared.m_food * f; m_stamina = shared.m_foodStamina * f;
-    ///      m_eitr = shared.m_foodEitr * f;</c>
-    /// then sums all three across <c>m_foods</c> (plus <c>m_baseHP</c>/<c>m_baseStamina</c>) and
-    /// calls <c>SetMaxHealth</c>/<c>SetMaxStamina</c>/<c>SetMaxEitr</c>. Expired foods
-    /// (<c>m_time &lt;= 0</c>) are removed from <c>m_foods</c> by that same vanilla loop before our
-    /// postfix runs, so expiry needs no special handling here - we simply never see them again.
+    /// HOW (0.4.2 - this changed): a TRANSPILER on the private <c>Player.UpdateFood(float dt, bool
+    /// forceUpdate)</c> that replaces vanilla's decay curve at the source. Vanilla's per-second
+    /// batch is (0.221.12 decompile, Player.cs:2227):
     ///
-    /// This module re-derives each food's fraction with a (normally identical) exponent, floors it
-    /// at <c>KeepFraction</c>, and raises <c>m_health</c>/<c>m_stamina</c>/<c>m_eitr</c> up to that
-    /// floor - i.e. <c>max(vanilla, shared * KeepFraction)</c>, exactly as specced. It never lowers
-    /// a value below what vanilla computed. Totals are then re-summed and re-pushed through
-    /// <c>SetMaxHealth</c>/<c>SetMaxStamina</c>/<c>SetMaxEitr</c> so max HP tracks the boosted
-    /// values (<c>GetTotalFoodValue</c> just sums the same fields).
+    ///   <c>food.m_time -= 1f;
+    ///      float f = Mathf.Clamp01(food.m_time / burnTime);
+    ///      f = Mathf.Pow(f, 0.3f);                                  &lt;-- the one call we swap
+    ///      food.m_health = shared.m_food * f; ... m_stamina ... m_eitr ...
+    ///      if (m_time &lt;= 0) { message; m_foods.Remove(food); break; }
+    ///      GetTotalFoodValue(...); SetMaxHealth(hp, true); SetMaxStamina(..); SetMaxEitr(..);</c>
     ///
-    /// <c>GetBaseFoodHP()</c> and <c>m_baseHP</c>/<c>m_baseStamina</c> are the same field
-    /// (<c>Player.GetBaseFoodHP()</c> is a public getter for the private <c>m_baseHP</c>;
-    /// <c>m_baseStamina</c> is a public field). <c>SetMaxEitr</c> is private, so it is invoked via a
-    /// cached <c>MethodInfo</c> rather than patched directly (no reason to control-flow it).
+    /// The transpiler swaps that single <c>call Mathf.Pow(float,float)</c> for
+    /// <see cref="DecayFraction"/>, which returns <c>max(pow(frac, CurveExponent), KeepFraction)</c>.
+    /// Everything else - the timer, the -1s decrement, expiry removal and message, the totals, the
+    /// exact cadence of SetMaxHealth/SetMaxStamina/SetMaxEitr - is untouched vanilla code, so the
+    /// module is behaviourally identical to vanilla except for the fraction itself.
     ///
-    /// Hud.UpdateFood(Player) (decompiled) confirms the food-bar icons only ever render
-    /// <c>food.m_time</c> (remaining seconds/minutes text) and <c>food.CanEatAgain()</c> (itself
-    /// only a function of <c>m_time</c> vs. half of <c>m_foodBurnTime</c>) - never
-    /// <c>m_health</c>/<c>m_stamina</c>/<c>m_eitr</c>. The bar's overall length comes from
-    /// <c>player.GetMaxHealth()</c>, which *does* track our boosted totals via SetMaxHealth. So：
-    /// each food icon keeps counting down real time exactly as vanilla (no UI lie about "time
-    /// left") while the health/stamina/eitr bars correctly reflect the undecayed values.
+    /// WHY it changed (0.4.1 bug, reported from a real client): the old implementation was a
+    /// POSTFIX. Vanilla lowered each food's value and pushed the lowered totals through
+    /// SetMaxHealth/SetMaxStamina/SetMaxEitr; the postfix then raised them and pushed the raised
+    /// totals through the same three setters again, once per second, forever. Player.SetMaxHealth
+    /// (Player.cs:5700) and its siblings call <c>Hud.instance.FlashHealthBar()</c> /
+    /// <c>StaminaBarUppgradeFlash()</c> / <c>EitrBarUppgradeFlash()</c> whenever the new max is
+    /// GREATER than the current one - which, after vanilla had just lowered it, was true on every
+    /// single tick. That is exactly the "bars constantly pulse, lowering and filling up" Matt saw:
+    /// a max value oscillating within one frame, plus an upgrade flash every second. With the
+    /// decay removed at the source the totals never move, <c>health &gt; GetMaxHealth()</c> is
+    /// false, and the bars are static.
+    ///
+    /// The food ICONS pulse for a different, purely cosmetic reason, in Hud.UpdateFood
+    /// (Hud.decompiled.cs:890): the icon alpha is driven by <c>0.7 + sin(Time.time * 5) * 0.3</c>
+    /// whenever <c>food.CanEatAgain()</c> (i.e. <c>m_time &lt; burnTime / 2</c>), and the remaining
+    /// time text by <c>0.4 + sin(Time.time * 10) * 0.6</c> whenever <c>m_time &lt; 60</c>. Neither
+    /// reads m_health/m_stamina/m_eitr, so the transpiler cannot quiet them; <see cref="HidePulse"/>
+    /// does, with a postfix that paints both back to solid white while the food still has time
+    /// left. <c>PulseBelowSeconds</c> (default 0 = never) keeps the vanilla pulse as a genuine
+    /// "about to run out" warning below that many seconds.
     /// </summary>
     internal sealed class FoodNoDecayModule : FeatureModule
     {
@@ -48,9 +57,9 @@ namespace NoVikingLeftBehind
 
         /// <summary>
         /// Normally Client (the shipping default). Setting the machine-local [Food] SelfTest = true
-        /// flips this to Both so the headless test server (0 players) can prove ObjectDB lookup and
-        /// the recompute maths on its own - the postfix itself still gates on ClientActive() and
-        /// stays inert there. Safe to key off the config value: Plugin.Awake calls Configure()
+        /// flips this to Both so the headless test server (0 players) can prove the ObjectDB lookup
+        /// and the fraction maths on its own - the patches themselves still gate on ClientActive()
+        /// and stay inert there. Safe to key off the config value: Plugin.Awake calls Configure()
         /// (which runs Bind()) before TryEnable() reads Side. Same trick as VanguardShadow (§13.3).
         /// </summary>
         public override ModuleSide Side => _selfTest != null && _selfTest.Value ? ModuleSide.Both : ModuleSide.Client;
@@ -59,9 +68,20 @@ namespace NoVikingLeftBehind
 
         private static ConfigEntry<float> _keepFraction;
         private static ConfigEntry<float> _curveExponent;
+        private static ConfigEntry<bool> _hidePulse;
+        private static ConfigEntry<float> _pulseBelowSeconds;
         private static ConfigEntry<bool> _selfTest;
         private static FoodNoDecayModule _self;
-        private static MethodInfo _setMaxEitr;
+
+        /// <summary>
+        /// True only while the local player's own UpdateFood is on the stack. The transpiled call
+        /// site cannot see `this`, so the prefix records it instead - Unity runs all of this on one
+        /// thread and UpdateFood is not re-entrant, so this is exact.
+        /// </summary>
+        private static bool _localTick;
+
+        /// <summary>HidePulse gives up after three consecutive HUD failures rather than spamming.</summary>
+        private static int _pulseErrors;
 
         private static bool Live()
         {
@@ -79,25 +99,38 @@ namespace NoVikingLeftBehind
                 "further towards 0.5 like vanilla. 0.0 = vanilla behaviour, unchanged.");
 
             _curveExponent = BindSynced("CurveExponent", 0.3f,
-                "Exponent used to re-derive the vanilla decay fraction from remaining-time / " +
-                "burn-time before the KeepFraction floor is applied. Leave at 0.3 (vanilla's own " +
-                "curve) unless you specifically want a different decay shape for the portion below " +
-                "KeepFraction.");
+                "Exponent used for the vanilla decay curve before the KeepFraction floor is " +
+                "applied. Leave at 0.3 (vanilla's own curve) unless you specifically want a " +
+                "different decay shape for the portion below KeepFraction.");
+
+            _hidePulse = BindSynced("HidePulse", true,
+                "Stop the food icons and their timers flashing in the HUD. Vanilla pulses an " +
+                "icon once the food is past half its timer and flashes its countdown under a " +
+                "minute; with decay removed that flashing is telling you about a decay that no " +
+                "longer happens. See PulseBelowSeconds to keep it as a last-seconds warning.");
+
+            _pulseBelowSeconds = BindSynced("PulseBelowSeconds", 0f,
+                "When HidePulse is on, still let a food icon pulse once it has fewer than this " +
+                "many seconds left, as an 'about to run out' warning. 0 (default) = never pulse.");
 
             _selfTest = BindLocal("SelfTest", false,
                 "Local debug only, not synced. When true, on (re)load and on Enabled toggling logs " +
-                "a comparison of vanilla-decayed vs. kept food values for CookedMeat at 10% of its " +
-                "burn time, via ObjectDB. Leave false in normal play.");
+                "the decay fraction across three consecutive simulated ticks for CookedMeat, " +
+                "asserting it does not move. Leave false in normal play.");
         }
 
         protected override void ApplyPatches()
         {
             var update = AccessTools.Method(typeof(Player), "UpdateFood", new[] { typeof(float), typeof(bool) });
             if (update == null) throw new Exception("Player.UpdateFood(float,bool) not found");
-            Harmony.Patch(update, postfix: new HarmonyMethod(typeof(FoodNoDecayModule), nameof(UpdateFoodPost)));
+            Harmony.Patch(update,
+                prefix: new HarmonyMethod(typeof(FoodNoDecayModule), nameof(UpdateFoodPre)),
+                postfix: new HarmonyMethod(typeof(FoodNoDecayModule), nameof(UpdateFoodPost)),
+                transpiler: new HarmonyMethod(typeof(FoodNoDecayModule), nameof(UpdateFoodTranspiler)));
 
-            _setMaxEitr = AccessTools.Method(typeof(Player), "SetMaxEitr", new[] { typeof(float), typeof(bool) });
-            if (_setMaxEitr == null) throw new Exception("Player.SetMaxEitr(float,bool) not found");
+            var hudFood = AccessTools.Method(typeof(Hud), "UpdateFood", new[] { typeof(Player) });
+            if (hudFood == null) throw new Exception("Hud.UpdateFood(Player) not found");
+            Harmony.Patch(hudFood, postfix: new HarmonyMethod(typeof(FoodNoDecayModule), nameof(HudFoodPost)));
 
             // ObjectDB.instance is still null at plugin Awake (this method runs from there), so
             // SelfTest cannot run yet even if enabled. Only when SelfTest is on do we additionally
@@ -124,58 +157,119 @@ namespace NoVikingLeftBehind
             catch (Exception e) { Log.LogWarning("[FoodNoDecay] SelfTest threw: " + e); }
         }
 
-        // ---- the recompute ------------------------------------------------------------------------
+        // ---- the decay curve, replaced at the source ------------------------------------------------
 
         /// <summary>
-        /// Re-derives one food's fraction-of-full value and floors it at KeepFraction. Pure
-        /// function of config + the food's own fields, shared by the live postfix and SelfTest so
-        /// they can never disagree.
+        /// The fraction-of-full value a food is worth, given how much of its burn time is left.
+        /// Pure function of config; shared by the live call site and SelfTest so they can never
+        /// disagree. <c>frac</c> is vanilla's own <c>Clamp01(m_time / m_foodBurnTime)</c>.
         /// </summary>
-        private static void RecomputeFood(Player.Food food, out float health, out float stamina, out float eitr)
+        internal static float Fraction(float frac)
         {
-            var shared = food.m_item.m_shared;
-            float burn = shared.m_foodBurnTime;
-            float frac = burn > 0f ? Mathf.Clamp01(food.m_time / burn) : 0f;
             float curved = Mathf.Pow(frac, _curveExponent != null ? _curveExponent.Value : 0.3f);
             float floor = Mathf.Clamp01(_keepFraction != null ? _keepFraction.Value : 1f);
-            float eff = Mathf.Max(curved, floor);
-            health = shared.m_food * eff;
-            stamina = shared.m_foodStamina * eff;
-            eitr = shared.m_foodEitr * eff;
+            return Mathf.Max(curved, floor);
         }
 
-        private static void UpdateFoodPost(Player __instance)
+        /// <summary>
+        /// Drop-in replacement for the <c>Mathf.Pow(f, 0.3f)</c> inside Player.UpdateFood. When the
+        /// module is inactive - or this is somehow not the local player's tick - it IS
+        /// <c>Mathf.Pow</c>, byte for byte, so an inert module leaves vanilla exactly as it was.
+        /// </summary>
+        public static float DecayFraction(float frac, float vanillaExponent)
         {
-            if (!Live() || __instance != Player.m_localPlayer) return;
+            if (!_localTick || !Live()) return Mathf.Pow(frac, vanillaExponent);
+            return Fraction(frac);
+        }
 
-            var foods = __instance.GetFoods();
-            if (foods == null || foods.Count == 0) return;
+        private static void UpdateFoodPre(Player __instance)
+        {
+            _localTick = __instance != null && __instance == Player.m_localPlayer;
+        }
 
-            bool changed = false;
-            foreach (var food in foods)
+        private static void UpdateFoodPost()
+        {
+            _localTick = false;
+        }
+
+        /// <summary>
+        /// Swap the single <c>call Mathf.Pow(float32, float32)</c> in Player.UpdateFood for
+        /// <see cref="DecayFraction"/>. Same signature, same stack shape, so nothing else in the
+        /// method body moves. Exactly one match is required: a game update that adds or removes a
+        /// Pow call here must fail loudly (the module reports FAILED in the summary) rather than
+        /// silently patch the wrong maths.
+        /// </summary>
+        private static IEnumerable<CodeInstruction> UpdateFoodTranspiler(IEnumerable<CodeInstruction> instructions)
+        {
+            var mine = AccessTools.Method(typeof(FoodNoDecayModule), nameof(DecayFraction));
+            if (mine == null) throw new Exception("FoodNoDecayModule.DecayFraction not found");
+
+            var code = new List<CodeInstruction>(instructions);
+            int hits = 0;
+            for (int i = 0; i < code.Count; i++)
             {
-                if (food == null || food.m_item == null || food.m_item.m_shared == null) continue;
-                if (food.m_time <= 0f) continue; // vanilla already removed it from m_foods otherwise
-
-                RecomputeFood(food, out var h, out var s, out var e);
-                if (h > food.m_health) { food.m_health = h; changed = true; }
-                if (s > food.m_stamina) { food.m_stamina = s; changed = true; }
-                if (e > food.m_eitr) { food.m_eitr = e; changed = true; }
+                if (code[i].opcode != OpCodes.Call) continue;
+                // Matched by declaring type + name + signature rather than by MethodInfo identity:
+                // the operand handed to a transpiler comes from reading the IL, and need not be the
+                // same object AccessTools.Method would hand back.
+                var mi = code[i].operand as MethodInfo;
+                if (mi == null || mi.DeclaringType != typeof(Mathf) || mi.Name != "Pow") continue;
+                var ps = mi.GetParameters();
+                if (ps.Length != 2 || ps[0].ParameterType != typeof(float) || ps[1].ParameterType != typeof(float)) continue;
+                code[i].operand = mine;
+                hits++;
             }
-            if (!changed) return;
+            if (hits != 1)
+                throw new Exception("Player.UpdateFood: expected exactly 1 Mathf.Pow call to replace, found " + hits);
 
-            float hp = __instance.GetBaseFoodHP();
-            float stamina2 = __instance.m_baseStamina;
-            float eitr2 = 0f;
-            foreach (var food in foods)
+            Log.LogInfo("[FoodNoDecay] UpdateFood decay curve replaced (1 call site)");
+            return code;
+        }
+
+        // ---- the HUD pulse ---------------------------------------------------------------------------
+
+        /// <summary>
+        /// Postfix for Hud.UpdateFood(Player). Vanilla has just written a sine-wave alpha into the
+        /// food icon (<c>0.7 + sin(t*5)*0.3</c> when <c>CanEatAgain()</c>, i.e. past half the
+        /// timer) and into the countdown text (<c>0.4 + sin(t*10)*0.6</c> under a minute). Both are
+        /// pure functions of m_time, so the only way to quiet them is to paint over the result.
+        /// Everything else the HUD does with food - icon sprite, the bar widths, the countdown text
+        /// itself - is left alone.
+        /// </summary>
+        private static void HudFoodPost(Hud __instance, Player player)
+        {
+            if (!Live() || _hidePulse == null || !_hidePulse.Value || _pulseErrors >= 3) return;
+            if (__instance == null || player == null) return;
+            if (__instance.m_foodIcons == null || __instance.m_foodTime == null) return;
+
+            try
             {
-                hp += food.m_health;
-                stamina2 += food.m_stamina;
-                eitr2 += food.m_eitr;
+                var foods = player.GetFoods();
+                if (foods == null) return;
+                float warnBelow = _pulseBelowSeconds != null ? _pulseBelowSeconds.Value : 0f;
+
+                int n = Mathf.Min(__instance.m_foodIcons.Length, __instance.m_foodTime.Length);
+                for (int i = 0; i < n && i < foods.Count; i++)
+                {
+                    var food = foods[i];
+                    if (food == null) continue;
+                    // Below the warning threshold vanilla's flashing is left exactly as it is - that
+                    // is a real "this is about to run out" signal, not a decay indicator.
+                    if (warnBelow > 0f && food.m_time < warnBelow) continue;
+
+                    var icon = __instance.m_foodIcons[i];
+                    if (icon != null) icon.color = Color.white;
+                    var text = __instance.m_foodTime[i];
+                    if (text != null) text.color = Color.white;
+                }
             }
-            __instance.SetMaxHealth(hp, flashBar: true);
-            __instance.SetMaxStamina(stamina2, flashBar: true);
-            if (_setMaxEitr != null) _setMaxEitr.Invoke(__instance, new object[] { eitr2, true });
+            catch (Exception e)
+            {
+                // Never touch the synced config from here - just stop trying after three failures
+                // and leave the vanilla HUD to do whatever it does.
+                if (++_pulseErrors <= 3)
+                    Log.LogWarning("[FoodNoDecay] HidePulse failed (" + _pulseErrors + "/3): " + e.Message);
+            }
         }
 
         // ---- reporting -----------------------------------------------------------------------------
@@ -183,7 +277,9 @@ namespace NoVikingLeftBehind
         private string Numbers()
         {
             return "KeepFraction=" + (_keepFraction != null ? _keepFraction.Value.ToString("0.###") : "?") +
-                   " CurveExponent=" + (_curveExponent != null ? _curveExponent.Value.ToString("0.###") : "?");
+                   " CurveExponent=" + (_curveExponent != null ? _curveExponent.Value.ToString("0.###") : "?") +
+                   " HidePulse=" + (_hidePulse != null && _hidePulse.Value) +
+                   " PulseBelowSeconds=" + (_pulseBelowSeconds != null ? _pulseBelowSeconds.Value.ToString("0.###") : "?");
         }
 
         public override void OnConfigChanged(ConfigEntryBase entry)
@@ -202,15 +298,16 @@ namespace NoVikingLeftBehind
         }
 
         /// <summary>
-        /// Headless proof: builds a fake Food from ObjectDB's CookedMeat prefab with m_time at 10%
-        /// of its burn time, then logs what vanilla would have set vs. what RecomputeFood keeps.
+        /// Headless proof. Takes CookedMeat out of ObjectDB, starts it at 10% of its burn time and
+        /// runs THREE consecutive simulated vanilla ticks (the same `m_time -= 1` + fraction the
+        /// transpiled method now runs), logging what vanilla would have produced against what the
+        /// module produces - and asserting the module's values do not move across the three ticks.
+        /// A moving value is precisely the 0.4.1 bug that made the bars pulse.
         /// </summary>
         internal static string SelfTest()
         {
             var sb = new StringBuilder();
-            sb.Append("[SelfTest][FoodNoDecay] KeepFraction=")
-              .Append(_keepFraction != null ? _keepFraction.Value : -1f)
-              .Append(" CurveExponent=").Append(_curveExponent != null ? _curveExponent.Value : -1f);
+            sb.Append("[SelfTest][FoodNoDecay] ").Append(_self != null ? _self.Numbers() : "(unbound)");
 
             var odb = ObjectDB.instance;
             if (odb == null) { sb.Append("\n  ObjectDB not ready"); return sb.ToString(); }
@@ -232,25 +329,49 @@ namespace NoVikingLeftBehind
                 return sb.ToString();
             }
 
-            var food = new Player.Food { m_item = itemDrop.m_itemData, m_time = shared.m_foodBurnTime * 0.1f };
+            float burn = shared.m_foodBurnTime;
+            float time = burn * 0.1f;
+            sb.Append("\n  CookedMeat burnTime=").Append(burn).Append(" starting at ").Append(time)
+              .Append("s (10% remaining), 3 consecutive 1s ticks:");
 
-            float vanillaFrac = Mathf.Clamp01(food.m_time / shared.m_foodBurnTime);
-            float vanillaCurved = Mathf.Pow(vanillaFrac, 0.3f); // vanilla's own hardcoded exponent
-            float vanillaHealth = shared.m_food * vanillaCurved;
-            float vanillaStamina = shared.m_foodStamina * vanillaCurved;
-            float vanillaEitr = shared.m_foodEitr * vanillaCurved;
+            float firstHealth = 0f, firstStamina = 0f, firstEitr = 0f;
+            bool stable = true;
+            for (int tick = 1; tick <= 3; tick++)
+            {
+                time -= 1f;                                    // exactly what vanilla's loop does
+                float frac = Mathf.Clamp01(time / burn);
 
-            RecomputeFood(food, out var keptHealth, out var keptStamina, out var keptEitr);
-            float finalHealth = Mathf.Max(vanillaHealth, keptHealth);
-            float finalStamina = Mathf.Max(vanillaStamina, keptStamina);
-            float finalEitr = Mathf.Max(vanillaEitr, keptEitr);
+                float vanilla = Mathf.Pow(frac, 0.3f);         // vanilla's own hardcoded exponent
+                float kept = Fraction(frac);                   // what the transpiled call site returns
 
-            sb.Append("\n  CookedMeat burnTime=").Append(shared.m_foodBurnTime)
-              .Append(" atTime=").Append(food.m_time).Append(" (10% remaining)");
-            sb.Append("\n  vanilla-decayed: health=").Append(vanillaHealth)
-              .Append(" stamina=").Append(vanillaStamina).Append(" eitr=").Append(vanillaEitr);
-            sb.Append("\n  kept (post-recompute): health=").Append(finalHealth)
-              .Append(" stamina=").Append(finalStamina).Append(" eitr=").Append(finalEitr);
+                float h = shared.m_food * kept;
+                float s = shared.m_foodStamina * kept;
+                float e = shared.m_foodEitr * kept;
+
+                if (tick == 1) { firstHealth = h; firstStamina = s; firstEitr = e; }
+                else if (h != firstHealth || s != firstStamina || e != firstEitr) stable = false;
+
+                sb.Append("\n    tick ").Append(tick).Append(" t=").Append(time)
+                  .Append("  vanilla f=").Append(vanilla.ToString("0.#####"))
+                  .Append(" -> health=").Append((shared.m_food * vanilla).ToString("0.####"))
+                  .Append("  |  kept f=").Append(kept.ToString("0.#####"))
+                  .Append(" -> health=").Append(h.ToString("0.####"))
+                  .Append(" stamina=").Append(s.ToString("0.####"))
+                  .Append(" eitr=").Append(e.ToString("0.####"));
+            }
+
+            sb.Append("\n  ").Append(stable ? "PASS" : "FAIL")
+              .Append("  the kept values are identical across all 3 ticks (no oscillation, so ")
+              .Append("SetMaxHealth/SetMaxStamina/SetMaxEitr never see a rising max and never flash the bars)");
+
+            // A KeepFraction below 1 must still let vanilla's curve run down to the floor, so prove
+            // the floor is a floor rather than a freeze: at 0% time left the value IS the floor.
+            float floor = Mathf.Clamp01(_keepFraction != null ? _keepFraction.Value : 1f);
+            float atZero = Fraction(0f);
+            sb.Append("\n  ").Append(Mathf.Abs(atZero - floor) < 0.0001f ? "PASS" : "FAIL")
+              .Append("  at 0 time left the fraction is the KeepFraction floor (").Append(atZero.ToString("0.####"))
+              .Append(" vs ").Append(floor.ToString("0.####")).Append(")");
+
             return sb.ToString();
         }
     }

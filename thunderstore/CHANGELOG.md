@@ -1,5 +1,20 @@
 # Changelog — NoVikingLeftBehind
 
+## 0.4.2 (2026-09-07)
+- **FoodNoDecay**: decay is now removed at the source. 0.4.1 let vanilla decay a food and then raised the value back afterwards,
+  which pushed a rising max through `SetMaxHealth`/`SetMaxStamina`/`SetMaxEitr` every second and made the health/stamina bars
+  pulse - lowering and refilling - once a second. The decay curve inside `Player.UpdateFood` is replaced instead, so the values
+  never move and the bars are static. New `[Food] HidePulse` (default on) also stops the food icons and their countdowns
+  flashing in the HUD; `[Food] PulseBelowSeconds` (default 0 = never) can keep the flash as a last-seconds warning.
+- **ExtraSlots**: the bottom row is now two plain storage slots instead of the Z/X/C quick slots - `[Slots] GenericSlots = 2`,
+  `[Slots] QuickSlots = 0`. Anything fits in them, they have no hotkey and no label. The quick-slot code path is untouched:
+  setting `QuickSlots` above 0 brings the hotkey row back. Items saved by 0.4.1 in `quick1`..`quick3` are migrated into the
+  matching generic slots on load, with a log line.
+- **CorpseRunPlus**: grave features only activate after a death in this world; cleared on loot. The compass, Grave Pull and
+  the scaled CorpseRun buff used to key off `PlayerProfile.HaveDeathPoint()`, which vanilla never clears - so an old character
+  joining a new world arrived with the compass already pointing at a death spot from somewhere else. The grave is now recorded
+  by the mod, stamped with the world name, and deleted when the grave is looted or by the new `nvlb.grave.clear` command.
+
 ## 0.4.1 (2026-09-07)
 - **ExtraSlots**: proper side panel UI in the vanilla style, adapted from shudnal's ExtraSlots (public domain); main grid back
   to 4 rows. The extra slots now sit in their own wooden panel beside the inventory window — equipment in columns

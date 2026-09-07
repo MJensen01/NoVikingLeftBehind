@@ -20,14 +20,20 @@ Pre-release (see version plan below), built and tested against Valheim `0.221.12
 
 ## Install (server owners)
 
-1. Drop `NoVikingLeftBehind.dll` into `BepInEx/plugins/NoVikingLeftBehind/` on the dedicated
-   server. Depends on [BepInExPack_Valheim](https://valheim.thunderstore.io/package/denikson/BepInExPack_Valheim/)
+1. Drop `NoVikingLeftBehind.dll` into `/config/bepinex/plugins/NoVikingLeftBehind/` on the
+   dedicated server (the path BepInEx's plugin folder is mounted at on this project's own
+   Docker host; a bare-metal BepInEx install uses `BepInEx/plugins/NoVikingLeftBehind/`
+   instead). Depends on [BepInExPack_Valheim](https://valheim.thunderstore.io/package/denikson/BepInExPack_Valheim/)
    5.4.2333.
-2. Start the server once to generate `BepInEx/config/Nosferatu.NoVikingLeftBehind.cfg`, then
-   edit the values you want (see below). Synced settings are pushed to every connecting client
-   automatically.
+2. Start the server once to generate `Nosferatu.NoVikingLeftBehind.cfg` next to the other
+   BepInEx configs, then edit the values you want (see below). Synced settings are pushed to
+   every connecting client automatically.
 
 ## Config overview
+
+24 modules, each with its own `[Section] Enabled` toggle, plus `Tiers` (shared config, always on,
+no toggle of its own) — 25 rows in `docs/MODULES.md`, the full per-module table (side, section,
+settings, defaults, hot-reload). Highlights:
 
 Server-authoritative, synced to clients:
 - `ServerKeys` — skill XP rate, skill loss on death, free build/craft, unlockable recipes.
@@ -47,10 +53,33 @@ Server-authoritative, synced to clients:
   non-teleportable materials behind the frontier go through portals.
 - `CraftFromChests` — crafting, building, smelters and fires pull materials from nearby
   containers (adapted from AzuCraftyBoxes, MIT-0 — see `THIRD_PARTY.md`).
+- `ExtraSlots` — dedicated equipment (helmet/chest/legs/cape), 2 utility, 3 food, 2 ammo and
+  2 plain generic slots outside the vanilla grid, so a vanilla client can't delete them
+  (`QuickSlots` defaults to 0; raise it to bring back a hotkeyed row instead of the generic
+  slots). 3 rolling backups + `nvlb.slots.restore`.
+- `Loadouts` — Ctrl+V / Ctrl+B save the weapon+shield in hand; V / B equip both with one key.
+- `CorpseRunPlus` — grave compass, respawn fed + Rested, Grave Pull stamina boost, and the
+  vanilla Corpse Run buff scaled by distance from grave to home.
 - `EnforceClientMod` — require every connecting client to run a matching version.
 - `HotReload` — cfg edits on a running server are picked up live, no restart.
 
-In-game: `nvlb.status` (console command, client-side) prints the live config.
+Every gameplay number above is server-synced and hot-reloads; hotkeys and HUD offsets
+(`ExtraSlots`, `CorpseRunPlus`) are per-player, local settings.
+
+## Mods this replaces
+
+Uninstall these before installing NoVikingLeftBehind — same ground, one DLL instead of six:
+[SkillGainModifier](https://valheim.thunderstore.io/package/JuJuz1/SkillGainModifier/) (`ServerKeys`),
+[SmartSkills](https://valheim.thunderstore.io/package/Smoothbrain/SmartSkills/) (`ServerKeys`/`GroupSkillCatchup`),
+[AzuCraftyBoxes](https://valheim.thunderstore.io/package/Azumatt/AzuCraftyBoxes/) (`CraftFromChests`),
+[ExtraSlots](https://valheim.thunderstore.io/package/shudnal/ExtraSlots/),
+[ConditionalConfigSync](https://valheim.thunderstore.io/package/shudnal/ConditionalConfigSync/) and
+[YamlDotNet](https://valheim.thunderstore.io/package/ValheimModding/YamlDotNet/) (both only needed
+by ExtraSlots) — all replaced by `ExtraSlots`. `SlotsRescue` migrates items shudnal's ExtraSlots
+left behind.
+
+In-game (console, client-side): `nvlb.status` prints the live config; `nvlb.slots.restore` rolls
+`ExtraSlots`' storage back to one of its 3 automatic backups.
 
 ## Credits
 
@@ -74,19 +103,14 @@ python scripts\package.py   # builds thunderstore/dist zip
 
 ## Versioning
 
-Currently `0.3.0` (renamed from `OrionQoL`; adds the Food, Powers, Mining, Fires, Portals and
-Chests modules plus live config reload).
+Currently `0.4.2`. See [`thunderstore/CHANGELOG.md`](thunderstore/CHANGELOG.md) for the full
+version history, including the 0.3.0 rename from the project's original name (`OrionQoL`) and
+its one-time config-migration notes.
 
 Name and Thunderstore namespace are **final**: package namespace/team `Nosferatu`, package
 `NoVikingLeftBehind`. Both are immutable once the first version is uploaded — see
 [`SmoothServer`](https://github.com/MJensen01/SmoothServer), its companion server-tuning mod,
 and `PUBLISHING.md` in `MJensen01`'s local workspace for the upload steps.
-
-**Upgrading from OrionQoL:** the plugin GUID and config file name changed, so the server
-generates a fresh `Nosferatu.NoVikingLeftBehind.cfg` with defaults on first boot — copy your
-old values across, delete the old `net.mjensen.orion.*.cfg` file and the old plugin folder, and
-note that the catch-up data directory moved from `BepInEx/config/orion/` to
-`BepInEx/config/nvlb/`.
 
 ## History
 

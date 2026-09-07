@@ -15,7 +15,9 @@ namespace NoVikingLeftBehind
         Utility,
         Food,
         Ammo,
-        Quick
+        Quick,
+        /// <summary>A plain storage cell on the bottom row: any item, no hotkey, no label.</summary>
+        Generic
     }
 
     /// <summary>One extra slot: where it is in the grid, what it accepts, what the UI labels it.</summary>
@@ -82,6 +84,7 @@ namespace NoVikingLeftBehind
         public static int FoodCount { get; private set; }
         public static int AmmoCount { get; private set; }
         public static int QuickCount { get; private set; }
+        public static int GenericCount { get; private set; }
         public static bool EquipmentOn { get; private set; }
 
         /// <summary>Side-panel size in whole tiles (a tile is one slot plus its spacing).</summary>
@@ -93,17 +96,18 @@ namespace NoVikingLeftBehind
 
         static SlotLayout()
         {
-            Rebuild(true, 2, 3, 2, 3);
+            Rebuild(true, 2, 3, 2, 0, 2);
         }
 
         /// <summary>Recompute the layout from the (synced) slot counts. Idempotent.</summary>
-        public static void Rebuild(bool equipment, int utility, int food, int ammo, int quick)
+        public static void Rebuild(bool equipment, int utility, int food, int ammo, int quick, int generic)
         {
             EquipmentOn = equipment;
             UtilityCount = Mathf.Clamp(utility, 0, 4);
             FoodCount = Mathf.Clamp(food, 0, 3);
             AmmoCount = Mathf.Clamp(ammo, 0, 4);
             QuickCount = Mathf.Clamp(quick, 0, 8);
+            GenericCount = Mathf.Clamp(generic, 0, 8);
 
             _slots.Clear();
             _byKey.Clear();
@@ -122,6 +126,8 @@ namespace NoVikingLeftBehind
             for (int i = 1; i <= AmmoCount; i++) Add(SlotKind.Ammo, i, "ammo" + i, "Ammo", "");
             // Quick slots are labelled with their hotkey at draw time (SlotsUi asks the module).
             for (int i = 1; i <= QuickCount; i++) Add(SlotKind.Quick, i, "quick" + i, "Quick", "");
+            // Plain storage cells; nothing is drawn on them - the item's own icon is the whole point.
+            for (int i = 1; i <= GenericCount; i++) Add(SlotKind.Generic, i, "generic" + i, "Storage", "");
 
             int rows = (_slots.Count + VanillaWidth - 1) / VanillaWidth;
             if (rows > MaxExtraRows)
@@ -160,39 +166,39 @@ namespace NoVikingLeftBehind
             var equip = new List<SlotDef>();
             var food = new List<SlotDef>();
             var ammo = new List<SlotDef>();
-            var quick = new List<SlotDef>();
+            var bottom = new List<SlotDef>();   // the row under everything: quick slots then generic slots
             for (int i = 0; i < _slots.Count; i++)
             {
                 var s = _slots[i];
                 if (IsEquipmentKind(s.Kind)) equip.Add(s);
                 else if (s.Kind == SlotKind.Food) food.Add(s);
                 else if (s.Kind == SlotKind.Ammo) ammo.Add(s);
-                else if (s.Kind == SlotKind.Quick) quick.Add(s);
+                else if (s.Kind == SlotKind.Quick || s.Kind == SlotKind.Generic) bottom.Add(s);
             }
 
             int lastColumn = equip.Count > 0 ? (equip.Count - 1) / 3 : -1;
             int equipHeight = (equip.Count > 3 || food.Count > 0 || ammo.Count > 0) ? 3 : equip.Count;
 
-            // If there are more quick slots than equipment columns, centre the equipment over them.
-            int equipShift = Math.Max(quick.Count - 1 - lastColumn, 0) * 2;
+            // If the bottom row is wider than the equipment columns, centre the equipment over it.
+            int equipShift = Math.Max(bottom.Count - 1 - lastColumn, 0) * 2;
             for (int i = 0; i < equip.Count; i++)
                 equip[i].PanelTile = new Vector2((i / 3) * 4 + equipShift, (i % 3) * 4);
 
-            int sideColumn = Math.Max(lastColumn + 1, quick.Count);
+            int sideColumn = Math.Max(lastColumn + 1, bottom.Count);
             for (int i = 0; i < food.Count; i++)
                 food[i].PanelTile = new Vector2(sideColumn * 4 + 1, i * 4);
             for (int i = 0; i < ammo.Count; i++)
                 ammo[i].PanelTile = new Vector2(sideColumn * 4 + 1 + (food.Count > 0 ? 4 : 0), i * 4);
 
-            // ...and the other way round, centre a short quick-slot row under the equipment.
-            int quickShift = Math.Max(lastColumn + 1 - quick.Count, 0) * 2;
-            for (int i = 0; i < quick.Count; i++)
-                quick[i].PanelTile = new Vector2(i * 4 + quickShift, equipHeight * 4 + 1);
+            // ...and the other way round, centre a short bottom row under the equipment.
+            int bottomShift = Math.Max(lastColumn + 1 - bottom.Count, 0) * 2;
+            for (int i = 0; i < bottom.Count; i++)
+                bottom[i].PanelTile = new Vector2(i * 4 + bottomShift, equipHeight * 4 + 1);
 
             float sideWidth = ((food.Count > 0 || ammo.Count > 0) ? 0.25f : 0f) +
                               (food.Count > 0 ? 1f : 0f) + (ammo.Count > 0 ? 1f : 0f);
-            PanelTilesWide = Math.Max(quick.Count, lastColumn + 1) + sideWidth;
-            PanelTilesHigh = (quick.Count > 0 ? 1.25f : 0f) + equipHeight;
+            PanelTilesWide = Math.Max(bottom.Count, lastColumn + 1) + sideWidth;
+            PanelTilesHigh = (bottom.Count > 0 ? 1.25f : 0f) + equipHeight;
         }
 
         /// <summary>The slot at an absolute grid position, or null (vanilla cell, or blocked padding).</summary>
@@ -204,6 +210,28 @@ namespace NoVikingLeftBehind
         }
 
         public static SlotDef At(Vector2i p) { return At(p.x, p.y); }
+
+        /// <summary>
+        /// Map a slot key written by an older layout onto one that exists now, or null. 0.4.2 turned
+        /// the bottom row from three quick slots into plain storage cells, so a save written by
+        /// 0.4.1 carries "quick1".."quick3": those become "generic1".."generic3" when the generic
+        /// row exists (and fall through to Inject's find-any-free-slot path when it does not, so an
+        /// item is never dropped on the floor by a config change).
+        /// </summary>
+        public static SlotDef LegacyKey(string key)
+        {
+            if (string.IsNullOrEmpty(key)) return null;
+            if (key.StartsWith("quick", StringComparison.Ordinal))
+            {
+                int n;
+                if (int.TryParse(key.Substring(5), out n) && n >= 1)
+                {
+                    var g = ByKey("generic" + n);
+                    if (g != null) return g;
+                }
+            }
+            return null;
+        }
 
         public static SlotDef ByKey(string key)
         {
@@ -242,6 +270,7 @@ namespace NoVikingLeftBehind
                 case SlotKind.Ammo:
                     return t == ItemDrop.ItemData.ItemType.Ammo || t == ItemDrop.ItemData.ItemType.AmmoNonEquipable;
                 case SlotKind.Quick: return true;
+                case SlotKind.Generic: return true;
                 default: return false;   // Blocked
             }
         }
@@ -270,7 +299,7 @@ namespace NoVikingLeftBehind
         {
             return "equipment=" + (EquipmentOn ? "on" : "off") +
                    " utility=" + UtilityCount + " food=" + FoodCount +
-                   " ammo=" + AmmoCount + " quick=" + QuickCount +
+                   " ammo=" + AmmoCount + " quick=" + QuickCount + " generic=" + GenericCount +
                    " -> " + _slots.Count + " slots in " + Rows + " row(s)";
         }
     }

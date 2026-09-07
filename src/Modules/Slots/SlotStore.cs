@@ -191,6 +191,23 @@ namespace NoVikingLeftBehind
             {
                 var e = entries[i];
                 var slot = SlotLayout.ByKey(e.SlotKey);
+
+                // A key written by an older layout (0.4.1's "quick1".."quick3") maps onto the slot
+                // that replaced it before we fall back to "anywhere it fits", so a migrated item
+                // keeps its place on the bottom row instead of shuffling.
+                if (slot == null)
+                {
+                    var legacy = SlotLayout.LegacyKey(e.SlotKey);
+                    if (legacy != null && inv.GetItemAt(legacy.Pos.x, legacy.Pos.y) == null &&
+                        PlaceRaw(inv, e.Item, legacy.Pos))
+                    {
+                        placed++;
+                        NoVikingLeftBehindPlugin.Log.LogInfo("[Slots] migrated " + SlotBlob.Describe(e.Item) +
+                            " from legacy slot '" + e.SlotKey + "' into '" + legacy.Key + "'");
+                        continue;
+                    }
+                }
+
                 if (slot != null && PlaceRaw(inv, e.Item, slot.Pos)) { placed++; continue; }
 
                 // Slot gone (config shrank) or occupied: try any other slot that fits, then bail out.

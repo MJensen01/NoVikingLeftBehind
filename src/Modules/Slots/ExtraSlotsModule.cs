@@ -9,7 +9,7 @@ namespace NoVikingLeftBehind
 {
     /// <summary>
     /// Extra inventory slots: equipment (head / chest / legs / cape), utility, food, ammo and
-    /// quick slots. Replaces shudnal's ExtraSlots, and rescues characters migrating from it.
+    /// plain storage slots. Replaces shudnal's ExtraSlots, and rescues characters migrating from it.
     ///
     /// Client-side: the whole feature is one player's UI and one player's profile. The slot COUNTS
     /// are BindSynced anyway, so the dedicated server owns the numbers and writes them into its own
@@ -35,6 +35,7 @@ namespace NoVikingLeftBehind
         private ConfigEntry<int> _foodSlots;
         private ConfigEntry<int> _ammoSlots;
         private ConfigEntry<int> _quickSlots;
+        private ConfigEntry<int> _genericSlots;
         private ConfigEntry<bool> _autoEat;
         private ConfigEntry<bool> _showUi;
         private ConfigEntry<string> _quickKeys;
@@ -67,8 +68,15 @@ namespace NoVikingLeftBehind
                 "Server: how many food slots (0-3). Only food goes in them.");
             _ammoSlots = BindSynced("AmmoSlots", 2,
                 "Server: how many ammo slots (0-4). The equipped ammo stack lives here.");
-            _quickSlots = BindSynced("QuickSlots", 3,
-                "Server: how many quick slots (0-8). Anything can go in them; a hotkey uses it.");
+            _quickSlots = BindSynced("QuickSlots", 0,
+                "Server: how many quick slots (0-8). Anything can go in them; a hotkey uses it. " +
+                "0 by default since 0.4.2 - the bottom row is GenericSlots plain storage instead. " +
+                "Set it above 0 to bring the hotkey row back; quick slots are drawn first, then " +
+                "the generic ones, on the same row.");
+            _genericSlots = BindSynced("GenericSlots", 2,
+                "Server: how many plain storage slots (0-8) on the bottom row. Any item fits, " +
+                "there is no hotkey and nothing is drawn on the cell - they are simply two more " +
+                "places to put things.");
             _autoEat = BindSynced("AutoEatFromFoodSlots", true,
                 "Server: when a food buff runs out and the same food is sitting in a food slot, " +
                 "eat it automatically.");
@@ -115,7 +123,7 @@ namespace NoVikingLeftBehind
         private void RebuildLayout()
         {
             SlotLayout.Rebuild(_equipmentSlots.Value, _utilitySlots.Value, _foodSlots.Value,
-                               _ammoSlots.Value, _quickSlots.Value);
+                               _ammoSlots.Value, _quickSlots.Value, _genericSlots.Value);
         }
 
         public override void OnConfigChanged(ConfigEntryBase entry)
@@ -714,7 +722,8 @@ namespace NoVikingLeftBehind
         public override string StatusDetail()
         {
             var s = SlotLayout.Describe() + " autoEat=" + (_autoEat != null && _autoEat.Value) +
-                    " ui=" + (_showUi != null && _showUi.Value) + " keys=" + (_quickKeys != null ? _quickKeys.Value : "");
+                    " ui=" + (_showUi != null && _showUi.Value) +
+                    (SlotLayout.QuickCount > 0 ? " keys=" + (_quickKeys != null ? _quickKeys.Value : "") : "");
             if (SlotStore.Managed != null)
                 s += " live=" + SlotStore.ExtraItems(SlotStore.Managed).Count + " item(s)";
             return s;

@@ -98,6 +98,10 @@ namespace NoVikingLeftBehind
         private static bool _looted;
         private static Vector3 _grave;
         private static bool _haveGrave;
+        private static string _graveWorld = "";
+        /// <summary>grave-to-home distance captured at loot time, before the record is deleted.</summary>
+        private static float _lootDistanceFromHome = -1f;
+        private static bool _commandRegistered;
 
         private static bool _grantPending;
         private static float _grantAt;
@@ -272,11 +276,18 @@ namespace NoVikingLeftBehind
                 if (AccessTools.Method(typeof(SEMan), sig) == null)
                     throw new Exception("SEMan." + sig + " not found - GravePull would be inert");
 
-            if (AccessTools.Method(typeof(PlayerProfile), "HaveDeathPoint") == null ||
-                AccessTools.Method(typeof(PlayerProfile), "GetDeathPoint") == null ||
-                AccessTools.Method(typeof(PlayerProfile), "GetHomePoint") == null ||
+            // PlayerProfile's DEATH point is deliberately not used any more (see GraveRecord) -
+            // only its home / custom spawn point, which CorpseRunScaled measures the run against.
+            if (AccessTools.Method(typeof(PlayerProfile), "GetHomePoint") == null ||
                 AccessTools.Method(typeof(PlayerProfile), "GetCustomSpawnPoint") == null)
-                throw new Exception("PlayerProfile death/home point API not found");
+                throw new Exception("PlayerProfile home point API not found");
+
+            // ZNet.GetWorldName() is what makes a grave record belong to ONE world.
+            if (AccessTools.Method(typeof(ZNet), "GetWorldName") == null)
+                throw new Exception("ZNet.GetWorldName() not found - the grave record could not be scoped to a world");
+
+            var termInit = AccessTools.Method(typeof(Terminal), "InitTerminal");
+            if (termInit == null) throw new Exception("Terminal.InitTerminal() not found");
 
             if (AccessTools.Method(typeof(Player), "GetFoods") == null)
                 throw new Exception("Player.GetFoods() not found - RespawnFood would be inert");
@@ -294,6 +305,7 @@ namespace NoVikingLeftBehind
             Harmony.Patch(onSpawned, postfix: new HarmonyMethod(typeof(CorpseRunPlusModule), nameof(OnSpawnedPostfix)));
             Harmony.Patch(giveBoost, postfix: new HarmonyMethod(typeof(CorpseRunPlusModule), nameof(GiveBoostPostfix)));
             Harmony.Patch(takeAll, postfix: new HarmonyMethod(typeof(CorpseRunPlusModule), nameof(TakeAllPostfix)));
+            Harmony.Patch(termInit, postfix: new HarmonyMethod(typeof(CorpseRunPlusModule), nameof(RegisterCommand)));
 
             EnsureTemplate();
             PushNumbers();
@@ -390,12 +402,15 @@ namespace NoVikingLeftBehind
             if (__instance == null || __instance != Player.m_localPlayer) return;
             try
             {
-                // Player.OnDeath has already called SetDeathPoint (Player.cs:3117).
+                // Player.OnDeath has already called SetDeathPoint (Player.cs:3117) - we ignore it
+                // and write our own record instead, stamped with the world we are actually in.
                 _diedThisSession = true;
                 _looted = false;
                 _lastScaled = null;
+                _lootDistanceFromHome = -1f;
+                GraveRecord.Write(__instance, __instance.transform.position);
                 ReadGrave();
-                Log.LogInfo("[CorpseRun] death recorded at " +
+                Log.LogInfo("[CorpseRun] death recorded in world '" + GraveRecord.CurrentWorld() + "' at " +
                             (_haveGrave ? _grave.ToString("F0") : "?") +
                             " - respawn grants armed (food=" + _inst._respawnFoodEnabled.Value +
                             " rested=" + _inst._respawnRestedEnabled.Value + ")");
@@ -419,19 +434,30 @@ namespace NoVikingLeftBehind
             ReadGrave();
         }
 
+        /// <summary>
+        /// Refresh <see cref="_grave"/> from OUR OWN record in the player's custom data.
+        ///
+        /// This used to read PlayerProfile.HaveDeathPoint()/GetDeathPoint(), which are written on
+        /// every death and never cleared by anything in vanilla - so an old character joining a new
+        /// world arrived with the compass already lit, pointing at a death spot from some other
+        /// world. The record is world-stamped and is deleted when the grave is looted, so all three
+        /// features now switch on only after a death in THIS world and switch off when it is over.
+        /// </summary>
         private static void ReadGrave()
         {
             _haveGrave = false;
+            _graveWorld = "";
             try
             {
-                var game = Game.instance;
-                if (game == null) return;
-                var prof = game.GetPlayerProfile();
-                if (prof == null || !prof.HaveDeathPoint()) return;
-                _grave = prof.GetDeathPoint();
+                var me = Player.m_localPlayer;
+                if (me == null) return;
+                Vector3 pos; double when; string world;
+                if (!GraveRecord.TryRead(me, out pos, out when, out world)) return;
+                _grave = pos;
+                _graveWorld = world ?? "";
                 _haveGrave = true;
             }
-            catch (Exception e) { Log.LogWarning("[CorpseRun] death point read: " + e.Message); }
+            catch (Exception e) { Log.LogWarning("[CorpseRun] grave record read: " + e.Message); }
         }
 
         private static Vector3 HomePoint()
@@ -570,8 +596,11 @@ namespace NoVikingLeftBehind
                 if (d > _inst._lootMatchDistance.Value) return;   // somebody else's grave
 
                 if (ts.m_lootStatusEffect != null) _corpseRunHash = ts.m_lootStatusEffect.NameHash();
+                _lootDistanceFromHome = Vector3.Distance(_grave, HomePoint());
 
                 _looted = true;
+                _haveGrave = false;              // the record is gone; nothing may re-arm off it
+                GraveRecord.Clear(Player.m_localPlayer);
                 GraveCompassHud.Hide();
                 RemovePull();
 
@@ -587,6 +616,45 @@ namespace NoVikingLeftBehind
                             (_inst._scaledEnabled.Value ? ", CorpseRun scaling armed" : ""));
             }
             catch (Exception e) { Log.LogWarning("[CorpseRun] grave " + how + ": " + e.Message); }
+        }
+
+        /// <summary>
+        /// nvlb.grave.clear - forget the recorded grave by hand. The escape hatch for a grave that
+        /// can no longer be reached or looted (destroyed, unreachable terrain, another mod ate it),
+        /// which would otherwise keep the compass and GravePull on until the next death.
+        /// </summary>
+        private static void RegisterCommand()
+        {
+            if (_commandRegistered) return;
+            _commandRegistered = true;
+            try
+            {
+                new Terminal.ConsoleCommand("nvlb.grave.clear",
+                    "Forget the recorded grave: turns the Grave Compass and Grave Pull off until your next death.",
+                    new Terminal.ConsoleEvent(ClearCommand));
+                Log.LogInfo("[CorpseRun] console command 'nvlb.grave.clear' registered");
+            }
+            catch (Exception e)
+            {
+                _commandRegistered = false;
+                Log.LogError("[CorpseRun] could not register nvlb.grave.clear: " + e);
+            }
+        }
+
+        private static void ClearCommand(Terminal.ConsoleEventArgs args)
+        {
+            var me = Player.m_localPlayer;
+            string had = GraveRecord.Describe(me);
+            bool cleared = GraveRecord.Clear(me);
+            _haveGrave = false;
+            _graveWorld = "";
+            _lastDistance = -1f;
+            _lootDistanceFromHome = -1f;
+            GraveCompassHud.Hide();
+            RemovePull();
+            string msg = cleared ? "grave record cleared (was " + had + ")" : "no grave record to clear";
+            if (args != null && args.Context != null) args.Context.AddString("[CorpseRun] " + msg);
+            Log.LogInfo("[CorpseRun] " + msg);
         }
 
         private static int CorpseRunHash()
@@ -612,7 +680,9 @@ namespace NoVikingLeftBehind
             float baseRegen = template != null ? template.m_staminaRegenMultiplier
                                                : live.m_staminaRegenMultiplier;
 
-            float dist = _haveGrave ? Vector3.Distance(_grave, HomePoint()) : 0f;
+            float dist = _lootDistanceFromHome >= 0f
+                ? _lootDistanceFromHome
+                : (_haveGrave ? Vector3.Distance(_grave, HomePoint()) : 0f);
             float ttl = ScaledDuration(baseTtl, dist, _inst._scaledDurationPer100m.Value,
                                        _inst._scaledMaxDurationSec.Value);
             live.m_ttl = ttl;
@@ -787,7 +857,8 @@ namespace NoVikingLeftBehind
                    " pull=" + (_pullOn ? Mathf.RoundToInt(_lastStrength * 100f) + "%" : "off") +
                    " lastGrants=" + _lastGrantText +
                    " lastCorpseRun=" + (_lastScaledTtl > 0f ? _lastScaledTtl.ToString("0") + "s" : "-") +
-                   " diedThisSession=" + _diedThisSession;
+                   " diedThisSession=" + _diedThisSession +
+                   " record=" + GraveRecord.Describe(Player.m_localPlayer);
         }
 
         // ---- self test (headless, 0 players) ----------------------------------------------------
@@ -889,7 +960,68 @@ namespace NoVikingLeftBehind
                             ", extraRegen +" + (c._scaledExtraRegen.Value * es).ToString("0.00"));
             }
 
+            GraveRecordSelfTest();
+
             Log.LogInfo("[CorpseRun] SelfTest: --- end ---");
+        }
+
+        /// <summary>
+        /// The four cases from the 0.4.2 bug report, driven straight through GraveRecord's
+        /// dictionary-level API - no Player, no world, so it runs on a headless server with zero
+        /// players. Case 1 is the actual bug: a character whose .fch has had a death point since
+        /// forever, joining a world it has never died in, must get NOTHING.
+        /// </summary>
+        private static void GraveRecordSelfTest()
+        {
+            int pass = 0, fail = 0;
+            Action<bool, string> check = (ok, what) =>
+            {
+                if (ok) { pass++; Log.LogInfo("[CorpseRun] SelfTest: PASS  " + what); }
+                else { fail++; Log.LogError("[CorpseRun] SelfTest: FAIL  " + what); }
+            };
+
+            const string here = "NEWTEST";
+            const string other = "BLACKWORLD";
+            var pos = new Vector3(1234.5f, -12.25f, -678.75f);
+            var data = new Dictionary<string, string>();
+            Vector3 got; double when; string world;
+
+            // (1) stale PlayerProfile death point, no record of ours -> everything inactive.
+            check(!GraveRecord.TryRead(data, here, out got, out when, out world),
+                  "(1) a character with a stale profile death point but no nvlb.grave record reads as NO grave " +
+                  "- compass, GravePull and CorpseRunScaled all stay off");
+
+            // (2) a death in this world -> active, and the position survives the round trip.
+            GraveRecord.Write(data, here, pos, 4242.5d);
+            bool ok2 = GraveRecord.TryRead(data, here, out got, out when, out world);
+            check(ok2 && (got - pos).sqrMagnitude < 0.0001f && world == here && Math.Abs(when - 4242.5d) < 0.001d,
+                  "(2) a record written in '" + here + "' reads back there: " + got.ToString("F2") +
+                  " world='" + world + "' t=" + when);
+
+            // (3) the same record, read from a different world -> inactive, and NOT destroyed.
+            check(!GraveRecord.TryRead(data, other, out got, out when, out world),
+                  "(3) the same record is invisible in '" + other + "' (the 0.4.2 bug: an old grave from " +
+                  "another world used to light the compass)");
+            check(GraveRecord.Has(data),
+                  "(3b) ...and it is left in place, so returning to '" + here + "' still finds the grave");
+
+            // (4) looting the grave clears it.
+            check(GraveRecord.Clear(data) && !GraveRecord.Has(data) &&
+                  !GraveRecord.TryRead(data, here, out got, out when, out world),
+                  "(4) looting/emptying the grave clears the record - no grave anywhere afterwards");
+
+            // A corrupt or truncated record must degrade to "no grave", never throw.
+            var junk = new Dictionary<string, string> { { GraveRecord.Key, "1|OnlyTwo" } };
+            check(!GraveRecord.TryRead(junk, here, out got, out when, out world),
+                  "(5) a corrupt record decodes to no grave instead of throwing");
+
+            // A world name containing our separator must survive.
+            var odd = new Dictionary<string, string>();
+            GraveRecord.Write(odd, "a|b", pos, 1d);
+            check(GraveRecord.TryRead(odd, "a|b", out got, out when, out world) && world == "a|b",
+                  "(6) a world name containing '|' round trips");
+
+            Log.LogInfo("[CorpseRun] SelfTest: grave record - " + pass + " passed, " + fail + " FAILED");
         }
 
         private static void DumpVanillaSe(ObjectDB odb, string name)

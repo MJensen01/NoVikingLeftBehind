@@ -74,6 +74,7 @@ namespace NoVikingLeftBehind
             try
             {
                 TestSaveLoad();
+                TestGenericSlots();
                 TestMigrationRescue();
                 TestLoadoutRoundTrip();
             }
@@ -130,6 +131,7 @@ namespace NoVikingLeftBehind
                 new KeyValuePair<string, string>("utility1", "BeltStrength"),
                 new KeyValuePair<string, string>("food1",    "CookedMeat"),
                 new KeyValuePair<string, string>("ammo1",    "ArrowWood"),
+                new KeyValuePair<string, string>("generic1", "Stone"),
             };
 
             var inv = new Inventory("nvlb-selftest", null, SlotLayout.VanillaWidth, SlotLayout.VanillaHeight);
@@ -145,7 +147,8 @@ namespace NoVikingLeftBehind
             {
                 var slot = SlotLayout.ByKey(wanted[i].Key);
                 if (slot == null) { Log.LogWarning("[SlotsSelfTest] no slot '" + wanted[i].Key + "' in this layout - skipped"); continue; }
-                var item = Make(wanted[i].Value, wanted[i].Value == "ArrowWood" ? 20 : 1);
+                int stack = wanted[i].Value == "ArrowWood" ? 20 : (wanted[i].Value == "Stone" ? 5 : 1);
+                var item = Make(wanted[i].Value, stack);
                 if (item == null) { Log.LogWarning("[SlotsSelfTest] prefab '" + wanted[i].Value + "' not in ObjectDB - skipped"); continue; }
                 if (!SlotLayout.Accepts(slot, item))
                 { Check(false, wanted[i].Value + " should be accepted by slot " + slot.Key); continue; }
@@ -213,6 +216,47 @@ namespace NoVikingLeftBehind
                       placed[i].Value + " is back in slot '" + placed[i].Key + "'");
             }
             Log.LogInfo("[SlotsSelfTest] reloaded grid: " + NamesIn(reload));
+        }
+
+        // ---- test 1b: the generic bottom row ------------------------------------------------------
+
+        /// <summary>
+        /// 0.4.2 replaced the three quick slots with plain storage cells. Two things must hold: a
+        /// generic slot accepts anything, and a blob written by 0.4.1 - whose bottom-row items are
+        /// keyed "quick1".."quick3" - still finds a home instead of being evacuated to the floor.
+        /// </summary>
+        private static void TestGenericSlots()
+        {
+            if (ObjectDB.instance == null) { Log.LogWarning("[SlotsSelfTest] ObjectDB not ready - test 1b skipped"); return; }
+
+            var g1 = SlotLayout.ByKey("generic1");
+            Check(g1 != null, "the layout has a generic1 slot (GenericSlots=" + SlotLayout.GenericCount + ")");
+            if (g1 == null) return;
+
+            var helmet = Make("HelmetBronze", 1);
+            var arrow = Make("ArrowWood", 10);
+            Check(helmet == null || SlotLayout.Accepts(g1, helmet), "a helmet fits in generic1");
+            Check(arrow == null || SlotLayout.Accepts(g1, arrow), "an arrow stack fits in generic1");
+
+            Check(SlotLayout.QuickCount > 0 || SlotLayout.ByKey("quick1") == null,
+                  "no quick slot exists at the default QuickSlots=0 (QuickCount=" + SlotLayout.QuickCount + ")");
+            var mapped = SlotLayout.LegacyKey("quick1");
+            Check(mapped != null && mapped.Key == "generic1",
+                  "a 0.4.1 blob key 'quick1' maps onto '" + (mapped == null ? "null" : mapped.Key) + "'");
+
+            // The whole migration, end to end: a blob keyed the old way lands on the bottom row.
+            if (arrow != null)
+            {
+                var inv = new Inventory("nvlb-migrate-quick", null, SlotLayout.VanillaWidth, SlotLayout.VanillaHeight);
+                SlotStore.SetHeight(inv, SlotLayout.TotalHeight);
+                var blob = SlotBlob.Encode(new List<SlotEntry> { new SlotEntry { SlotKey = "quick1", Item = arrow } });
+                var leftovers = new List<ItemDrop.ItemData>();
+                int placed = SlotStore.Inject(inv, SlotBlob.Decode(blob), leftovers);
+                var at = inv.GetItemAt(g1.Pos.x, g1.Pos.y);
+                Check(placed == 1 && leftovers.Count == 0 && at != null &&
+                      SlotBlob.PrefabNameOf(at) == "ArrowWood" && at.m_stack == 10,
+                      "a legacy 'quick1' item is migrated into generic1 with its stack intact");
+            }
         }
 
         // ---- test 2: migration rescue -------------------------------------------------------------

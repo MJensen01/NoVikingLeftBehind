@@ -26,10 +26,20 @@ via [ServerSync](https://github.com/blaxxun-boop/ServerSync) (MIT-0, blaxxun-boo
 - **LongFires** `[Fires]` (client) — fireplace fuel and hand torches last much longer.
 - **PortalTrail** `[Portals]` (client) — metals and other normally non-teleportable items behind the frontier go through portals.
 - **CraftFromChests** `[Chests]` (client) — crafting, building, smelters and fires pull materials from nearby containers (code adapted from AzuCraftyBoxes, MIT-0).
+- **ExtraSlots** `[Slots]` (client) — dedicated equipment slots (helmet/chest/legs/cape), 2 utility slots (Megingjord + Wishbone), 3 food slots (auto-eat), 2 ammo slots and 2 plain generic bottom slots, all outside the vanilla grid so a vanilla client cannot delete them. `QuickSlots` (default 0) swaps the generic slots for a hotkeyed row instead. 3 rolling backups plus `nvlb.slots.restore`; rescues items left behind by shudnal's ExtraSlots. Panel UI adapted from shudnal's ExtraSlots (Unlicense/public domain).
+- **Loadouts** `[Loadouts]` (client) — Ctrl+V / Ctrl+B save the weapon+shield in hand; V / B equip both with one key.
+- **CorpseRunPlus** `[CorpseRun]` (client) — grave compass, respawn fed (Bread) + Rested 10 min, Grave Pull stamina boost that fades as you near your grave, Corpse Run buff scaled by distance home.
 - **Status** `[Status]` (client) — the `nvlb.status` console command: world tier, catch-up settings and per-module state.
-- **ChestsSelfTest** `[ChestsSelfTest]`, **EconomySelfTest** `[Economy]`, **WorldSelfTest** `[World]` (both) — developer self-test helpers, off by default.
+- **ChestsSelfTest** `[ChestsSelfTest]`, **EconomySelfTest** `[Economy]`, **WorldSelfTest** `[World]`, **SlotsSelfTest** `[SlotsSelfTest]` (both) — developer self-test helpers, off by default.
 
-Console (client): `nvlb.status` prints the live config.
+Console (client): `nvlb.status` prints the live config; `nvlb.slots.restore` rolls ExtraSlots' storage back to one of its automatic backups.
+
+## Mods this replaces
+
+SkillGainModifier (JuJuz1), SmartSkills (Smoothbrain), AzuCraftyBoxes (Azumatt), ExtraSlots
+(shudnal), ConditionalConfigSync (shudnal) and YamlDotNet (ValheimModding) — one DLL instead of
+six. See the root [`README.md`](https://github.com/MJensen01/NoVikingLeftBehind#mods-this-replaces)
+for links.
 
 ## Dependencies
 
@@ -38,8 +48,3 @@ Console (client): `nvlb.status` prints the live config.
 ## Source & issues
 
 https://github.com/MJensen01/NoVikingLeftBehind — MIT licensed.
-
-### Added in 0.4.0
-- **ExtraSlots** `[Slots]`: equipment, 2 utility (Megingjord + Wishbone), 3 food, 2 ammo, 3 quick slots (Z/X/C). Items live outside the vanilla grid so a vanilla client cannot delete them; migration rescue for shudnal ExtraSlots users.
-- **Loadouts** `[Loadouts]`: Ctrl+V / Ctrl+B save the weapon+shield in hand; V / B equip both with one key.
-- **CorpseRunPlus** `[CorpseRun]`: grave compass, respawn fed (Bread) + Rested 10 min, Grave Pull stamina boost that fades as you near your grave, Corpse Run buff scaled by distance home.
