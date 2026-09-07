@@ -1,6 +1,6 @@
 {
   "name": "NoVikingLeftBehind",
-  "version_number": "0.3.0",
+  "version_number": "0.4.0",
   "website_url": "https://github.com/MJensen01/NoVikingLeftBehind",
   "description": "Server-enforced QoL and catch-up mechanics: frontier-based discounts, ore regrowth, a vanguard buff, and playtime/skill catch-up. One DLL, server + client.",
   "dependencies": [

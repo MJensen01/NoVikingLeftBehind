@@ -38,3 +38,8 @@ Console (client): `nvlb.status` prints the live config.
 ## Source & issues
 
 https://github.com/MJensen01/NoVikingLeftBehind — MIT licensed.
+
+### Added in 0.4.0
+- **ExtraSlots** `[Slots]`: equipment, 2 utility (Megingjord + Wishbone), 3 food, 2 ammo, 3 quick slots (Z/X/C). Items live outside the vanilla grid so a vanilla client cannot delete them; migration rescue for shudnal ExtraSlots users.
+- **Loadouts** `[Loadouts]`: Ctrl+V / Ctrl+B save the weapon+shield in hand; V / B equip both with one key.
+- **CorpseRunPlus** `[CorpseRun]`: grave compass, respawn fed (Bread) + Rested 10 min, Grave Pull stamina boost that fades as you near your grave, Corpse Run buff scaled by distance home.
