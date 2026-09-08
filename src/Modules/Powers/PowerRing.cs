@@ -44,6 +44,9 @@ namespace NoVikingLeftBehind
     /// component INDEX, so it must clone a PRISTINE tree. PowerHud.Ensure therefore calls
     /// <see cref="UndecorateAll"/> on its rebuild path; we re-decorate on the next Refresh, which
     /// is the same frame (DualPowersModule.HudPostfix calls PowerHud.Refresh then PowerRing.Refresh).
+    /// A live HudOffsetX/HudOffsetY edit is a DIFFERENT path - PowerHud.SetOffset repositions the
+    /// existing clone in place and never touches UndecorateAll, so it calls <see cref="Redecorate"/>
+    /// directly instead of relying on the next frame's Refresh to notice.
     ///
     /// Everything is wrapped: one throw anywhere in here logs once, tears the decoration down and
     /// permanently disables it, because this code runs inside Hud.UpdateGuardianPower every frame.
@@ -262,6 +265,45 @@ namespace NoVikingLeftBehind
             return Mathf.Max(0f, se.m_cooldown * mult);
         }
 
+        /// <summary>
+        /// Structural re-decorate for one slot, with no Player/cooldown data required - unlike
+        /// <see cref="Apply"/>, this can run outside the per-frame Hud.UpdateGuardianPower postfix.
+        /// Called from PowerHud.SetOffset, the one code path a live HudOffsetX/HudOffsetY edit
+        /// takes: that path repositions the clone in place and never goes through
+        /// PowerHud.Ensure()'s "UndecorateAll then rebuild" contract, so nothing else guarantees the
+        /// mask/ring survive an offset change. Idempotent: a slot whose icon is already decorated
+        /// (same Image reference, mask/ring objects still alive) is left untouched, so a widget can
+        /// never end up with two rings. A slot whose layout is not ready yet (rect still 0x0, e.g.
+        /// the clone was just built and immediately hidden) is silently skipped - the ordinary
+        /// per-frame Refresh keeps retrying it.
+        /// </summary>
+        internal static void Redecorate(int slot, Image icon)
+        {
+            if (_failed || icon == null) return;
+            try
+            {
+                var d = Decos[slot];
+                if (d != null && d.Root != null && d.Icon == icon) return;   // already correct
+
+                Undecorate(slot);
+                var built = Build(slot, icon);
+                if (built == null) return;               // layout not ready yet - Refresh() retries
+                Decos[slot] = built;
+
+                int n = 0;
+                for (int i = 0; i < Decos.Length; i++) if (Decos[i] != null) n++;
+                NoVikingLeftBehindPlugin.Log.LogInfo("[Powers] HUD rebuilt (offset " +
+                    PowerHud.Offset.x.ToString("0") + "," + PowerHud.Offset.y.ToString("0") +
+                    ") -> re-decorated slots=" + n + " icon=" + built.IconSize.ToString("0") + "px");
+            }
+            catch (Exception e)
+            {
+                _failed = true;
+                NoVikingLeftBehindPlugin.Log.LogWarning("[Powers] HUD ring disabled after an error: " + e.Message);
+                try { UndecorateAll(); } catch { /* nothing left to do */ }
+            }
+        }
+
         // ---- build / tear down ---------------------------------------------------------------
 
         private static Deco Build(int slot, Image icon)
@@ -409,7 +451,17 @@ namespace NoVikingLeftBehind
                     rt.offsetMax = d.OrigOffsetMax;
                     rt.localScale = d.OrigScale;
                 }
-                if (d.Root != null) UnityEngine.Object.Destroy(d.Root);
+                if (d.Root != null)
+                {
+                    // Detach BEFORE destroying. Object.Destroy is deferred to the end of the
+                    // frame, so a decoration torn down here would still be sitting in the tree
+                    // when PowerHud.Ensure clones m_gpRoot on the very next line - and Ensure maps
+                    // the clone's leaves by component INDEX on the promise that the tree is
+                    // pristine. Unparenting makes that promise true immediately; the destroy then
+                    // happens whenever Unity gets round to it, off the tree, harming nothing.
+                    d.Root.transform.SetParent(null, false);
+                    UnityEngine.Object.Destroy(d.Root);
+                }
             }
             catch (Exception e)
             {

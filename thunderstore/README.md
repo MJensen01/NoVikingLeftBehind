@@ -72,7 +72,8 @@ all. The mod never makes the leaders' game easier; it only softens the trail beh
   it that fills as the cooldown recovers: full ring means ready, and every second CombatRecharge
   shaves off jumps the ring forward, so you can *see* the power charging while you fight. Built
   at runtime in Valheim's own parchment gold — no extra downloads, no flashy overlay, and the
-  vanilla icon and cooldown text are untouched underneath. `Tune it:` local `[Powers] RoundIcons=true`, `CooldownRing=true`, `RingThickness=4`, `RingColor="E6C88AD9"`, `RingTrackColor="00000066"`
+  vanilla icon and cooldown text are untouched underneath. The second slot sits beside the first — move it
+  wherever you like with `HudOffsetX`/`HudOffsetY`. `Tune it:` local `[Powers] RoundIcons=true`, `CooldownRing=true`, `RingThickness=4`, `RingColor="E6C88AD9"`, `RingTrackColor="00000066"`, `HudOffsetX=84`, `HudOffsetY=0`
 - **CombatRecharge** — every hit you land or take visibly chips seconds off your power's
   cooldown bar, so a hard fight brings your power back around, not the clock. Watch the charge
   ring on the icon jump forward with each hit. `Tune it:` `[Recharge] SecondsPerHitDealt=2`, `SecondsPerHitTaken=3`, `MaxPerSecond=10`, `AffectAllSlots=true`
@@ -132,11 +133,13 @@ all. The mod never makes the leaders' game easier; it only softens the trail beh
   your grave so you're never guessing; you respawn with a meal already eaten and Rested already
   running; **Grave Pull** boosts your stamina regen the farther you are from your loot, easing off
   as you close in; and vanilla's own Corpse Run buff scales up the farther your grave was from
-  home, so a death way out in the mountains actually helps on the long walk back. `Tune it:` `[CorpseRun] CompassEnabled=true`, `RespawnRestedEnabled=true (RestedMinutes=10)`, `RespawnFoodEnabled=true (RespawnFoods="Bread")`, `PullEnabled=true (PullMinDistance=50m, PullFullDistance=1000m)`, `ScaledEnabled=true (ScaledDurationPer100m=0.2)`
+  home, so a death way out in the mountains actually helps on the long walk back. `Tune it:` `[CorpseRun] CompassEnabled=true`, `RespawnRestedEnabled=true (RestedMinutes=10)`, `RespawnFoodEnabled=true (RespawnFoods="Bread")`, `PullEnabled=true (PullMinDistance=50m, PullFullDistance=1000m)`, `ScaledEnabled=true (ScaledDurationPer100m=0.2)`, local `HintAlpha=0.55`, `HintScale=0.8`
   The grave marker is an off-screen waypoint: it sits on your corpse while the corpse is on
   screen and slides to the edge of the screen in its direction when it is not, so it only
   points dead ahead when you are actually walking at it. Hold **Delete** for a second and a
-  half to dismiss a grave you have given up on, no console needed.
+  half to dismiss a grave you have given up on, no console needed — and that hint line under
+  the distance is deliberately quiet: dimmer and smaller than the distance itself, and you can
+  fade it further (or bring it back) with `HintAlpha` / `HintScale` while you play.
 
 ### On the water
 

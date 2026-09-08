@@ -1,5 +1,36 @@
 # Changelog — NoVikingLeftBehind
 
+## 0.7.2 (2026-09-08)
+Three fixes from a live test session.
+
+- **The settings tab now turns up.** On 0.7.1 the NoVikingLeftBehind tab did not appear in Valheim's Settings
+  menu for one tester — and, worse, left nothing in the log either way, so there was nothing to go on but a
+  screenshot of six vanilla tabs. 0.7.2 fixes both halves of that. It no longer hangs everything on the single
+  `Settings.Awake` prefix: **four hooks** now call the same idempotent install — the `Settings.Awake` prefix, a
+  `Settings.Awake` postfix, a `TabHandler.Init` prefix, and postfixes on the two places the game instantiates
+  the settings screen (`Menu.OnSettings` in game, `FejdStartup.OnButtonSettings` on the main menu). Whichever
+  fires first wins and the rest find the page already there and do nothing, so there is still exactly one tab.
+  A hook that arrives *after* vanilla has snapshotted its tab list re-runs vanilla's own `SetAvailableTabs()`
+  by reflection, so the snapshot still lines up with the tab bar index for index, and then initialises our page
+  by hand. And it is now **loud**: patch time logs the exact method Harmony rewrote (declaring type, assembly,
+  IL size), each hook logs that it fired, every refusal logs the value that caused it — no TabHandler, an empty
+  `m_tabs`, an unusable donor tab — the new button logs its parent, active state, position and size, and
+  the first hook of each open lists every mod that has patched `Settings.Awake`, because Harmony skips the
+  remaining prefixes once one of them returns false. If the tab still hides, the log now says why.
+- **Two power slots, side by side, both with their ring.** `[Powers] HudOffsetX` / `HudOffsetY` now default to
+  **84 / 0** instead of 0 / -56: the second Forsaken power sits next to the first instead of underneath it,
+  where the two names ran into each other. And changing that offset no longer costs the second slot its circle
+  mask and charge ring — slot 2 was coming back a bare square icon while slot 1 stayed round. The clone maps the
+  widget's parts by component *index*, so it has to copy a pristine tree; the ring's teardown used Unity's
+  `Object.Destroy`, which is deferred to the end of the frame, so the decoration was in fact still hanging in the
+  tree at the moment of the copy. It is unparented before it is destroyed now, the clone is swept for leftovers,
+  and a live offset edit re-checks the decoration on the spot instead of hoping the next frame notices — with a
+  line in the log (`[Powers] HUD rebuilt (offset 84,0) -> re-decorated slots=2 icon=50px`) so it is visible.
+- **The grave compass's dismiss hint is quieter.** "Hold Delete to dismiss grave" was drawn in the same bold
+  white as the distance above it. It is now dimmer and smaller — and adjustable: new machine-local
+  **`[CorpseRun] HintAlpha=0.55`** (0–1, fraction of the distance label's opacity) and **`HintScale=0.8`**
+  (0.5–1.2, fraction of its font size), both live, both re-applied on every compass tick.
+
 ## 0.7.1 (2026-09-08)
 **A Network panel in the settings tab.** If your group also runs [SmoothServer](https://thunderstore.io/c/valheim/p/Nosferatu/SmoothServer/),
 the NoVikingLeftBehind tab now has one more entry — **Network (SmoothServer)** — with the handful of its switches

@@ -46,6 +46,12 @@ namespace NoVikingLeftBehind
         /// <summary>Pixels of inset kept between the marker and the edge of the screen.</summary>
         public static float EdgeMargin = 60f;
 
+        /// <summary>Opacity of the hint line as a fraction of the distance label's alpha.</summary>
+        public static float HintAlpha = 0.55f;
+
+        /// <summary>Font size of the hint line as a fraction of the distance label's font size.</summary>
+        public static float HintScale = 0.8f;
+
         private static Hud _hud;
         private static GameObject _arrowGo;
         private static GameObject _labelGo;
@@ -60,6 +66,8 @@ namespace NoVikingLeftBehind
         private static bool _failed;
         private static bool _visible;
         private static string _hintText = "";
+        private static float _appliedHintAlpha = -1f;
+        private static float _appliedHintScale = -1f;
 
         public static bool Failed { get { return _failed; } }
         public static bool Visible { get { return _visible; } }
@@ -116,6 +124,7 @@ namespace NoVikingLeftBehind
                 if (_hint != null && _hint.text != _hintText) _hint.text = _hintText;
                 if (_hintGo != null && _hintGo.activeSelf != (_hintText.Length > 0))
                     _hintGo.SetActive(_hintText.Length > 0);
+                ApplyHintStyle();
 
                 if (!_visible)
                 {
@@ -245,7 +254,7 @@ namespace NoVikingLeftBehind
             _arrowGo = Build(donor, parent, "NVLB_GraveCompassArrow", out _arrowRt, out _arrow);
             _labelGo = Build(donor, parent, "NVLB_GraveCompassLabel", out _labelRt, out _label);
             _hintGo = Build(donor, parent, "NVLB_GraveCompassHint", out _hintRt, out _hint);
-            if (_hint != null) _hint.fontSize = donor.fontSize * 0.75f;
+            ApplyHintStyle();
             if (_arrow == null || _label == null)
             {
                 Fail("cloned compass label carries no TMP_Text - no grave compass.");
@@ -308,6 +317,28 @@ namespace NoVikingLeftBehind
             return go;
         }
 
+        /// <summary>
+        /// Restyle the hint line relative to the distance label: HintAlpha of its colour and
+        /// HintScale of its font size, with any bold inherited from the cloned donor dropped so the
+        /// hint reads as a quieter, secondary line. Called once at build time and again every
+        /// Show(), so a live HintAlpha/HintScale config change is picked up without a HUD rebuild;
+        /// the cache skips the TMP_Text writes on every other frame, when nothing changed.
+        /// </summary>
+        private static void ApplyHintStyle()
+        {
+            if (_hint == null || _label == null) return;
+            if (_appliedHintAlpha == HintAlpha && _appliedHintScale == HintScale) return;
+
+            Color c = _label.color;
+            c.a *= Mathf.Clamp01(HintAlpha);
+            _hint.color = c;
+            _hint.fontSize = _label.fontSize * HintScale;
+            _hint.fontStyle = _label.fontStyle & ~FontStyles.Bold;
+
+            _appliedHintAlpha = HintAlpha;
+            _appliedHintScale = HintScale;
+        }
+
         private static void Reposition()
         {
             if (_arrowRt != null) _arrowRt.anchoredPosition = Offset;
@@ -354,6 +385,7 @@ namespace NoVikingLeftBehind
             _arrowRt = null; _labelRt = null; _hintRt = null;
             _arrow = null; _label = null; _hint = null;
             _hud = null; _built = false; _visible = false;
+            _appliedHintAlpha = -1f; _appliedHintScale = -1f;
         }
 
         /// <summary>Allow a retry after a transient failure (config toggle).</summary>

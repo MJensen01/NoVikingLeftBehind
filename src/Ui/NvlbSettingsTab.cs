@@ -87,20 +87,60 @@ namespace NoVikingLeftBehind
         private const float FooterH = 44f;
         private const float LeftW = 300f;
 
-        // ---- installation (called from the Settings.Awake prefix) --------------------------------
+        // ---- installation (called from the hooks in SettingsMenuModule) ---------------------------
 
-        public static void Install(Settings settings)
+        /// <summary>
+        /// Add the tab if it is not already there. Returns the new component when it added one,
+        /// and null when it did not - and in that case it says out loud, in the log, exactly
+        /// which check stopped it, because a tab that silently fails to appear is the worst kind
+        /// of bug to chase from a screenshot.
+        ///
+        /// Several hooks call this (see <see cref="SettingsMenuModule"/>) so that the tab exists
+        /// whichever of them fires first; the <c>NVLB_Page</c> check below is what makes that
+        /// safe - the second and third callers find the page and do nothing.
+        /// </summary>
+        /// <param name="via">Which hook is calling, for the log.</param>
+        public static NvlbSettingsTab Install(Settings settings, string via)
         {
-            if (settings == null) return;
+            var log = NoVikingLeftBehindPlugin.Log;
 
-            var handler = settings.GetComponentInChildren<TabHandler>(true);
-            if (handler == null || handler.m_tabs == null || handler.m_tabs.Count == 0) return;
+            if (settings == null)
+            {
+                log.LogWarning("[SettingsMenu] install (" + via + "): the Settings object is null");
+                return null;
+            }
+
+            var handler = PickTabHandler(settings, via);
+            if (handler == null)
+            {
+                log.LogWarning("[SettingsMenu] install (" + via + "): no TabHandler anywhere under '" +
+                               PathOf(settings.transform) + "' - the settings menu changed shape");
+                return null;
+            }
+            if (handler.m_tabs == null || handler.m_tabs.Count == 0)
+            {
+                log.LogWarning("[SettingsMenu] install (" + via + "): TabHandler '" + PathOf(handler.transform) +
+                               "' has " + (handler.m_tabs == null ? "a null" : "an empty") +
+                               " m_tabs list - nothing to hang a tab off");
+                return null;
+            }
 
             foreach (var t in handler.m_tabs)
-                if (t != null && t.m_page != null && t.m_page.name == "NVLB_Page") return;   // already in
+                if (t != null && t.m_page != null && t.m_page.name == "NVLB_Page")
+                {
+                    log.LogInfo("[SettingsMenu] install (" + via + "): the tab is already there - nothing to do");
+                    return null;
+                }
 
             var donor = handler.m_tabs[handler.m_tabs.Count - 1];
-            if (donor == null || donor.m_button == null || donor.m_page == null) return;
+            if (donor == null || donor.m_button == null || donor.m_page == null)
+            {
+                log.LogWarning("[SettingsMenu] install (" + via + "): the last vanilla tab is unusable as a donor (" +
+                               (donor == null
+                                    ? "the tab entry itself is null"
+                                    : "button=" + (donor.m_button != null) + " page=" + (donor.m_page != null)) + ")");
+                return null;
+            }
 
             // ---- the page ---------------------------------------------------------------------
             var pageGo = new GameObject("NVLB_Page", typeof(RectTransform));
@@ -133,13 +173,23 @@ namespace NoVikingLeftBehind
             }
 
             // Tab buttons are positioned in the prefab, not by a layout group on every skin, so
-            // step along by the gap between the last two when there is no layout group to do it.
+            // step along by the gap between the last two when there is no layout group to do it -
+            // and, when there is only one to go by, by that one button's own width.
             var brt = (RectTransform)buttonGo.transform;
-            if (donor.m_button.transform.parent.GetComponent<LayoutGroup>() == null && handler.m_tabs.Count >= 2)
+            var bar = donor.m_button.transform.parent;
+            var layout = bar != null ? bar.GetComponent<LayoutGroup>() : null;
+            if (layout == null)
             {
                 var a = (RectTransform)handler.m_tabs[handler.m_tabs.Count - 1].m_button.transform;
-                var b = (RectTransform)handler.m_tabs[handler.m_tabs.Count - 2].m_button.transform;
-                brt.anchoredPosition = a.anchoredPosition + (a.anchoredPosition - b.anchoredPosition);
+                if (handler.m_tabs.Count >= 2 && handler.m_tabs[handler.m_tabs.Count - 2].m_button != null)
+                {
+                    var b = (RectTransform)handler.m_tabs[handler.m_tabs.Count - 2].m_button.transform;
+                    brt.anchoredPosition = a.anchoredPosition + (a.anchoredPosition - b.anchoredPosition);
+                }
+                else
+                {
+                    brt.anchoredPosition = a.anchoredPosition + new Vector2(a.rect.width + 4f, 0f);
+                }
             }
             buttonGo.SetActive(true);
 
@@ -153,8 +203,59 @@ namespace NoVikingLeftBehind
             });
             button.onClick.AddListener(delegate { handler.SetActiveTab(index); });
 
-            NoVikingLeftBehindPlugin.Log.LogInfo("[SettingsMenu] tab added at index " + index +
-                                                 " of " + handler.m_tabs.Count);
+            log.LogInfo("[SettingsMenu] tab added at index " + index + " of " + handler.m_tabs.Count +
+                        " (via " + via + "), handler='" + PathOf(handler.transform) + "'");
+            log.LogInfo("[SettingsMenu] tab button: parent='" + (bar == null ? "none" : PathOf(bar)) +
+                        "' layout=" + (layout == null ? "none" : layout.GetType().Name) +
+                        " active=" + buttonGo.activeInHierarchy +
+                        " pos=" + brt.anchoredPosition + " size=" + brt.rect.size +
+                        "; page='" + PathOf(page) + "' parent='" +
+                        (page.parent == null ? "none" : PathOf(page.parent)) + "'");
+            return tab;
+        }
+
+        /// <summary>
+        /// The same TabHandler vanilla drives. <c>InitializeTabs()</c> finds it with
+        /// <c>GetComponentInChildren&lt;TabHandler&gt;()</c> - **active children only** - so that is what
+        /// this asks for first. 0.7.1 searched inactive children too, which is a superset and can
+        /// therefore land on a *different* tab bar: one buried in a settings page that happens to
+        /// come first in the hierarchy, whose <c>m_tabs</c> is empty, at which point the install
+        /// gave up without a word. The inactive search is kept as a fallback and takes whichever
+        /// handler has the most tabs.
+        /// </summary>
+        private static TabHandler PickTabHandler(Settings settings, string via)
+        {
+            var log = NoVikingLeftBehindPlugin.Log;
+
+            var handler = settings.GetComponentInChildren<TabHandler>();   // exactly vanilla's lookup
+            if (handler != null && handler.m_tabs != null && handler.m_tabs.Count > 0) return handler;
+
+            TabHandler best = null;
+            foreach (var h in settings.GetComponentsInChildren<TabHandler>(true))
+            {
+                if (h == null || h.m_tabs == null) continue;
+                if (best == null || h.m_tabs.Count > best.m_tabs.Count) best = h;
+            }
+
+            log.LogInfo("[SettingsMenu] install (" + via + "): vanilla's active-only lookup gave " +
+                        (handler == null
+                             ? "nothing"
+                             : "'" + PathOf(handler.transform) + "' with " +
+                               (handler.m_tabs == null ? 0 : handler.m_tabs.Count) + " tabs") +
+                        ", falling back to " +
+                        (best == null
+                             ? "nothing"
+                             : "'" + PathOf(best.transform) + "' with " + best.m_tabs.Count + " tabs"));
+            return best;
+        }
+
+        /// <summary>Full hierarchy path of a transform - for the log, when something is not where we expect.</summary>
+        private static string PathOf(Transform t)
+        {
+            if (t == null) return "null";
+            var s = t.name;
+            for (var p = t.parent; p != null; p = p.parent) s = p.name + "/" + s;
+            return s;
         }
 
         private static void CopyRect(RectTransform from, RectTransform to)
@@ -173,6 +274,9 @@ namespace NoVikingLeftBehind
 
         public void Initialize()
         {
+            NoVikingLeftBehindPlugin.Log.LogInfo("[SettingsMenu] Initialize() called (built=" + _built + ")");
+            if (_built) return;   // vanilla's loop and a late hook can both reach here
+
             try
             {
                 UiKit.Discover(_settings != null ? _settings.gameObject : gameObject);
@@ -184,6 +288,8 @@ namespace NoVikingLeftBehind
                 }
                 Build();
                 _built = true;
+                NoVikingLeftBehindPlugin.Log.LogInfo("[SettingsMenu] Build() done rows=" + _rows.Count +
+                                                     " modules=" + _moduleRows.Count);
             }
             catch (Exception e)
             {

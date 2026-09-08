@@ -22,7 +22,7 @@ namespace NoVikingLeftBehind
     /// </summary>
     internal static class PowerHud
     {
-        public static Vector2 Offset = new Vector2(0f, -56f);
+        public static Vector2 Offset = new Vector2(84f, 0f);
 
         /// <summary>
         /// Printable name of the key that fires this slot, drawn after the power's name ("Bonemass
@@ -126,6 +126,22 @@ namespace NoVikingLeftBehind
             _rt.anchoredPosition = root.anchoredPosition + Offset;
             _rt.localScale = root.localScale;
 
+            // Belt and braces on top of PowerRing.Undecorate's unparent-before-destroy: if any of
+            // our own decoration ever does survive into the clone, it would be a second, permanent
+            // ring drawn over the second slot. Take it out before anything is mapped.
+            int stray = 0;
+            foreach (var t in _rt.GetComponentsInChildren<Transform>(true))
+            {
+                if (t == null || t == _rt || !t.name.StartsWith("NVLB_GP")) continue;
+                if (t.name == "NVLB_GP2") continue;
+                stray++;
+                t.SetParent(null, false);
+                UnityEngine.Object.Destroy(t.gameObject);
+            }
+            if (stray > 0)
+                NoVikingLeftBehindPlugin.Log.LogInfo("[DualPowers] stripped " + stray +
+                    " leftover decoration object(s) from the cloned power widget");
+
             var cloneTexts = _rt.GetComponentsInChildren<TMP_Text>(true);
             var cloneImages = _rt.GetComponentsInChildren<Image>(true);
             _name = At(cloneTexts, nameIdx);
@@ -171,6 +187,14 @@ namespace NoVikingLeftBehind
             Offset = offset;
             if (_rt != null && _hud != null && _hud.m_gpRoot != null)
                 _rt.anchoredPosition = _hud.m_gpRoot.anchoredPosition + Offset;
+
+            // This is the ONLY code path a live HudOffsetX/HudOffsetY edit takes - unlike Ensure()'s
+            // full clone rebuild (scene change), it never calls PowerRing.UndecorateAll(), so it
+            // never enters PowerRing's normal "clean slate, re-decorate next Refresh" contract.
+            // Nothing was otherwise guaranteeing the clone stayed decorated the moment the offset
+            // changed, so ask PowerRing to check right now. Redecorate() is idempotent: if slot 2
+            // is already correctly decorated (same icon, mask/ring still alive) it is a no-op.
+            if (_icon != null) PowerRing.Redecorate(1, _icon);
         }
 
         public static void Destroy()

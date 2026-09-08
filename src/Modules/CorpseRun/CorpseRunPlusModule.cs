@@ -71,6 +71,8 @@ namespace NoVikingLeftBehind
         private ConfigEntry<float> _compassArrowScale;
         private ConfigEntry<string> _compassMode;
         private ConfigEntry<float> _compassEdgeMargin;
+        private ConfigEntry<float> _hintAlpha;
+        private ConfigEntry<float> _hintScale;
         private ConfigEntry<string> _clearGraveKey;
         private ConfigEntry<float> _clearGraveHoldSec;
 
@@ -247,6 +249,15 @@ namespace NoVikingLeftBehind
                 "in Edge mode.",
                 Opt.N("Pixel gap kept between the marker and the screen edge", 0, 300));
 
+            _hintAlpha = BindLocal("HintAlpha", 0.55f,
+                "Machine-local. How solid the 'hold Delete to dismiss' hint under the distance is: " +
+                "1 = as bright as the distance, lower = more faded.",
+                Opt.N("Opacity of the dismiss hint relative to the distance label", 0, 1));
+
+            _hintScale = BindLocal("HintScale", 0.8f,
+                "Machine-local. Size of that hint line relative to the distance label.",
+                Opt.N("Size of the dismiss hint relative to the distance label", 0.5, 1.2));
+
             _clearGraveKey = BindLocal("ClearGraveKey", "Delete",
                 "Machine-local. HOLD this key (see ClearGraveHoldSec) to dismiss the grave marker " +
                 "and Grave Pull without opening the console - the same thing nvlb.grave.clear does. " +
@@ -291,6 +302,8 @@ namespace NoVikingLeftBehind
             GraveCompassHud.EdgeMode = !string.Equals(_compassMode.Value, "Fixed",
                                                       StringComparison.OrdinalIgnoreCase);
             GraveCompassHud.EdgeMargin = Mathf.Max(0f, _compassEdgeMargin.Value);
+            GraveCompassHud.HintAlpha = _hintAlpha.Value;
+            GraveCompassHud.HintScale = _hintScale.Value;
             _clearKey = ParseKey(_clearGraveKey.Value);
         }
 
@@ -312,7 +325,8 @@ namespace NoVikingLeftBehind
             return "compass=" + _compassEnabled.Value + "(" + _compassMode.Value + " margin " +
                    _compassEdgeMargin.Value + "px, hide<" + _compassHideDistance.Value +
                    "m every " + _compassUpdateSec.Value + "s, dismiss=hold " + _clearKey + " " +
-                   _clearGraveHoldSec.Value + "s)" +
+                   _clearGraveHoldSec.Value + "s, hint alpha " + _hintAlpha.Value + " scale " +
+                   _hintScale.Value + ")" +
                    " food=" + _respawnFoodEnabled.Value + "(" + _respawnFoods.Value + " x" +
                    _respawnFoodCount.Value + ")" +
                    " rested=" + _respawnRestedEnabled.Value + "(" + _restedMinutes.Value + "min)" +

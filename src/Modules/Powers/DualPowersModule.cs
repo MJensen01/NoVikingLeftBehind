@@ -134,11 +134,14 @@ namespace NoVikingLeftBehind
                 "Machine-local. Clone the vanilla power icon so slot 2 gets its own icon, name " +
                 "and cooldown readout. Turn off if it clashes with another HUD mod.",
                 Opt.B("Show a separate HUD icon for the second power slot"));
-            _hudOffsetX = BindLocal("HudOffsetX", 0f,
-                "Machine-local. Pixels to move the second power icon sideways from the vanilla one.",
+            _hudOffsetX = BindLocal("HudOffsetX", 84f,
+                "Machine-local. Pixels to move the second power icon sideways from the vanilla one. " +
+                "Defaults to 84 so it sits beside the vanilla icon (~50px) instead of overlapping it.",
                 Opt.N("Sideways offset of the second power icon, in pixels", -200, 200, 1));
-            _hudOffsetY = BindLocal("HudOffsetY", -56f,
-                "Machine-local. Pixels to move the second power icon vertically (negative = below).",
+            _hudOffsetY = BindLocal("HudOffsetY", 0f,
+                "Machine-local. Pixels to move the second power icon vertically (negative = below, " +
+                "positive = above). Defaults to 0, level with the vanilla icon - HudOffsetX already " +
+                "keeps the two side by side so their name labels do not collide.",
                 Opt.N("Vertical offset of the second power icon, in pixels", -200, 200, 1));
             _roundIcons = BindLocal("RoundIcons", true,
                 "Machine-local, cosmetic. Draw every Forsaken power icon (slot 1 and the extra " +
