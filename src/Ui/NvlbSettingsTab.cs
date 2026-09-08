@@ -1341,7 +1341,32 @@ namespace NoVikingLeftBehind
             public bool Editable;
         }
 
+        /// <summary>
+        /// True while the right-hand pane is being rebuilt. Building a row touches config values,
+        /// refreshes and captions, any of which could reach back here - and a rebuild that starts
+        /// another rebuild is not slow, it is fatal: unbounded recursion overflows the stack, and
+        /// Mono cannot catch that. The process simply stops, with no exception, no crash dump and
+        /// a log that ends mid-line. That is exactly what 0.8.5 did the first time anyone opened
+        /// a module owning a list setting, and this guard is the cheap insurance against the next
+        /// one of its kind.
+        /// </summary>
+        private bool _rebuilding;
+
         private void RebuildRight()
+        {
+            if (_rebuilding)
+            {
+                NoVikingLeftBehindPlugin.Log.LogWarning(
+                    "[SettingsMenu] something asked to rebuild the settings pane while it was " +
+                    "already being built - ignored. This is a bug, but a survivable one.");
+                return;
+            }
+            _rebuilding = true;
+            try { RebuildRightCore(); }
+            finally { _rebuilding = false; }
+        }
+
+        private void RebuildRightCore()
         {
             // Read every open field BEFORE the pane is torn down. This rebuild runs on each
             // keystroke in the search box and on every click in the module list, and Unity's
@@ -1386,12 +1411,24 @@ namespace NoVikingLeftBehind
 
                 // One row that cannot be built must cost that row and nothing else. Before 0.7.6
                 // a single throw in here left the whole page blank.
+                //
+                // Named BEFORE it is built, and timed. A row that hangs - or overflows the stack,
+                // which Mono cannot catch and which simply stops the process - leaves no
+                // exception and no crash dump, so without this line there is nothing in the log
+                // to say which row the game died on. That cost a whole release to find once.
+                NoVikingLeftBehindPlugin.Log.LogInfo("[SettingsMenu] building row [" + info.Section +
+                                                     "] " + info.Key);
+                var started = Time.realtimeSinceStartup;
                 try { _rows.Add(BuildRow(info, y)); }
                 catch (Exception e)
                 {
                     NoVikingLeftBehindPlugin.Log.LogError("[SettingsMenu] row [" + info.Section + "] " +
                                                           info.Key + " could not be built: " + e);
                 }
+                float took = (Time.realtimeSinceStartup - started) * 1000f;
+                if (took > 50f)
+                    NoVikingLeftBehindPlugin.Log.LogWarning("[SettingsMenu] row [" + info.Section + "] " +
+                        info.Key + " took " + took.ToString("0") + " ms to build");
                 y += RowH;
             }
 
@@ -1782,10 +1819,17 @@ namespace NoVikingLeftBehind
                 UiKit.Tip(row.RawButton.gameObject, "Edit the list as text instead.");
             }
 
-            // The text field is built too, and starts hidden. It is the same field every other
-            // free-text row uses, so everything that already works - the pending queue, the
-            // commit-on-focus-loss sweep - works here without a special case.
-            BuildText(row, control);
+            // BuildTextField, NOT BuildText. BuildText is the dispatcher: it looks at the setting
+            // and sends a picker-backed one straight back here, so calling it from here was
+            // BuildPicker -> BuildText -> BuildPicker without end. That is a stack overflow, and
+            // Mono cannot catch one - the process simply stops, which is why the log ended mid
+            // rebuild with no exception and no crash dump the first time anyone opened a module
+            // that owns a list setting.
+            //
+            // The field is built anyway and starts hidden: it is the same field every other free
+            // text row uses, so the pending queue and the commit-on-focus-loss sweep work here
+            // without a special case.
+            BuildTextField(row, control);
             if (row.Input != null)
             {
                 var irt = (RectTransform)row.Input.transform;
@@ -1828,6 +1872,17 @@ namespace NoVikingLeftBehind
                 return;
             }
 
+            BuildTextField(row, control);
+        }
+
+        /// <summary>
+        /// Just the text field, with no decision about what kind of setting this is. Kept separate
+        /// from <see cref="BuildText"/> - which dispatches to the recorder or the picker - so that
+        /// the picker can ask for a plain field without being handed straight back to itself.
+        /// </summary>
+        private void BuildTextField(Row row, RectTransform control)
+        {
+            var info = row.Info;
             row.Input = UiKit.Input(control, 280f, 26f);
             if (row.Input == null) return;
             UiKit.Stretch((RectTransform)row.Input.transform);
@@ -1894,6 +1949,8 @@ namespace NoVikingLeftBehind
             // FastLink and stayed there, and going the other way went to Custom and stayed there,
             // so FastLink could never be reached from Custom. Every enum row had this, not just
             // the network preset.
+            if (choices == null || choices.Length == 0) return;
+
             string current = Shown(info);
             int at = 0;
             for (int i = 0; i < choices.Length; i++)

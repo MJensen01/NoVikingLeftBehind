@@ -1,4 +1,19 @@
+
 # Changelog — NoVikingLeftBehind
+
+## 0.8.6 (2026-09-08)
+- **Fixes 0.8.5 closing the game.** Opening a module that owns one of the new list settings —
+  CorpseRunPlus is the one most people would reach first — froze Valheim and then shut it down
+  outright, with no error, no crash report and a log that simply stopped mid-sentence. 0.8.5's
+  picker asked the row builder for a plain text field to hide behind its **Raw** button, but the
+  row builder is the thing that decides a list setting should get a picker, so it handed the row
+  straight back: picker, builder, picker, builder, until the stack ran out. An overflow like that
+  cannot be caught — the process just ends, which is why there was nothing to read afterwards.
+  The picker now asks for the field itself rather than going back through the decision.
+- **And makes the next one findable.** Every row is named in the log *before* it is built and
+  timed after, so a build that dies leaves the offending row as the last line rather than nothing
+  at all; a rebuild that somehow starts while one is already running is refused and logged instead
+  of recursing; and the drop-down arrows can no longer step through an empty list of choices.
 
 ## 0.8.5 (2026-09-08)
 **Tick the ore off a list instead of knowing its name.** `[Mining] OreNodes` reads
