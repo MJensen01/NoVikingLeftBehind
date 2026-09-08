@@ -1,5 +1,31 @@
 # Changelog — NoVikingLeftBehind
 
+## 0.5.1 (2026-09-08)
+**Per-station recipe costs** — TrailingTierDiscount can now re-price every recipe made at a named crafting station,
+whatever its tier. Still 29 modules; no new module.
+
+- **`[Discount] StationMultipliers = "BCA_CookingPot:0.75"` — new setting** (`src/Modules/Economy/TrailingTierDiscountModule.cs`).
+  Comma-separated `StationPrefabName:multiplier` pairs. Every recipe whose `m_craftingStation` prefab name is listed
+  costs that fraction of its ingredients at **every quality level** — in the crafting panel, in the "can I craft this?"
+  check and in what actually leaves your inventory. Matching is on the **prefab** name
+  (`recipe.m_craftingStation.gameObject.name`), never the localised `m_name`; recipes with no crafting station, and
+  build pieces, are never matched. Multipliers are clamped to `0.01..1` (this module still never makes anything more
+  expensive) and compose with the tier discount by multiplication, with `MinAmount` still the floor.
+  **Why:** CookingAdditions rewrites its own "Crafting Costs" back to its defaults on every server boot, so its soups,
+  salted meats and coated eggs cannot be re-priced from its config at all. The default entry takes that mod's custom
+  cooking pot to three-quarter price; vanilla stations are untouched unless you list them.
+- **The number shown, checked and consumed still cannot disagree.** The station factor rides the same thread-static
+  context as the tier factor and is applied in the same one place (the `Piece.Requirement.GetAmount(int)` postfix), so
+  nothing in `ObjectDB` is mutated — deliberately: another mod's ItemManager re-applies its own numbers over the shared
+  recipe data, and editing `Recipe.m_resources` would be a fight you lose on the next boot. One new context site,
+  `InventoryGui.DoCrafting(Player)`, publishes `m_craftRecipe`'s station around the craft, because the
+  `Piece.Requirement[]` handed to `Player.ConsumeResources` cannot say which station it came from.
+- **Proof in the log.** `[Discount] station multipliers: BCA_CookingPot x0.75 (10 recipes matched)` is written once per
+  world load — from the `ZoneSystem.Start` hook, the first point `ObjectDB.m_recipes` is populated on **both** halves —
+  and again on every live edit of the setting, on a dedicated server too (where this client-side module is otherwise
+  `disabled(side)`). The match count is in `nvlb.status`, and `[Economy] SelfTest=true` now prints five matched recipes
+  ingredient by ingredient with their before/after amounts.
+
 ## 0.5.0 (2026-09-08)
 **Crew sailing** — two modules that make a boat with people on it feel different from a boat with one person on it,
 without making anything faster. 29 modules now.

@@ -37,7 +37,9 @@ all. The mod never makes the leaders' game easier; it only softens the trail beh
 ### Catching up
 
 - **TrailingTierDiscount** — that iron cuirass costs half the ore it used to, the moment iron
-  stops being your group's edge. `Tune it:` `[Discount] CostMultiplier=0.5`, `ExtraPerTierBehind=0.0`, `MinAmount=1`
+  stops being your group's edge. It can also re-price everything made at one named crafting
+  station, whatever its tier — handy when another mod's own cost settings refuse to stick.
+  `Tune it:` `[Discount] CostMultiplier=0.5`, `ExtraPerTierBehind=0.0`, `MinAmount=1`, `StationMultipliers="BCA_CookingPot:0.75"`
 - **RichSmelting** — drop copper in a behind-the-frontier smelter and watch it spit out twice the
   bars per ore; craft a bronze recipe and get double the yield per craft. `Tune it:` `[Smelting] OutputMultiplier=2`, `RecipeYieldMultiplier=2`
 - **FastMining** — a behind-the-frontier vein melts under your pickaxe instead of eating your

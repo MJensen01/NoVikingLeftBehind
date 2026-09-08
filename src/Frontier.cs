@@ -166,6 +166,11 @@ namespace NoVikingLeftBehind
             {
                 Frontier.Recompute();
                 Tiers.ValidateOnce();
+                // Same "world is ready" point, same reason: by ZoneSystem.Start ObjectDB's recipe
+                // list is populated on BOTH halves, so the station-multiplier proof line can name a
+                // real match count. TrailingTierDiscount is client-side and never patches on a
+                // dedicated server, so it cannot hook this itself.
+                TrailingTierDiscountModule.ReportStationsOnce();
             }
             catch (Exception e)
             {
