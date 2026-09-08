@@ -1,5 +1,24 @@
 # Changelog — NoVikingLeftBehind
 
+## 0.7.4 (2026-09-08)
+- **The settings tab is readable.** 0.7.3 put the tab on screen and the door worked, but half the text on it was
+  missing: no setting names, no hints, no module names, no search placeholder — a column of bare toggles and
+  sliders — while a giant tooltip sat pinned in the corner of the screen. All of it was **one** cause. The page
+  borrows its font from a real vanilla label, and it borrowed it from the first one in the hierarchy: the big
+  **"Settings" heading**, about 34px. Every label was then built at 0.72–0.95 of *that* — 25 to 32px — inside rows
+  22 to 28px tall, and TMP set to ellipsis draws **nothing at all** when even the first line will not fit. The
+  labels that did show were exactly the ones whose rows happened to be tall enough. The font donor is now the
+  **median** of the page's ordinary labels — the body text, which one big heading cannot skew — and the size is
+  clamped to 14–22px; labels are single-line so a too-large font truncates sideways instead of vanishing, and a
+  row label can never be squeezed below 120px wide however narrow the page. The tooltip follows the cursor
+  properly (it was mixing pivot-relative coordinates with a corner anchor, which is what pinned it top-left),
+  caps its font, and steps aside rather than covering the search box; the footer buttons match everything else
+  instead of auto-shrinking to 11px; and the audit strip cuts each line at 60 characters with the full text on hover.
+- **New: `nvlb.uidump`.** A console command that dumps every label on the built page — text, active, enabled, font
+  size, alpha, wrap and overflow mode, rect size, screen corners, sibling index, parent, and any ancestor
+  CanvasGroup fading it — plus the page and both panes. Open the tab, then run it. A label that does not draw is
+  nearly always one of those numbers, and a screenshot cannot tell you which.
+
 ## 0.7.3 (2026-09-08)
 - **The settings tab, actually.** 0.7.2's new logging did its job on the first try and named the culprit in one
   line: the settings menu's tab list has **seven** entries, not six — the six you can see plus a hidden seventh

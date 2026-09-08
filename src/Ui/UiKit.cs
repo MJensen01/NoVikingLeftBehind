@@ -52,12 +52,30 @@ namespace NoVikingLeftBehind
             _fontDonor = null; _toggleDonor = null; _sliderDonor = null; _buttonDonor = null; _panelDonor = null;
             if (settingsRoot == null) return;
 
+            // The font donor decides BaseFontSize, and BaseFontSize decides whether a label fits
+            // the rect it was given. Up to 0.7.3 this took the FIRST TMP_Text in the hierarchy,
+            // which is the page's big "Settings" heading (~34px). Every label then came out at
+            // 0.72-0.95 of that - 25 to 32px - inside rows 22 to 28px tall, and TMP with
+            // TextOverflowModes.Ellipsis draws NOTHING at all when even the first line will not
+            // fit its rect. That, and not draw order or rect width, is why row labels, hints,
+            // module names and the search placeholder were blank while the taller labels (the
+            // theme headings, the greyed reason, the audit strip, the tooltip) came through.
+            //
+            // So take the MEDIAN size of the ordinary labels - the page's body text, which the
+            // one big heading cannot skew - and clamp it, because nothing on this page is laid
+            // out for text bigger than 22px.
+            var labels = new System.Collections.Generic.List<TMP_Text>();
             foreach (var t in settingsRoot.GetComponentsInChildren<TMP_Text>(true))
             {
                 if (t == null || string.IsNullOrEmpty(t.text)) continue;
                 if (t.GetComponentInParent<Toggle>() != null) continue;   // prefer a standalone label
-                _fontDonor = t;
-                break;
+                if (t.fontSize <= 1f) continue;
+                labels.Add(t);
+            }
+            if (labels.Count > 0)
+            {
+                labels.Sort(delegate (TMP_Text a, TMP_Text b) { return a.fontSize.CompareTo(b.fontSize); });
+                _fontDonor = labels[labels.Count / 2];
             }
             if (_fontDonor == null)
             {
@@ -78,10 +96,23 @@ namespace NoVikingLeftBehind
             if (_fontDonor != null)
             {
                 TextColor = _fontDonor.color;
-                BaseFontSize = _fontDonor.fontSize > 1 ? _fontDonor.fontSize : 16f;
+                float raw = _fontDonor.fontSize > 1 ? _fontDonor.fontSize : 16f;
+                BaseFontSize = Mathf.Clamp(raw, 14f, 22f);
                 DimColor = new Color(TextColor.r, TextColor.g, TextColor.b, 0.4f);
                 HintColor = new Color(TextColor.r * 0.88f, TextColor.g * 0.85f, TextColor.b * 0.78f, 0.85f);
+
+                NoVikingLeftBehindPlugin.Log.LogInfo("[SettingsMenu] font donor '" + _fontDonor.name +
+                    "' text=\"" + Clip(_fontDonor.text, 18) + "\" size=" + raw.ToString("0.#") +
+                    " (median of " + labels.Count + " labels) -> BaseFontSize=" + BaseFontSize.ToString("0.#") +
+                    ", colour=" + ColorUtility.ToHtmlStringRGBA(TextColor));
             }
+        }
+
+        private static string Clip(string s, int n)
+        {
+            if (string.IsNullOrEmpty(s)) return "";
+            s = s.Replace("\n", " ");
+            return s.Length <= n ? s : s.Substring(0, n) + "...";
         }
 
         // ---- primitives ---------------------------------------------------------------------------
@@ -126,6 +157,11 @@ namespace NoVikingLeftBehind
             t.richText = false;
             t.raycastTarget = false;
             t.overflowMode = TextOverflowModes.Ellipsis;
+            // Single line by default. With wrapping ON, Ellipsis makes TMP draw nothing at all
+            // when the wrapped text is taller than the rect - one label slightly too big for its
+            // row and the whole row goes blank. With wrapping OFF it truncates sideways instead,
+            // which is what a settings row wants anyway. The tooltip turns it back on.
+            t.enableWordWrapping = false;
             var rt = (RectTransform)clone.transform;
             rt.localScale = Vector3.one;
             return t;
@@ -161,7 +197,12 @@ namespace NoVikingLeftBehind
             return s;
         }
 
-        public static Button Button(Transform parent, string caption)
+        /// <param name="fontSize">
+        /// Explicit caption size. Left at 0 the caption auto-sizes down to fit, which is right for
+        /// a one-glyph reset button but wrong for a worded button: the donor's own auto-size floor
+        /// shrank "Undo last change" to about 11px, out of step with every other label on the page.
+        /// </param>
+        public static Button Button(Transform parent, string caption, float fontSize = 0f)
         {
             if (_buttonDonor == null) return null;
             var clone = UnityEngine.Object.Instantiate(_buttonDonor.gameObject, parent, false);
@@ -173,9 +214,18 @@ namespace NoVikingLeftBehind
             foreach (var txt in clone.GetComponentsInChildren<TMP_Text>(true))
             {
                 txt.text = caption;
-                txt.enableAutoSizing = true;
-                txt.fontSizeMin = 8f;
+                if (fontSize > 0f)
+                {
+                    txt.enableAutoSizing = false;
+                    txt.fontSize = fontSize;
+                }
+                else
+                {
+                    txt.enableAutoSizing = true;
+                    txt.fontSizeMin = 8f;
+                }
                 txt.overflowMode = TextOverflowModes.Ellipsis;
+                txt.enableWordWrapping = false;
             }
             ((RectTransform)clone.transform).localScale = Vector3.one;
             return b;
@@ -322,6 +372,14 @@ namespace NoVikingLeftBehind
         {
             public string Text;
             public static RectTransform Panel;
+
+            /// <summary>
+            /// A page-local rect the tooltip must not cover - the search box, so a hover on the
+            /// first row cannot hide what you are typing. Same coordinate space as the panel's
+            /// anchoredPosition: x right from the page's left edge, y negative downward from its top.
+            /// </summary>
+            public static Rect Avoid = new Rect(0f, 0f, 0f, 0f);
+
             private static TMP_Text _panelText;
             private static float _showAt;
             private static Hover _current;
@@ -354,7 +412,8 @@ namespace NoVikingLeftBehind
                 Panel.anchorMax = new Vector2(0f, 1f);
                 Panel.sizeDelta = new Vector2(420f, 120f);
 
-                _panelText = Label(Panel, "", BaseFontSize * 0.85f, TextAlignmentOptions.TopLeft);
+                _panelText = Label(Panel, "", Mathf.Clamp(BaseFontSize * 0.85f, 12f, 18f),
+                                   TextAlignmentOptions.TopLeft);
                 var trt = (RectTransform)_panelText.transform;
                 Stretch(trt);
                 trt.offsetMin = new Vector2(10f, 10f);
@@ -383,8 +442,8 @@ namespace NoVikingLeftBehind
                     Panel.gameObject.SetActive(true);
                     Panel.SetAsLastSibling();
                     _panelText.ForceMeshUpdate();
-                    float h = Mathf.Clamp(_panelText.GetPreferredValues(_current.Text, 400f, 0f).y + 20f, 40f, 400f);
-                    Panel.sizeDelta = new Vector2(420f, h);
+                    float wanted = Mathf.Clamp(_panelText.GetPreferredValues(_current.Text, 400f, 0f).y + 20f, 40f, 400f);
+                    Panel.sizeDelta = new Vector2(420f, wanted);
                 }
 
                 var parent = Panel.parent as RectTransform;
@@ -394,13 +453,29 @@ namespace NoVikingLeftBehind
                 if (!RectTransformUtility.ScreenPointToLocalPointInRectangle(
                         parent, UnityEngine.Input.mousePosition, cam, out local)) return;
 
-                // keep it inside the page
-                float halfW = parent.rect.width * parent.pivot.x;
-                float x = local.x + 18f;
-                if (x + Panel.sizeDelta.x > parent.rect.width - halfW) x = local.x - 18f - Panel.sizeDelta.x;
-                float y = local.y - 12f;
-                if (y - Panel.sizeDelta.y < -parent.rect.height * (1f - parent.pivot.y))
-                    y = local.y + 12f + Panel.sizeDelta.y;
+                // ScreenPointToLocalPointInRectangle answers in coordinates relative to the
+                // parent's PIVOT, but this panel is anchored to the parent's TOP-LEFT corner.
+                // Feeding one straight into the other is what pinned the tooltip in the corner of
+                // the screen instead of putting it under the cursor. Convert once, here.
+                float w = parent.rect.width, h = parent.rect.height;
+                float px = local.x + w * parent.pivot.x;            // distance right of the left edge
+                float py = local.y - h * (1f - parent.pivot.y);     // distance below the top edge (<= 0)
+
+                float tw = Panel.sizeDelta.x, th = Panel.sizeDelta.y;
+                float x = px + 18f;
+                if (x + tw > w) x = px - 18f - tw;                  // flip to the cursor's left
+                x = Mathf.Clamp(x, 0f, Mathf.Max(0f, w - tw));
+                float y = py - 12f;
+                if (y - th < -h) y = py + 12f + th;                 // flip above the cursor
+                y = Mathf.Clamp(y, Mathf.Min(0f, -h + th), 0f);
+
+                // Never sit on top of something the player is reading or typing into.
+                if (Avoid.width > 0f && new Rect(x, y - th, tw, th).Overlaps(Avoid))
+                {
+                    float below = Avoid.yMin - 4f;
+                    y = (below - th >= -h) ? below : Avoid.yMax + 4f + th;
+                }
+
                 Panel.anchoredPosition = new Vector2(x, y);
             }
 
@@ -415,7 +490,13 @@ namespace NoVikingLeftBehind
         /// <summary>Attach hover text to anything with a raycast target.</summary>
         public static void Tip(GameObject go, string text)
         {
-            if (go == null || string.IsNullOrEmpty(text)) return;
+            if (go == null) return;
+            if (string.IsNullOrEmpty(text))
+            {
+                var old = go.GetComponent<Hover>();
+                if (old != null) old.Text = null;      // clear it, do not leave a stale tooltip
+                return;
+            }
             var img = go.GetComponent<Image>();
             if (img == null)
             {

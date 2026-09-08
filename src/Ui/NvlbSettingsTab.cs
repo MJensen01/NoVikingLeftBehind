@@ -87,6 +87,12 @@ namespace NoVikingLeftBehind
         private const float FooterH = 44f;
         private const float LeftW = 300f;
 
+        /// <summary>How much of a row's right-hand side belongs to the control and the reset button.</summary>
+        private const float RightInset = 344f;
+
+        /// <summary>The live tab, for <c>nvlb.uidump</c>. There is only ever one Settings object.</summary>
+        internal static NvlbSettingsTab Current;
+
         // ---- installation (called from the hooks in SettingsMenuModule) ---------------------------
 
         /// <summary>
@@ -180,6 +186,7 @@ namespace NoVikingLeftBehind
             var tab = pageGo.AddComponent<NvlbSettingsTab>();
             tab._settings = settings;
             tab._page = page;
+            Current = tab;
 
             // ---- the tab button ----------------------------------------------------------------
             var buttonGo = UnityEngine.Object.Instantiate(donor.m_button.gameObject,
@@ -289,6 +296,102 @@ namespace NoVikingLeftBehind
                    t.m_button.gameObject.activeInHierarchy;
         }
 
+        // ---- nvlb.uidump -----------------------------------------------------------------------
+
+        /// <summary>
+        /// Every piece of text on the built page, with the numbers that decide whether it draws:
+        /// is it active, is the component enabled, how big is the font, how opaque is the colour,
+        /// how big is the rect it has to fit in, where is it on the screen, and is an ancestor
+        /// CanvasGroup fading it out. A blank label is nearly always one of those, and a
+        /// screenshot cannot tell you which.
+        /// </summary>
+        internal static void Dump(Action<string> write)
+        {
+            var tab = Current;
+            if (tab == null || !tab._built)
+            {
+                write("[uidump] the tab is not built yet - open Settings and the NoVikingLeftBehind tab, " +
+                      "then run this again (the settings menu is rebuilt on every open).");
+                return;
+            }
+
+            try
+            {
+                write("[uidump] BaseFontSize=" + UiKit.BaseFontSize.ToString("0.#") +
+                      " text=#" + ColorUtility.ToHtmlStringRGBA(UiKit.TextColor) +
+                      " hint=#" + ColorUtility.ToHtmlStringRGBA(UiKit.HintColor) +
+                      " dim=#" + ColorUtility.ToHtmlStringRGBA(UiKit.DimColor) +
+                      "  rows=" + tab._rows.Count + " modules=" + tab._moduleRows.Count +
+                      " selected=" + (tab._network ? "Network" : (tab._selected == null ? "none" : tab._selected.Name)));
+                write("[uidump] page " + Fmt(tab._page) + " at '" + PathOf(tab._page) + "'");
+                write("[uidump] left content " + Fmt(tab._leftContent));
+                write("[uidump] right content " + Fmt(tab._rightContent));
+                write("[uidump] tooltip panel " + Fmt(UiKit.Hover.Panel) +
+                      " active=" + (UiKit.Hover.Panel != null && UiKit.Hover.Panel.gameObject.activeSelf));
+
+                var texts = tab._page.GetComponentsInChildren<TMP_Text>(true);
+                write("[uidump] " + texts.Length + " TMP_Text under the page:");
+
+                var corners = new Vector3[4];
+                foreach (var t in texts)
+                {
+                    if (t == null) continue;
+                    var rt = (RectTransform)t.transform;
+                    rt.GetWorldCorners(corners);
+
+                    float cg = 1f;
+                    for (var p = t.transform; p != null; p = p.parent)
+                    {
+                        var g = p.GetComponent<CanvasGroup>();
+                        if (g != null) cg *= g.alpha;
+                    }
+
+                    write("  \"" + Clip(t.text, 20) + "\"" +
+                          " act=" + t.gameObject.activeInHierarchy +
+                          " en=" + t.enabled +
+                          " font=" + t.fontSize.ToString("0.#") +
+                          " a=" + t.color.a.ToString("0.##") +
+                          " wrap=" + t.enableWordWrapping +
+                          " ovf=" + t.overflowMode +
+                          " sd=" + V(rt.sizeDelta) +
+                          " rect=" + rt.rect.width.ToString("0") + "x" + rt.rect.height.ToString("0") +
+                          " pos=" + V(rt.anchoredPosition) +
+                          " screen=" + V(corners[0]) + "-" + V(corners[2]) +
+                          " sib=" + rt.GetSiblingIndex() +
+                          (cg < 0.999f ? " CANVASGROUP=" + cg.ToString("0.##") : "") +
+                          " in " + Parent2(rt));
+                }
+            }
+            catch (Exception e) { write("[uidump] failed: " + e); }
+        }
+
+        private static string Fmt(RectTransform rt)
+        {
+            if (rt == null) return "<null>";
+            return "rect=" + rt.rect.width.ToString("0") + "x" + rt.rect.height.ToString("0") +
+                   " sd=" + V(rt.sizeDelta) + " pos=" + V(rt.anchoredPosition) +
+                   " anch=" + V(rt.anchorMin) + "/" + V(rt.anchorMax) + " piv=" + V(rt.pivot);
+        }
+
+        private static string V(Vector2 v) { return "(" + v.x.ToString("0.#") + "," + v.y.ToString("0.#") + ")"; }
+        private static string V(Vector3 v) { return "(" + v.x.ToString("0") + "," + v.y.ToString("0") + ")"; }
+
+        private static string Clip(string s, int n)
+        {
+            if (string.IsNullOrEmpty(s)) return "";
+            s = s.Replace("\n", "\\n");
+            return s.Length <= n ? s : s.Substring(0, n) + "...";
+        }
+
+        /// <summary>Two levels of parent, which is enough to tell a row from a module row.</summary>
+        private static string Parent2(Transform t)
+        {
+            var p = t.parent;
+            if (p == null) return "<no parent>";
+            var gp = p.parent;
+            return (gp == null ? "" : gp.name + "/") + p.name;
+        }
+
         /// <summary>Full hierarchy path of a transform - for the log, when something is not where we expect.</summary>
         private static string PathOf(Transform t)
         {
@@ -377,7 +480,11 @@ namespace NoVikingLeftBehind
 
         public void OnSharedSettingChanged(string setting, int value) { }
 
-        private void OnDestroy() { Terminate(); }
+        private void OnDestroy()
+        {
+            if (Current == this) Current = null;
+            Terminate();
+        }
 
         private void Update()
         {
@@ -397,8 +504,34 @@ namespace NoVikingLeftBehind
             if (w > 100f && Mathf.Abs(w - _lastWidth) > 1f)
             {
                 _lastWidth = w;
+                ReflowRowLabels();
                 LayoutRebuilder.MarkLayoutForRebuild(_page);
             }
+        }
+
+        /// <summary>
+        /// A row label spans from a 12px left inset to <see cref="RightInset"/> short of the right
+        /// edge, leaving room for the control and the reset button. On a narrow page that leaves
+        /// the label nothing at all - a zero or negative width, which TMP draws as nothing - so
+        /// the right inset gives way first and a label is never allowed below 120px.
+        /// </summary>
+        private void ReflowRowLabels()
+        {
+            float rw = _rightContent != null ? _rightContent.rect.width : 0f;
+            if (rw <= 0f) return;
+            float right = Mathf.Clamp(RightInset, 0f, Mathf.Max(0f, rw - 12f - 120f));
+
+            foreach (var r in _rows)
+            {
+                if (r.Label != null) SetRightInset((RectTransform)r.Label.transform, right);
+                if (r.Hint != null) SetRightInset((RectTransform)r.Hint.transform, right);
+            }
+        }
+
+        private static void SetRightInset(RectTransform rt, float right)
+        {
+            var om = rt.offsetMax;
+            if (Mathf.Abs(om.x + right) > 0.5f) rt.offsetMax = new Vector2(-right, om.y);
         }
 
         // ---- building ----------------------------------------------------------------------------------
@@ -432,6 +565,9 @@ namespace NoVikingLeftBehind
                 UiKit.Place((RectTransform)_search.transform, 80f, 6f, 300f, 26f);
                 if (_search.placeholder != null)
                     ((TMP_Text)_search.placeholder).text = "name, key, hint or description";
+                // Same space the tooltip is positioned in: x right from the page's left edge,
+                // y negative downward from its top.
+                UiKit.Hover.Avoid = new Rect(72f, -36f, 316f, 32f);
                 _search.onValueChanged.AddListener(delegate (string s)
                 {
                     _filter = (s ?? "").Trim();
@@ -489,7 +625,7 @@ namespace NoVikingLeftBehind
             footer.offsetMin = new Vector2(0f, 0f);
             footer.offsetMax = new Vector2(0f, FooterH);
 
-            _undoButton = UiKit.Button(footer, "Undo last change");
+            _undoButton = UiKit.Button(footer, "Undo last change", UiKit.BaseFontSize * 0.9f);
             if (_undoButton != null)
             {
                 UiKit.Place((RectTransform)_undoButton.transform, 8f, FooterH - 6f, 180f, 30f);
@@ -499,7 +635,7 @@ namespace NoVikingLeftBehind
                     "The server keeps the last 20 changes per setting.");
             }
 
-            _resetButton = UiKit.Button(footer, "Reset module to defaults");
+            _resetButton = UiKit.Button(footer, "Reset module to defaults", UiKit.BaseFontSize * 0.9f);
             if (_resetButton != null)
             {
                 UiKit.Place((RectTransform)_resetButton.transform, 196f, FooterH - 6f, 220f, 30f);
@@ -929,16 +1065,16 @@ namespace NoVikingLeftBehind
 
             row.Label = UiKit.Label(rt, info.Label, UiKit.BaseFontSize * 0.95f,
                                     TextAlignmentOptions.MidlineLeft);
-            Span((RectTransform)row.Label.transform, 12f, 344f, 4f, 26f);
+            Span((RectTransform)row.Label.transform, 12f, RightInset, 4f, 26f);
 
             row.Hint = UiKit.Label(rt, info.Hint ?? "", UiKit.BaseFontSize * 0.78f,
                                    TextAlignmentOptions.MidlineLeft, UiKit.HintColor);
-            Span((RectTransform)row.Hint.transform, 12f, 344f, 26f, 22f);
+            Span((RectTransform)row.Hint.transform, 12f, RightInset, 26f, 22f);
 
             // The full description is the hover tooltip; the hint is the one-liner under the label.
             var hot = new GameObject("Hot", typeof(RectTransform));
             hot.transform.SetParent(rt, false);
-            Span((RectTransform)hot.transform, 8f, 344f, 2f, RowH - 4f);
+            Span((RectTransform)hot.transform, 8f, RightInset, 2f, RowH - 4f);
             UiKit.Tip(hot, Tooltip(info));
 
             // ---- the control ------------------------------------------------------------------
@@ -1296,12 +1432,21 @@ namespace NoVikingLeftBehind
             if (_auditText != null)
             {
                 var lines = TweakDoor.AuditLines;
-                if (lines == null || lines.Count == 0) _auditText.text = "";
+                if (lines == null || lines.Count == 0) { _auditText.text = ""; UiKit.Tip(_auditText.gameObject, null); }
                 else
                 {
-                    var sb = new System.Text.StringBuilder("Recent changes\n");
-                    for (int i = 0; i < lines.Count; i++) sb.Append(lines[i]).Append('\n');
-                    _auditText.text = sb.ToString();
+                    // The strip is narrow, so each line is cut at 60 characters with an ellipsis;
+                    // the whole thing, uncut, is on the tooltip.
+                    var shown = new System.Text.StringBuilder("Recent changes\n");
+                    var full = new System.Text.StringBuilder("Recent changes on this server\n\n");
+                    for (int i = 0; i < lines.Count; i++)
+                    {
+                        var line = lines[i] ?? "";
+                        shown.Append(line.Length > 60 ? line.Substring(0, 59) + "…" : line).Append('\n');
+                        full.Append(line).Append('\n');
+                    }
+                    _auditText.text = shown.ToString();
+                    UiKit.Tip(_auditText.gameObject, full.ToString());
                 }
             }
             if (_resetButton != null) _resetButton.interactable = _selected != null;

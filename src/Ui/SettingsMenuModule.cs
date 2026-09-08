@@ -59,6 +59,7 @@ namespace NoVikingLeftBehind
         private static MethodInfo _mSetAvailableTabs;
         private static MethodBase _awake;
         private static bool _reportedNeighbours;
+        private static bool _uiDumpRegistered;
 
         private SettingsMenuModule() { _inst = this; }
 
@@ -115,6 +116,43 @@ namespace NoVikingLeftBehind
                          nameof(MenuOnSettingsPostfix), false, "Menu.OnSettings");
             PatchQuietly(AccessTools.Method(typeof(FejdStartup), "OnButtonSettings"),
                          nameof(FejdOnButtonSettingsPostfix), false, "FejdStartup.OnButtonSettings");
+
+            PatchQuietly(AccessTools.Method(typeof(Terminal), "InitTerminal"),
+                         nameof(RegisterUiDump), false, "Terminal.InitTerminal");
+        }
+
+        /// <summary>
+        /// <c>nvlb.uidump</c> - what a screenshot cannot tell you: for every label on the built
+        /// page, whether it is active, enabled, how big its font is against how big its rect is,
+        /// its alpha, where it actually landed on screen, and whether an ancestor CanvasGroup is
+        /// fading it. A label that does not draw is nearly always one of those.
+        /// </summary>
+        private static void RegisterUiDump()
+        {
+            if (_uiDumpRegistered) return;
+            _uiDumpRegistered = true;
+            try
+            {
+                new Terminal.ConsoleCommand("nvlb.uidump",
+                    "nvlb.uidump - dump every label on the NoVikingLeftBehind settings page with " +
+                    "its size, rect, alpha and screen position. Open the tab first.",
+                    new Terminal.ConsoleEvent(RunUiDump));
+                Log.LogInfo("[SettingsMenu] console command 'nvlb.uidump' registered");
+            }
+            catch (Exception e)
+            {
+                _uiDumpRegistered = false;
+                Log.LogError("[SettingsMenu] could not register nvlb.uidump: " + e);
+            }
+        }
+
+        private static void RunUiDump(Terminal.ConsoleEventArgs args)
+        {
+            NvlbSettingsTab.Dump(delegate (string line)
+            {
+                Log.LogInfo(line);
+                if (args != null && args.Context != null) args.Context.AddString(line);
+            });
         }
 
         /// <summary>A secondary hook: worth a warning if it is missing, never worth failing the module.</summary>
