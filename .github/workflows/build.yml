@@ -30,7 +30,9 @@ jobs:
         id: cache
         with:
           path: lib/
-          key: gamelibs-${{ steps.buildid.outputs.buildid }}
+          # v2: added Splatform.dll (PlatformUserID) in 0.7.0 - bump this suffix
+          # whenever the file list below changes, or a warm cache hides the addition.
+          key: gamelibs-v2-${{ steps.buildid.outputs.buildid }}
 
       # DepotDownloader: anonymous Steam login, app 896660 depot 896661 (Linux dedicated server CONTENT; 1004/1005/1006 are only the Steam runtime redist — first CI run proved that).
       # Verified in BUILD-PIPELINE.md §2 this session; re-check `-branch` / auth requirements
@@ -54,6 +56,9 @@ jobs:
           # (1004) instead and adjust this step.
           cp "$MANAGED"/{assembly_valheim,assembly_utils,assembly_guiutils,assembly_postprocessing,assembly_googleanalytics}.dll lib/
           cp "$MANAGED"/com.rlabrecque.steamworks.net.dll lib/
+          # Splatform.dll holds PlatformUserID - the id form adminlist.txt uses and the
+          # speaker id a chat line carries; the Access module's tweak door touches both.
+          cp "$MANAGED"/Splatform.dll lib/
           cp "$MANAGED"/UnityEngine{,.CoreModule,.PhysicsModule,.AnimationModule,.IMGUIModule,.InputLegacyModule,.UI,.UIModule,.UnityWebRequestModule}.dll lib/
           cp "$MANAGED"/Unity.TextMeshPro.dll lib/
 
