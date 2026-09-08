@@ -1,6 +1,6 @@
 # NoVikingLeftBehind — the ultimate Valheim quality-of-life mod!
 
-**One install. Twenty-six modules. Zero arguments about config.** NoVikingLeftBehind is the
+**One install. Twenty-seven modules. Zero arguments about config.** NoVikingLeftBehind is the
 all-in-one quality-of-life mod for co-op Valheim: extra inventory slots, one-key loadouts, fist
 weapons with a shield, crafting straight from your chests, food that never decays, a compass back
 to your corpse, dual guardian powers, ore that grows back, portals that carry your metal — and a
@@ -91,6 +91,11 @@ all. The mod never makes the leaders' game easier; it only softens the trail beh
   no more running back and forth for one more bar. The stone oven bakes straight out of the chests
   too, while meat racks never pull, so the raw meat you stashed for a recipe is still there when
   you go looking for it. `Tune it:` `[Chests] Range=20`, `PullForCrafting=true`, `PullForBuilding=true`, `PullForSmelters=true`, `PullForFires=true`, `PullForCookingStations=false`, `PullForOvens=true`, `OvenPrefabs="piece_oven"`, local `ToggleKey="LeftAlt+O"`
+- **RepairAll** — walk up to the workbench and everything in your bag it can fix is already
+  fixed — one sound, one message, no more clicking the little hammer twenty times. It is vanilla's
+  own rules applied to the whole bag at once: repairs stay free, a forge still won't touch
+  workbench gear, and a level-1 bench still won't repair your best axe. Items sitting in ExtraSlots
+  get repaired too. Prefer to press a key instead? Set `Trigger="Hotkey"`. `Tune it:` `[Repair] Trigger="OnOpen"` (or `Hotkey`/`Both`), `ShowMessage=true`, local `Hotkey="R"`
 
 ### Survival & world
 

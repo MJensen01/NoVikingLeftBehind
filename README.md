@@ -3,7 +3,7 @@
 A BepInEx 5 mod for Valheim 0.221.12, built and maintained for a small dedicated-server group
 and released here for anyone to use. MIT licensed.
 
-All-in-one, server-enforced quality-of-life and catch-up mechanics: 26 modules covering inventory,
+All-in-one, server-enforced quality-of-life and catch-up mechanics: 27 modules covering inventory,
 loadouts, combat (fists + shield), crafting from chests, food, corpse runs, guardian powers, ore
 regrowth, portals and a frontier-based catch-up system. One DLL, installed on the server and by
 every player. The server enforces every setting (via [ServerSync](https://github.com/blaxxun-boop/ServerSync)),
@@ -33,8 +33,8 @@ Pre-release (see version plan below), built and tested against Valheim `0.221.12
 
 ## Config overview
 
-26 modules, each with its own `[Section] Enabled` toggle, plus `Tiers` (shared config, always on,
-no toggle of its own) — 27 rows in `docs/MODULES.md`, the full per-module table (side, section,
+27 modules, each with its own `[Section] Enabled` toggle, plus `Tiers` (shared config, always on,
+no toggle of its own) — 28 rows in `docs/MODULES.md`, the full per-module table (side, section,
 settings, defaults, hot-reload). Every gameplay number is server-synced and hot-reloads (edit the
 cfg, it applies within a second — `Enabled` toggles need a restart to turn *on*, off is instant);
 hotkeys and HUD offsets (`ExtraSlots`, `Loadouts`, `CorpseRunPlus`) are per-player, local settings.
@@ -90,6 +90,12 @@ easier — the newest tier is never touched.
   materials from nearby containers (`Range=20`, `PullForOvens=true`, `OvenPrefabs="piece_oven"`);
   meat racks never pull (`PullForCookingStations=false`) so saved meat stays saved (adapted from
   AzuCraftyBoxes, MIT-0).
+- **RepairAll** `[Repair]` — opening a crafting station repairs every item in your inventory
+  that station may repair, in one batch (`Trigger="OnOpen"`, or `Hotkey`/`Both` with local
+  `Hotkey="R"`). Vanilla's own `InventoryGui.CanRepair` decides eligibility, so a forge still
+  can't repair workbench gear and a too-low station level still refuses; one repair effect and
+  one top-left message per batch (`ShowMessage=true`). ExtraSlots items included; building
+  pieces are deliberately out of scope.
 
 ### Survival & world
 

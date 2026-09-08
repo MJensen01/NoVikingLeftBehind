@@ -1,5 +1,40 @@
 # Changelog — NoVikingLeftBehind
 
+## 0.4.9 (2026-09-08)
+- **RepairAll — new module** (`src/Modules/Repair/RepairAllModule.cs`, `[Repair]`, client-side; 27 modules now).
+  Open a workbench, forge, artisan table or any other crafting station and **every item in your inventory that
+  this station is allowed to repair is repaired in one go** — no more clicking the little hammer once per
+  damaged item.
+  Vanilla's rules are not relaxed anywhere. Eligibility is decided by calling vanilla's OWN private
+  `InventoryGui.CanRepair(ItemDrop.ItemData)` directly (visible at compile time through the assembly
+  publicizer) rather than a re-implementation that could drift from it, and the candidate list is vanilla's
+  own `Inventory.GetWornItems()` ("uses durability AND below max"). So repairs stay **free**, a forge still
+  cannot repair a workbench item, a station below the recipe's `m_minStationLevel` still refuses, and each
+  item is healed exactly the way `InventoryGui.RepairOneItem()` heals it — `RaiseSkill(Crafting, 1 -
+  durability/max)` then `m_durability = GetMaxDurability()`. Equipped items are repaired, as in vanilla.
+  One **station repair effect** (`CraftingStation.m_repairItemDoneEffects`, the same EffectList vanilla plays
+  per item) and one **top-left message** per batch — "Repaired 7 items", via vanilla's own `$msg_repaired`
+  localisation — never per-item spam. The repair button is left dead and un-glowing straight after the batch,
+  exactly as `OnRepairPressed`'s follow-up `UpdateRepair()` would have left it.
+  Hook: a postfix on **`InventoryGui.UpdateRepair()`** — the only vanilla path that has already resolved the
+  station (`Player.m_localPlayer.GetCurrentCraftingStation()`; `InventoryGui.Show(Container)` has not), and the
+  one `InventoryGui.Update()` calls every frame while the GUI is visible, so a single hook covers both "the
+  station GUI just opened" and "the repair panel refreshed while it is open", and samples the hotkey.
+  The batch arms once and disarms after firing. It re-arms on `InventoryGui.Hide()` (postfix), on losing the
+  current station, and when the player inventory's item **count** changes (you dragged a damaged item out of a
+  chest) — deliberately *not* on durability, because an equipped torch drains every frame and a naive
+  "repair whatever is repairable" would machine-gun the repair sound at a workbench. A 0.25 s floor between
+  batches backs that up, and any throw in this per-frame GUI path logs once and disables the module for the
+  session rather than spamming the log.
+  NVLB's **ExtraSlots are real cells of the player's own `Inventory`**, not a second container, so gear parked
+  in an equipment / utility / generic slot is covered automatically, with no extra code. Building pieces and
+  the hammer are deliberately **out of scope** — nothing standing in the world is ever touched.
+  New settings: `[Repair] Enabled=true`, `Trigger="OnOpen"` (`OnOpen` | `Hotkey` | `Both`) and
+  `ShowMessage=true`, all server-synced; local `Hotkey="R"` (Unity KeyCode name, or `None`) and
+  local `SelfTest=false`, which flips the module's side to Both so a dedicated server logs every repairable
+  item in `ObjectDB` grouped by the station and station level vanilla would demand — a headless proof of the
+  eligibility rules with no client and no game state touched. Turning `[Repair] Enabled` off is live.
+
 ## 0.4.8 (2026-09-08)
 - **DualPowers / CombatRecharge — the Forsaken-power HUD, upgraded** (`src/Modules/Powers/PowerRing.cs`, new).
   CombatRecharge already turns a fight into cooldown recovery, but vanilla shows that as a square icon and a
