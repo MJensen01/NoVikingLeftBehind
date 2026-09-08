@@ -504,6 +504,17 @@ namespace NoVikingLeftBehind
                 var inv = player.GetInventory();
                 bool managed = inv != null && ReferenceEquals(inv, SlotStore.Managed);
 
+                // NEVER encode the grid while the save lift holds the items out of it: Collect
+                // would see an empty extra area and we would upload - and, worse, teach the client
+                // to believe - that this character owns nothing. Reading custom data is always safe,
+                // because the lift never touches it, so fall through to that instead.
+                if (SlotStore.Lifted)
+                {
+                    Log.LogWarning("[SafeSlots] asked for the extra-slot blob while the save lift " +
+                                   "was open - reading the saved blob instead of the empty grid");
+                    fresh = false;
+                }
+
                 if (fresh && managed) return SlotBlob.Encode(SlotStore.Collect(inv));
 
                 string blob;

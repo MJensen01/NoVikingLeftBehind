@@ -1,6 +1,33 @@
 
 # Changelog — NoVikingLeftBehind
 
+## 0.8.7 (2026-09-08)
+- **Turning the extra slots off and on again no longer empties them.** This is the fix for "my extra-slot
+  items got moved back into my inventory". Switching `[Slots] Enabled` **off** deliberately moves every
+  extra-slot item into your bag — leaving items in cells that are about to stop existing is how items get
+  deleted, so that part is right and stays. But switching it back **on** only regrew the grid; the items
+  stayed loose in your bag and the slots stayed empty. Toggling that switch twice in the settings tab — six
+  seconds apart, which is exactly what happened (toggled by hand while testing the settings tab) — therefore
+  emptied your extra slots for good, and the next
+  save honestly recorded "nothing in the slots", pushing the real list down into backup 1. Nothing was ever
+  lost. Turning the module back on now puts each item back in the slot it came from.
+- **If it already happened to you, the game now tells you how to undo it.** Log in and, if your extra slots
+  are empty while a backup still holds items, you get: *"Your extra slots are empty but backup 1 still holds
+  5 items. Type nvlb.slots.restore 1 to put them back."* It is never automatic — slots you emptied on
+  purpose stay empty.
+- **`nvlb.slots.restore` can no longer give you a second copy.** If the items a backup lists are already in your
+  inventory — which is exactly where the bug above put them — the command says so and restores nothing,
+  instead of handing you duplicates of everything. Only items you genuinely no longer carry come back.
+- **And a save can no longer record fewer items than you are carrying.** The save blob keys each item by its
+  slot and quietly skipped any item whose cell had no slot in the current layout — which is what a server
+  changing a `[Slots]` count does to a client that is already holding things. Such a save is now refused
+  outright, with the offending items and cells named in the log, rather than writing a short list over a good
+  one. The same guard covers a save attempted mid-lift.
+- Every evacuation is now logged at warning level with the item, the cell it came from and the reason, and
+  every load logs what the blob and all three backups hold before a single item is placed — the two things
+  that were missing when this had to be diagnosed after the fact.
+- Eleven new headless checks, including the exact five items from the character this happened to.
+
 ## 0.8.6 (2026-09-08)
 - **Fixes 0.8.5 closing the game.** Opening a module that owns one of the new list settings —
   CorpseRunPlus is the one most people would reach first — froze Valheim and then shut it down

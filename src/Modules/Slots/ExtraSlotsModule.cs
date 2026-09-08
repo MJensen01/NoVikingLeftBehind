@@ -157,8 +157,18 @@ namespace NoVikingLeftBehind
                 else if (SlotStore.Managed != null)
                 {
                     SlotStore.SetHeight(SlotStore.Managed, SlotLayout.TotalHeight);
+                    // THE RETURN LEG (0.8.7). Turning the module off evacuates every extra-slot
+                    // item into the bag, which is right - rule 3 of the data-safety contract, and
+                    // the alternative is items in cells that no longer exist. But turning it back
+                    // ON used to do nothing but regrow the grid, so the items stayed in the bag
+                    // and the slots stayed empty. Toggling the switch twice in the settings tab
+                    // therefore emptied a player's extra slots permanently, and the next save
+                    // honestly wrote "nothing in the slots" and rotated the good blob down into
+                    // bak1. That is precisely what happened to a real character on 2026-09-08.
+                    int back = PutEvacuatedBack();
                     SlotStore.Changed(SlotStore.Managed);
-                    Log.LogInfo("[Slots] module turned on, grid back to " + SlotLayout.TotalHeight + " rows");
+                    Log.LogInfo("[Slots] module turned on, grid back to " + SlotLayout.TotalHeight +
+                                " rows, " + back + " item(s) put back in their slots");
                 }
                 SlotsUi.Invalidate();
                 return;
@@ -170,6 +180,60 @@ namespace NoVikingLeftBehind
             SlotsUi.Invalidate();
         }
 
+        /// <summary>
+        /// What the last "module turned off" evacuation moved out of the extra slots, and which
+        /// slot each item came from - so turning the module back on can put those exact item
+        /// objects back rather than re-injecting from the blob, which would duplicate them.
+        /// Session-only and deliberately so: a save or a relog while the module is off leaves the
+        /// items honestly in the bag, and that is where they then belong.
+        /// </summary>
+        private static readonly List<KeyValuePair<string, ItemDrop.ItemData>> _evacuated =
+            new List<KeyValuePair<string, ItemDrop.ItemData>>();
+        private static Inventory _evacuatedFrom;
+
+        /// <summary>
+        /// Put back exactly what <see cref="EvacuateAndShrink"/> took out, into the slots it came
+        /// from. Only items still sitting in the same inventory are moved - anything the player has
+        /// since dropped, eaten or stored is left alone - and a slot that is now occupied is
+        /// skipped rather than fought over.
+        /// </summary>
+        private static int PutEvacuatedBack()
+        {
+            var inv = SlotStore.Managed;
+            if (inv == null || _evacuated.Count == 0) return 0;
+            if (!ReferenceEquals(inv, _evacuatedFrom)) { _evacuated.Clear(); return 0; }
+
+            int back = 0;
+            var list = SlotStore.Items(inv);
+            for (int i = 0; i < _evacuated.Count; i++)
+            {
+                var key = _evacuated[i].Key;
+                var item = _evacuated[i].Value;
+                if (item == null || !list.Contains(item)) continue;      // gone: dropped, eaten, stored
+
+                var slot = SlotLayout.ByKey(key) ?? SlotLayout.LegacyKey(key);
+                if (slot == null) continue;
+                if (inv.GetItemAt(slot.Pos.x, slot.Pos.y) != null) continue;
+
+                list.Remove(item);
+                if (SlotStore.PlaceRaw(inv, item, slot.Pos))
+                {
+                    back++;
+                    Log.LogInfo("[Slots] put " + SlotBlob.Describe(item) + " back into slot '" + key + "'");
+                }
+                else list.Add(item);                                     // could not place: leave it be
+            }
+            _evacuated.Clear();
+            _evacuatedFrom = null;
+            return back;
+        }
+
+        /// <summary>Drive the off/on cycle from the self test, with no config or player involved.</summary>
+        internal static void TestToggleOff(string why) { EvacuateAndShrink(why); }
+
+        /// <summary>Drive the return leg from the self test.</summary>
+        internal static int TestToggleOn() { return PutEvacuatedBack(); }
+
         /// <summary>Get every extra-slot item back into the vanilla grid, then shrink it.</summary>
         private static void EvacuateAndShrink(string why)
         {
@@ -178,6 +242,18 @@ namespace NoVikingLeftBehind
             try
             {
                 var stranded = SlotStore.ExtraItems(inv);
+
+                // Remember where each one came from BEFORE Evacuate moves it and rewrites its
+                // grid position - that record is the only way back.
+                _evacuated.Clear();
+                _evacuatedFrom = inv;
+                for (int i = 0; i < stranded.Count; i++)
+                {
+                    var slot = SlotLayout.At(stranded[i].m_gridPos);
+                    if (slot == null) continue;
+                    _evacuated.Add(new KeyValuePair<string, ItemDrop.ItemData>(slot.Key, stranded[i]));
+                }
+
                 SlotStore.Evacuate(Player.m_localPlayer, inv, stranded, why);
                 SlotStore.SetHeight(inv, SlotLayout.VanillaHeight);
                 SlotStore.Changed(inv);
@@ -385,6 +461,11 @@ namespace NoVikingLeftBehind
             {
                 var inv = __instance.GetInventory();
                 SlotStore.Managed = inv;
+
+                // Before anything else: a lift left open by an earlier save would make the NEXT
+                // save write the extra-slot items into the vanilla package. Start from zero.
+                SlotStore.ResetLift();
+
                 SlotStore.SetHeight(inv, SlotLayout.VanillaHeight);
                 SlotsRescue.BeginCapture(inv);
 
@@ -405,7 +486,16 @@ namespace NoVikingLeftBehind
                 SlotStore.Managed = inv;
                 SlotStore.SetHeight(inv, SlotLayout.TotalHeight);
 
+                // What the character is CARRYING, before a single item is placed - so a session
+                // that comes back empty can be told apart from one that was emptied on the way in.
+                // Every backup is counted too: "0 in the live blob, 6 in bak1" is a different fault
+                // from "0 everywhere", and only the log can tell them apart after the fact.
                 var entries = SlotStore.ReadBlob(__instance.m_customData, 0);
+                Log.LogWarning("[Slots] load: " + SlotStore.BlobKey + " holds " +
+                               (entries == null ? "NO BLOB" : entries.Count + " item(s)") +
+                               ", backups " + BackupCounts(__instance.m_customData) +
+                               ", grid " + SlotLayout.Describe());
+
                 var leftovers = new List<ItemDrop.ItemData>();
                 int placed = SlotStore.Inject(inv, entries, leftovers);
                 if (entries != null)
@@ -417,12 +507,90 @@ namespace NoVikingLeftBehind
                 SlotStore.Changed(inv);
                 SlotsUi.Invalidate();
 
+                OfferBackupIfLiveBlobLostItems(__instance, inv, entries);
+
                 // Everything is now where it belongs, so the receipt's numbers are final and the
                 // "is this character empty?" question has its real answer.
                 SafeSlotsModule.ShowRescueReceipt(__instance);
                 SafeSlotsModule.OnCharacterLoaded(__instance, inv);
             }
             catch (Exception e) { Log.LogError("[Slots] load postfix failed: " + e); }
+        }
+
+        /// <summary>
+        /// The live blob came back empty (or short) while a rolling backup still holds items, and
+        /// the extra slots are empty on screen. That is the fingerprint of the 0.8.0-0.8.6 bug
+        /// fixed in 0.8.7: a save taken while the layout and the grid disagreed wrote "nothing"
+        /// over a good blob and rotated the good one down into bak1.
+        ///
+        /// The items were never lost - they are one command away - but nobody reads a log file
+        /// mid-session, so say it on screen. Deliberately NOT automatic: re-injecting a backup over
+        /// a set of slots a player emptied on purpose would be its own bug, and the whole design
+        /// rule here is that nothing moves a player's items without them asking.
+        /// </summary>
+        private static void OfferBackupIfLiveBlobLostItems(Player p, Inventory inv, List<SlotEntry> live)
+        {
+            try
+            {
+                if (p == null || p != Player.m_localPlayer) return;
+                if (SlotStore.ExtraItems(inv).Count > 0) return;         // slots are not empty - nothing to say
+                int liveCount = live == null ? 0 : live.Count;
+                if (liveCount > 0) return;
+
+                int which;
+                int best = SlotStore.BestBackup(p.m_customData, out which);
+                if (best <= 0) return;
+
+                // Only offer for items the player does NOT already have. When the off/on toggle
+                // emptied the slots it put everything in the BAG, so a restore on top of that
+                // would hand them a second copy of all five. In that case the items are right
+                // there and the fix is to drag them back, which is what we say instead.
+                var backup = SlotStore.ReadBlob(p.m_customData, which);
+                int missing = SlotStore.MissingFrom(inv, backup);
+                if (missing <= 0)
+                {
+                    Log.LogInfo("[Slots] the extra slots are empty and backup " + which + " holds " +
+                                best + " item(s), but every one of them is already in this " +
+                                "inventory - nothing to restore, they just need dragging back " +
+                                "into their slots.");
+                    p.Message(MessageHud.MessageType.TopLeft,
+                        "Your extra slots are empty - the " + best + " item" + (best == 1 ? "" : "s") +
+                        " that were in them are in your inventory. Drag them back when you like.");
+                    return;
+                }
+
+                var msg = "Your extra slots are empty but backup " + which + " still holds " +
+                          missing + " item" + (missing == 1 ? "" : "s") +
+                          " you no longer carry. Type nvlb.slots.restore " + which + " to put them back.";
+                p.Message(MessageHud.MessageType.TopLeft, msg);
+                Log.LogWarning("[Slots] " + msg + " (backup " + which + " holds " + best +
+                               " item(s) in total; " + (best - missing) + " of them are already in " +
+                               "your inventory and will not be duplicated)");
+            }
+            catch (Exception e) { Log.LogError("[Slots] backup offer failed: " + e.Message); }
+        }
+
+        /// <summary>
+        /// "bak1=6 bak2=6 bak3=-" - how many items each rolling backup holds. Printed at every load
+        /// because it is the difference between "this character never had extra-slot items" and
+        /// "something emptied the live blob and the backups still have them", which is the first
+        /// question to ask when a player says their slots came back empty. `-` means the key is
+        /// absent, `?` means it is there but will not decode.
+        /// </summary>
+        private static string BackupCounts(Dictionary<string, string> data)
+        {
+            var s = "";
+            for (int n = 1; n <= SlotStore.Backups; n++)
+            {
+                if (s.Length > 0) s += " ";
+                s += "bak" + n + "=";
+                string raw;
+                if (data == null || !data.TryGetValue(SlotStore.BackupKey(n), out raw) ||
+                    string.IsNullOrEmpty(raw)) { s += "-"; continue; }
+                var decoded = SlotBlob.Decode(raw);
+                s += decoded == null ? "?" : decoded.Count.ToString();
+            }
+            return s;
         }
 
         private static void PlayerSpawnedPostfix(Player __instance)
@@ -432,6 +600,7 @@ namespace NoVikingLeftBehind
             {
                 var inv = __instance.GetInventory();
                 SlotStore.Managed = inv;
+                SlotStore.ResetLift();
                 SlotStore.SetHeight(inv, SlotLayout.TotalHeight);
                 var orphans = SlotStore.Orphans(inv);
                 if (orphans.Count > 0) SlotStore.Evacuate(__instance, inv, orphans, "no slot at that cell");
@@ -752,11 +921,30 @@ namespace NoVikingLeftBehind
             }
 
             var inv = p.GetInventory();
+
+            // Never hand back an item the player is already carrying. The off/on toggle bug put
+            // the extra-slot items into the BAG, so restoring a backup on top of that would have
+            // duplicated every one of them - the command has to be safe to run on a hunch.
+            int missing = SlotStore.MissingFrom(inv, entries);
+            if (missing <= 0)
+            {
+                Say(args, "every one of the " + entries.Count + " item(s) in backup " + which +
+                          " is already in your inventory - nothing restored (drag them back into " +
+                          "their slots instead; restoring would have given you a second copy)");
+                return;
+            }
+            if (missing < entries.Count)
+                Say(args, entries.Count - missing + " of backup " + which + "'s item(s) are already " +
+                          "in your inventory and will be left alone");
+
+            var toPlace = SlotStore.NotAlreadyHeld(inv, entries);
+
             var leftovers = new List<ItemDrop.ItemData>();
-            int placed = SlotStore.Inject(inv, entries, leftovers);
+            int placed = SlotStore.Inject(inv, toPlace, leftovers);
             SlotStore.Evacuate(p, inv, leftovers, "nvlb.slots.restore");
             SlotStore.Changed(inv);
-            Say(args, "restored " + placed + "/" + entries.Count + " item(s) from backup " + which);
+            SlotsUi.Invalidate();
+            Say(args, "restored " + placed + "/" + toPlace.Count + " item(s) from backup " + which);
         }
 
         private static void Say(Terminal.ConsoleEventArgs args, string s)
