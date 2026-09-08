@@ -64,13 +64,17 @@ namespace NoVikingLeftBehind
                 "(material tier + [Frontier] TiersBehind). Unknown prefab names are logged and " +
                 "skipped. Materials at tier 0, or whose gating boss is past the last tier, are " +
                 "skipped too.",
-                Opt.T("Which trailing-tier items a trader stocks, and at what price"));
+                Opt.T("Which trailing-tier items a trader stocks, and at what price")
+                    .Pick(new PickerSpec(PickerSource.Materials,
+                        new PickerField("Stack", 1, 50, 5, true),
+                        new PickerField("Price", 1, 9999, 100, true))));
 
             _traderNames = BindSynced("TraderNames", "Haldor",
                 "Comma-separated trader prefab names (or Trader.m_name values) that get the extra " +
                 "stock. Default: Haldor only. Add Hildir or BogWitch to include them. '*' means " +
                 "every trader.",
-                Opt.T("Which traders get the extra trailing-tier stock"));
+                Opt.T("Which traders get the extra trailing-tier stock")
+                    .Pick(new PickerSpec(PickerSource.Traders)));
         }
 
         protected override void ApplyPatches()

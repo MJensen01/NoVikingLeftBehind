@@ -188,7 +188,9 @@ namespace NoVikingLeftBehind
                 "Multipliers are clamped to 0.01..1: this module never makes anything more " +
                 "expensive. Composes with the tier discount above by multiplication, and the " +
                 "result still respects MinAmount. Empty = off.",
-                Opt.T("Extra per-station cost discounts, e.g. for another mod's recipes"));
+                Opt.T("Extra per-station cost discounts, e.g. for another mod's recipes")
+                    .Pick(new PickerSpec(PickerSource.Stations,
+                        new PickerField("Multiplier", 0.01, 1.0, 0.75, false))));
 
             ParseStations();
         }

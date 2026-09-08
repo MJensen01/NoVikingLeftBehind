@@ -132,7 +132,10 @@ namespace NoVikingLeftBehind
                 "The old two-part form name:tier is still accepted and is migrated automatically " +
                 "when a <name>_frac prefab exists. Names are resolved against ZNetScene's prefab " +
                 "list at runtime; unknown names are logged and ignored.",
-                Opt.T("Which ore nodes regrow and what they turn into"));
+                Opt.T("Which ore nodes regrow and what they turn into")
+                    .Pick(new PickerSpec(PickerSource.OreNodes,
+                        new PickerField("Tier", 0, 7, 1, true))
+                        .Optional().ThenPrefab("Respawns as")));
 
             _regrowDays = BindSynced("RegrowDays", 7,
                 "In-game days a mined-out node stays gone before it may regrow.",

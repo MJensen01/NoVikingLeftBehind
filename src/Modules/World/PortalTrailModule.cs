@@ -79,13 +79,15 @@ namespace NoVikingLeftBehind
                 "Comma-separated prefab names always allowed through a portal regardless of tier " +
                 "or vanilla m_teleportable (e.g. a quest item another mod flagged non-teleportable). " +
                 "Empty by default.",
-                Opt.T("Items always allowed through a portal"));
+                Opt.T("Items always allowed through a portal")
+                    .Pick(new PickerSpec(PickerSource.Items)));
 
             _neverAllow = BindSynced("NeverAllow", "",
                 "Comma-separated prefab names that may never ride a portal even if the tier rule " +
                 "would otherwise allow them, and even if vanilla itself would allow them - takes " +
                 "priority over everything else, including AlwaysAllow. Empty by default.",
-                Opt.T("Items that may never ride a portal"));
+                Opt.T("Items that may never ride a portal")
+                    .Pick(new PickerSpec(PickerSource.Items)));
 
             ParseLists();
         }

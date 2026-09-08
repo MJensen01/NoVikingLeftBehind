@@ -516,6 +516,9 @@ namespace NoVikingLeftBehind
             if (tab == null || !tab._built) return true;
             try
             {
+                // Escape with the picker open means "close the picker", not "leave the settings".
+                if (ListPicker.IsOpen) { ListPicker.Close(); return false; }
+
                 if (tab._pendingOrder.Count == 0 && !tab.HasOpenEdit()) return true;
                 tab.CommitOpenFields();
                 if (tab._pendingOrder.Count == 0) return true;
@@ -631,6 +634,7 @@ namespace NoVikingLeftBehind
                 TweakDoor.AuditChanged -= OnAuditChanged;
                 UiKit.Hover.HidePanel();
                 UiKit.Hover.Panel = null;
+                ListPicker.Forget();
             }
             catch { /* closing down */ }
         }
@@ -647,6 +651,7 @@ namespace NoVikingLeftBehind
         {
             if (!_built) return;
             UiKit.Hover.Tick();
+            ListPicker.Tick();
 
             // One notch of the wheel moves one row in whichever pane the pointer is over.
             UiKit.TickScroll(_leftScroll, _leftKnob, ModuleRowH + 2f);
@@ -1331,6 +1336,8 @@ namespace NoVikingLeftBehind
             public TMP_Text CycleText;
             public Button Left, Right, Reset;
             public KeyRecorder.Handle Recorder;
+            public Button PickButton, RawButton;
+            public bool Raw;
             public bool Editable;
         }
 
@@ -1411,7 +1418,7 @@ namespace NoVikingLeftBehind
         /// </summary>
         private float BuildNetworkReset(float y)
         {
-            _netReset = UiKit.Button(_rightContent, NetResetIdle);
+            _netReset = UiKit.Button(_rightContent, NetResetIdle, UiKit.BaseFontSize * 0.9f);
             if (_netReset == null) return y;
 
             var brt = (RectTransform)_netReset.transform;
@@ -1588,7 +1595,7 @@ namespace NoVikingLeftBehind
             }
 
             // ---- reset to default -----------------------------------------------------------
-            row.Reset = UiKit.Button(rt, _resetGlyph);
+            row.Reset = UiKit.Button(rt, _resetGlyph, UiKit.BaseFontSize * 0.9f);
             if (row.Reset != null)
             {
                 var brt = (RectTransform)row.Reset.transform;
@@ -1634,9 +1641,16 @@ namespace NoVikingLeftBehind
             else
                 sb.Append(info.Section).Append('.').Append(info.Key).Append('\n');
             if (!string.IsNullOrEmpty(info.Description)) sb.Append('\n').Append(info.Description).Append('\n');
-            sb.Append('\n').Append("Default: ").Append(info.DefaultString);
-            sb.Append("   Type: ").Append(info.TypeName);
-            if (info.HasRange) sb.Append("   Range: ").Append(info.Min).Append(" to ").Append(info.Max);
+
+            // Another mod's rows get plain prose and nothing else. Default/Type/Range is useful
+            // to someone editing our own config file; on a borrowed setting it is just clutter
+            // under an already long explanation.
+            if (!info.Foreign)
+            {
+                sb.Append('\n').Append("Default: ").Append(info.DefaultString);
+                sb.Append("   Type: ").Append(info.TypeName);
+                if (info.HasRange) sb.Append("   Range: ").Append(info.Min).Append(" to ").Append(info.Max);
+            }
             sb.Append('\n').Append(info.IsLocal
                 ? "Saved on your own machine; nobody else is affected."
                 : "Shared with everyone on the server.");
@@ -1726,6 +1740,70 @@ namespace NoVikingLeftBehind
             return ((float)snapped).ToString("0.####", System.Globalization.CultureInfo.InvariantCulture);
         }
 
+        /// <summary>
+        /// A list setting's control: a summary of what is picked, a button that opens the tick
+        /// list, and a "Raw" toggle that brings back the plain text field. The summary button and
+        /// the field are both here at once and one of them is hidden, so switching between them
+        /// costs nothing and the row never has to be rebuilt.
+        /// </summary>
+        private void BuildPicker(Row row, RectTransform control)
+        {
+            var info = row.Info;
+
+            row.PickButton = UiKit.Button(control, "", UiKit.BaseFontSize * 0.85f);
+            if (row.PickButton != null)
+            {
+                var brt = (RectTransform)row.PickButton.transform;
+                UiKit.Stretch(brt);
+                brt.offsetMin = new Vector2(0f, -13f);
+                brt.offsetMax = new Vector2(-56f, 13f);
+                var captured = info;
+                row.PickButton.onClick.AddListener(delegate
+                {
+                    ListPicker.Open(_page, captured, Shown(captured),
+                                    delegate (string picked) { Apply(captured, picked); });
+                });
+                UiKit.Tip(row.PickButton.gameObject,
+                    "Pick from what is actually in this world, by name. Anything already listed " +
+                    "that this world does not have is kept and flagged rather than dropped.");
+            }
+
+            row.RawButton = UiKit.Button(control, "Raw", UiKit.BaseFontSize * 0.8f);
+            if (row.RawButton != null)
+            {
+                var rrt = (RectTransform)row.RawButton.transform;
+                rrt.anchorMin = new Vector2(1f, 0.5f);
+                rrt.anchorMax = new Vector2(1f, 0.5f);
+                rrt.pivot = new Vector2(1f, 0.5f);
+                rrt.anchoredPosition = Vector2.zero;
+                rrt.sizeDelta = new Vector2(52f, 26f);
+                var r = row;
+                row.RawButton.onClick.AddListener(delegate { ToggleRaw(r); });
+                UiKit.Tip(row.RawButton.gameObject, "Edit the list as text instead.");
+            }
+
+            // The text field is built too, and starts hidden. It is the same field every other
+            // free-text row uses, so everything that already works - the pending queue, the
+            // commit-on-focus-loss sweep - works here without a special case.
+            BuildText(row, control);
+            if (row.Input != null)
+            {
+                var irt = (RectTransform)row.Input.transform;
+                irt.offsetMax = new Vector2(-56f, irt.offsetMax.y);
+                row.Input.gameObject.SetActive(false);
+            }
+        }
+
+        private void ToggleRaw(Row row)
+        {
+            if (row == null) return;
+            row.Raw = !row.Raw;
+            if (row.Input != null) row.Input.gameObject.SetActive(row.Raw);
+            if (row.PickButton != null) row.PickButton.gameObject.SetActive(!row.Raw);
+            SetCaption(row.RawButton, row.Raw ? "List" : "Raw");
+            RefreshRow(row);
+        }
+
         private void BuildText(Row row, RectTransform control)
         {
             var info = row.Info;
@@ -1738,6 +1816,15 @@ namespace NoVikingLeftBehind
                 var captured = info;
                 row.Recorder = KeyRecorder.Build(control, Shown(info),
                                                  delegate (string picked) { Apply(captured, picked); });
+                return;
+            }
+
+            // A list of things that exist in the world is ticked off a list, not typed from
+            // memory - nobody knows every prefab name in the game. The text field is still there
+            // behind the "Raw" button for anyone who would rather type.
+            if (info.Picker != null)
+            {
+                BuildPicker(row, control);
                 return;
             }
 
@@ -1762,8 +1849,17 @@ namespace NoVikingLeftBehind
             var info = row.Info;
             if (choices == null || choices.Length == 0) { BuildText(row, control); return; }
 
-            row.Left = UiKit.Button(control, "<");
-            row.Right = UiKit.Button(control, ">");
+            // With an explicit size, not the donor's auto-sizing: that path leaves the caption in
+            // the donor's own caption rect, which can be shorter than the text it is given, and
+            // TMP then draws nothing at all. It is what left these two arrows as blank buttons
+            // either side of the value - the same fault the footer buttons had in 0.7.4.
+            row.Left = UiKit.Button(control, "<", UiKit.BaseFontSize);
+            row.Right = UiKit.Button(control, ">", UiKit.BaseFontSize);
+
+            // What this row can actually cycle through, once, at build. A value the arrows never
+            // reach is either missing from here or spelt differently from what is stored.
+            NoVikingLeftBehindPlugin.Log.LogInfo("[SettingsMenu] cycler [" + info.Section + "] " +
+                info.Key + " choices: " + string.Join(" | ", choices) + "  (now '" + Shown(info) + "')");
             row.CycleText = UiKit.Label(control, "", UiKit.BaseFontSize * 0.9f, TextAlignmentOptions.Midline);
 
             if (row.Left != null)
@@ -1791,7 +1887,14 @@ namespace NoVikingLeftBehind
 
         private void Cycle(SettingInfo info, string[] choices, int delta)
         {
-            string current = info.CurrentString;
+            // Shown(), not CurrentString. Since 0.8.2 an edit only queues, so the LIVE value stops
+            // moving the moment you click - and stepping from the live value meant every click
+            // went to the same neighbour, one step from where the row started. On a three-value
+            // preset that looked exactly like the middle one being skipped: Default went to
+            // FastLink and stayed there, and going the other way went to Custom and stayed there,
+            // so FastLink could never be reached from Custom. Every enum row had this, not just
+            // the network preset.
+            string current = Shown(info);
             int at = 0;
             for (int i = 0; i < choices.Length; i++)
                 if (string.Equals(choices[i], current, StringComparison.OrdinalIgnoreCase)) { at = i; break; }
@@ -2170,6 +2273,7 @@ namespace NoVikingLeftBehind
                 }
                 if (row.Input != null) row.Input.SetTextWithoutNotify(current);
                 if (row.Recorder != null && !row.Recorder.Recording) row.Recorder.SetValue(current);
+                if (row.PickButton != null) SetCaption(row.PickButton, ListPicker.Summary(info.Picker, current));
                 if (row.Slider != null)
                 {
                     float v;

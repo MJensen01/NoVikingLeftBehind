@@ -78,6 +78,12 @@ namespace NoVikingLeftBehind
             public string Extra;
 
             /// <summary>
+            /// What this row does, in our words, for the tooltip. Replaces SmoothServer's own
+            /// description entirely - see <see cref="Describe"/>.
+            /// </summary>
+            public string About;
+
+            /// <summary>
             /// True for a key that [Profiles] Profile drives. Changing it away from the value the
             /// preset dictates would be silently reverted by SmoothServer's own reload, so the
             /// door refuses it with a sentence that says what to do instead.
@@ -99,6 +105,10 @@ namespace NoVikingLeftBehind
                 Tier = SettingTier.Everyone,
                 Hint = "Default is the safe choice if people rubber-band; FastLink is for strong " +
                        "PCs on good connections",
+                About = "Default: vanilla-like, and the safest choice if anyone is rubber-banding.\n" +
+                        "FastLink: tuned for a small group on strong PCs and good connections - more " +
+                        "updates a second and a bigger send budget.\n" +
+                        "Custom: use whatever the server's own config file says.",
                 Extra = "Everyone on the server runs the preset the server picks."
             },
             new Allowed
@@ -106,6 +116,8 @@ namespace NoVikingLeftBehind
                 Section = "Compression", Key = "Enabled", Label = "Compression",
                 TypeName = "bool", Tier = SettingTier.Everyone, ProfileDriven = true,
                 Hint = "Squeeze the traffic between the server and everyone on it",
+                About = "Shrinks the data sent between the server and the people playing on it. " +
+                        "Leave it on unless somebody cannot connect.",
                 Extra = "The network preset turns this on: to switch it off, set the preset to Custom first."
             },
             new Allowed
@@ -113,6 +125,7 @@ namespace NoVikingLeftBehind
                 Section = "Map", Key = "Enabled", Label = "Shared map",
                 TypeName = "bool", Tier = SettingTier.Everyone,
                 Hint = "Everyone explores the same map, and shares pins",
+                About = "Everyone explores one shared map and sees each other's pins.",
                 Extra = null
             },
             new Allowed
@@ -120,6 +133,8 @@ namespace NoVikingLeftBehind
                 Section = "SmoothMotion", Key = "Enabled", Label = "Smooth motion (this PC)",
                 TypeName = "bool", Tier = SettingTier.Everyone, Local = true,
                 Hint = "How other players and mobs are drawn between updates, on your screen",
+                About = "How other players and creatures are drawn between network updates, on " +
+                        "YOUR screen only. Off is what vanilla does. Worth trying with a friend in view.",
                 Extra = "Written to your own SmoothServer config and to nobody else's. It changes " +
                         "nothing that is sent, stored or simulated - only what your machine draws."
             },
@@ -128,6 +143,8 @@ namespace NoVikingLeftBehind
                 Section = "General", Key = "EnforceClientMod", Label = "Require the client mod",
                 TypeName = "bool", Tier = SettingTier.Admin,
                 Hint = "Only players who have SmoothServer installed may join",
+                About = "Only players with SmoothServer installed can join. Off lets anyone in - " +
+                        "they simply miss out on compression and the shared map.",
                 Extra = "Also locks SmoothServer's shared settings to the server and its admins."
             }
         };
@@ -308,8 +325,21 @@ namespace NoVikingLeftBehind
         }
 
         /// <summary>SmoothServer's own ConfigDescription, trimmed to fit a hover panel.</summary>
+        /// <summary>
+        /// Our own words, not SmoothServer's. Its descriptions are written for someone reading a
+        /// config file and are long: the preset's is a wall of `[SendCadence] SendHz=60,
+        /// [AdaptiveBudget] CeilingBytes=262144 ...` that tells a player nothing they can act on.
+        /// Each row on this panel carries a short plain explanation instead, and the raw
+        /// description is not shown at all. <paramref name="entry"/> is still taken so a row
+        /// without one of ours can fall back rather than showing nothing.
+        /// </summary>
         private static string Describe(Allowed a, ConfigEntryBase entry)
         {
+            string mine = "This is a SmoothServer setting, shown here so it can be changed in game." +
+                          (string.IsNullOrEmpty(a.Extra) ? "" : " " + a.Extra);
+
+            if (!string.IsNullOrEmpty(a.About)) return a.About + "\n\n" + mine;
+
             string d = null;
             try { d = entry.Description != null ? entry.Description.Description : null; }
             catch { /* best effort */ }
@@ -320,8 +350,6 @@ namespace NoVikingLeftBehind
                 d = (cut > DescriptionCap / 2 ? d.Substring(0, cut + 1) : d.Substring(0, DescriptionCap).TrimEnd()) + " ...";
             }
 
-            string mine = "This is a SmoothServer setting, shown here so it can be changed in game." +
-                          (string.IsNullOrEmpty(a.Extra) ? "" : " " + a.Extra);
             return string.IsNullOrEmpty(d) ? mine : d + "\n\n" + mine;
         }
 

@@ -124,13 +124,15 @@ namespace NoVikingLeftBehind
                 "SkillType.Unarmed is found automatically. Matched against the item's PREFAB name " +
                 "and its shared item name, so either works. Example: " +
                 "BlackMetalClawsSMR, SilverGlovesSMR",
-                Opt.T("Extra fist weapons to make wearable with a shield"));
+                Opt.T("Extra fist weapons to make wearable with a shield")
+                    .Pick(new PickerSpec(PickerSource.Items)));
 
             _excludePrefabs = BindSynced("ExcludePrefabs", "",
                 "Fist weapons to LEAVE two-handed, comma-separated. Takes priority over " +
                 "ExtraPrefabs and over the automatic Unarmed detection. Matched against the " +
                 "prefab name and the shared item name. Example: FistFenrirClaw",
-                Opt.T("Fist weapons to leave two-handed, blocking a shield"));
+                Opt.T("Fist weapons to leave two-handed, blocking a shield")
+                    .Pick(new PickerSpec(PickerSource.Items)));
 
             ParseNames();
         }

@@ -130,7 +130,8 @@ namespace NoVikingLeftBehind
                 "Comma-separated crafting-station PREFAB names this applies to. Default: the " +
                 "workbench only. Add piece_stonecutter, forge, piece_artisanstation etc. to " +
                 "extend those too. Unknown names are simply never matched.",
-                Opt.T("Which crafting stations get the extended build range"));
+                Opt.T("Which crafting stations get the extended build range")
+                    .Pick(new PickerSpec(PickerSource.Stations)));
 
             _selfTest = BindLocal("SelfTest", false,
                 "Diagnostic, local only, never synced. Once per world load, log each configured " +

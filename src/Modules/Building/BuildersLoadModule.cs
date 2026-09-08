@@ -128,13 +128,15 @@ namespace NoVikingLeftBehind
                 "Comma-separated item PREFAB names this applies to. Building materials only - " +
                 "food, ore that still has to be smelted and everything else stays at full " +
                 "weight. Names that do not exist in this game build are logged once and ignored.",
-                Opt.T("Which building materials get the weight discount"));
+                Opt.T("Which building materials get the weight discount")
+                    .Pick(new PickerSpec(PickerSource.Materials)));
 
             _stationsCfg = BindSynced("Stations", DefaultStations,
                 "Comma-separated crafting-station PREFAB names whose build range counts as " +
                 "\"near a bench\". The range used is the same one the build hammer uses, so it " +
                 "grows with [Workbench] WorkbenchReach when that module is on.",
-                Opt.T("Which stations count as nearby for the discount"));
+                Opt.T("Which stations count as nearby for the discount")
+                    .Pick(new PickerSpec(PickerSource.Stations)));
 
             _hysteresis = BindSynced("HysteresisSeconds", 3f,
                 "How long you keep the discount after leaving a station's range, so the " +

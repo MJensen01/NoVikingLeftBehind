@@ -30,6 +30,9 @@ namespace NoVikingLeftBehind
         public bool IsLocal;
         public bool FreeText;
 
+        /// <summary>When set, this list can be ticked off a list of what is in the world.</summary>
+        public PickerSpec Picker;
+
         /// <summary>Null for the handful of plugin-level entries ([Frontier], [Tiers], [General]).</summary>
         public FeatureModule Owner;
         public string ModuleName;
@@ -160,6 +163,7 @@ namespace NoVikingLeftBehind
                 Live = opt.Live,
                 IsLocal = isLocal,
                 FreeText = opt.FreeText,
+                Picker = opt.Picker,
                 Owner = owner,
                 ModuleName = owner != null ? owner.Name : "General",
                 Theme = owner != null ? owner.Theme : "Server",

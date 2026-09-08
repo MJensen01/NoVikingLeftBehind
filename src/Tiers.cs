@@ -42,7 +42,11 @@ namespace NoVikingLeftBehind
                 "listed is tier 0 and is never treated as behind the frontier. Prefab names are " +
                 "checked against ObjectDB once the game has loaded; unknown names are logged as " +
                 "a warning and otherwise ignored.", null,
-                Opt.T("Which materials are behind the frontier, and by how much"));
+                Opt.T("Which materials are behind the frontier, and by how much")
+                   // No .Optional(): Parse() rejects an entry with no colon outright, so the
+                   // picker must always write the tier.
+                   .Pick(new PickerSpec(PickerSource.Materials,
+                                        new PickerField("Tier", 0, 7, 1, true))));
 
             NoVikingLeftBehindPlugin.ConfigChanged += OnConfigChanged;
             Parse();

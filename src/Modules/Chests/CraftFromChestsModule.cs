@@ -177,7 +177,8 @@ namespace NoVikingLeftBehind
                 "is the vanilla stone oven. The meat racks are piece_cookingstation and " +
                 "piece_cookingstation_iron - adding them here is the same as turning " +
                 "PullForCookingStations on.",
-                Opt.T("Which cooking station prefabs count as an oven"));
+                Opt.T("Which cooking station prefabs count as an oven")
+                    .Pick(new PickerSpec(PickerSource.CookingStations)));
 
             _leaveOne = BindSynced("LeaveOneItem", false,
                 "Always leave one of an item behind in a container instead of emptying the stack. " +
@@ -192,12 +193,14 @@ namespace NoVikingLeftBehind
             _excludedContainers = BindSynced("ExcludedContainers", "piece_chest_private",
                 "Container PREFAB names that are never pulled from, comma-separated. " +
                 "Example: piece_chest_private, piece_chest_wood",
-                Opt.T("Container types that are never pulled from"));
+                Opt.T("Container types that are never pulled from")
+                    .Pick(new PickerSpec(PickerSource.Pieces)));
 
             _excludedItems = BindSynced("ExcludedItems", "",
                 "Item prefab names that are never pulled out of a container, comma-separated. " +
                 "They still count from the player's own inventory. Example: FineWood, Coins",
-                Opt.T("Items that are never pulled out of a container"));
+                Opt.T("Items that are never pulled out of a container")
+                    .Pick(new PickerSpec(PickerSource.Items)));
 
             _showNearbyCount = BindSynced("ShowNearbyCount", true,
                 "Show the requirement rows in the crafting and build UI as have/needed, where " +

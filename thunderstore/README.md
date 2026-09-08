@@ -178,6 +178,12 @@ right, one row apiece with a plain one-line hint under the name and the full exp
 A search box at the top finds any of the 235 settings by name, key, hint or description. Section headings
 are buttons — click one to jump the list to it.
 
+**Lists are picked, not typed.** Settings like `[Mining] OreNodes` are a list of things in the
+world, and since 0.8.5 they open a picker: search, tick what you want, set the number beside it.
+Everything is listed by its in-game name with the prefab underneath, read from the world you are
+playing — so anything another mod has added is in the list too. A **Raw** button brings back the
+text field if you would rather type it.
+
 **Nothing is sent until you press Save.** Changing a control marks its row and adds it to a queue the footer
 counts (**Save changes (3)**); **Discard** puts everything back. Vanilla's OK saves the queue and closes, and
 Back or Escape stops to ask first, so a mis-click costs nothing. Key settings are recorded rather than typed:

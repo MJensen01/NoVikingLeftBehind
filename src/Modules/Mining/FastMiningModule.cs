@@ -132,7 +132,9 @@ namespace NoVikingLeftBehind
                 "material tier checked against the frontier (see [Tiers]/[Frontier]) - it does not " +
                 "have to match [Tiers] MaterialTiers, but normally should. Names are resolved " +
                 "against ZNetScene's prefab list at runtime; unknown names are logged and ignored.",
-                Opt.T("Which ore prefabs get the mining speed boost"));
+                Opt.T("Which ore prefabs get the mining speed boost")
+                    .Pick(new PickerSpec(PickerSource.OreNodes,
+                        new PickerField("Tier", 0, 7, 1, true)).Optional()));
 
             _selfTest = BindLocal("SelfTest", false,
                 "Diagnostic, local only, never synced. On next ZNetScene load, logs each " +

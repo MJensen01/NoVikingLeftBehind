@@ -117,7 +117,8 @@ namespace NoVikingLeftBehind
                 "Comma-separated piece PREFAB names that never get the settlement discount " +
                 "(portals, for example, if you would rather they stayed expensive). Empty = " +
                 "nothing is excluded.",
-                Opt.T("Pieces that never get the settlement discount"));
+                Opt.T("Pieces that never get the settlement discount")
+                    .Pick(new PickerSpec(PickerSource.Pieces)));
 
             _onlyCategories = BindSynced("OnlyCategories", "",
                 "Comma-separated build categories to restrict the discount to: Misc, Crafting, " +

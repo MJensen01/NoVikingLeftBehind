@@ -1,5 +1,30 @@
 # Changelog — NoVikingLeftBehind
 
+## 0.8.5 (2026-09-08)
+**Tick the ore off a list instead of knowing its name.** `[Mining] OreNodes` reads
+`rock4_copper:1,MineRock_Tin:1,silvervein:3` and there was no way to edit that without already
+knowing every prefab name in the game, which is a fair description of nobody. **Nineteen** list
+settings now open a picker instead: search, tick what you want, set the number beside it, OK.
+Things are listed by their in-game name — *Copper deposit*, not `rock4_copper` — with the prefab
+underneath, read out of the world you are actually playing, so whatever other mods have added is
+in the list too. A **Raw** button brings the text field back for anyone who would rather type.
+
+- **Nothing is lost.** An entry already in the value that this world does not have — a prefab from
+  a mod that is not installed here — is listed first, still ticked, and flagged *not found in this
+  world*, so editing from the wrong machine cannot quietly delete another server's settings. Order
+  is preserved too: `[CorpseRun] RespawnFoods` is a "best first" list, and picking from it no
+  longer reshuffles it. A headless self-test proves the round trip is byte-identical for every one
+  of the nineteen settings before any of this ships.
+- **The network preset can reach FastLink.** The arrows on every drop-down row stepped from the
+  value on the server rather than the one on screen, so each click went to the same neighbour and
+  the third choice could never be reached. That affected every drop-down in the tab, not just this one.
+- **The `<` and `>` arrows have arrows on them again**, along with every other button whose caption
+  could vanish — the same fault the footer buttons had, swept across the whole page this time.
+- **The network rows explain themselves in plain words.** They were showing SmoothServer's own
+  config-file descriptions, which for the preset is a wall of `[SendCadence] SendHz=60,
+  [AdaptiveBudget] CeilingBytes=262144 ...`. Each of the five now says what it does and when you
+  would want it.
+
 ## 0.8.4 (2026-09-08)
 - **One place decides what a hotkey is.** Changing a hotkey in the config did nothing — and you did not have to
   rebind anything for that to happen. Valheim writes every rebindable key into your saved settings the moment you

@@ -54,6 +54,13 @@ namespace NoVikingLeftBehind
         /// <summary>Free text whose contents the owning module validates (prefab lists etc).</summary>
         public bool FreeText;
 
+        /// <summary>
+        /// Set when this setting is a comma-separated list of things that exist in the world -
+        /// ore nodes, items, stations - and can therefore be ticked off a list instead of typed
+        /// from memory. Null for everything else. The setting's stored format does not change.
+        /// </summary>
+        public PickerSpec Picker;
+
         // ---- factories -------------------------------------------------------------------
 
         /// <summary>A boolean.</summary>
@@ -90,6 +97,13 @@ namespace NoVikingLeftBehind
 
         /// <summary>Override the label derived from the key.</summary>
         public Opt As(string label) { Label = label; return this; }
+
+        /// <summary>
+        /// This list can be ticked off a list of what is actually in the world rather than typed.
+        /// Always used on top of <see cref="T"/>, never instead of it: the setting is still free
+        /// text, still parsed by its own module, and still editable by hand.
+        /// </summary>
+        public Opt Pick(PickerSpec spec) { Picker = spec; FreeText = true; return this; }
 
         /// <summary>Attach a range to a setting created with another factory.</summary>
         public Opt Range(double min, double max, double step = 0)

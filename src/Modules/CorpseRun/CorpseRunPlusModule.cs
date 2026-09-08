@@ -178,7 +178,8 @@ namespace NoVikingLeftBehind
             _respawnFoods = BindSynced("RespawnFoods", "Bread",
                 "RespawnFood: comma-separated item prefab names, best first. Only the first " +
                 "RespawnFoodCount that exist in ObjectDB are used (Valheim allows 3 food slots).",
-                Opt.T("Which foods to grant on a death-respawn, in order"));
+                Opt.T("Which foods to grant on a death-respawn, in order")
+                    .Pick(new PickerSpec(PickerSource.Foods)));
             _respawnFoodCount = BindSynced("RespawnFoodCount", 1,
                 "RespawnFood: how many of the RespawnFoods entries to grant, 0-3.",
                 Opt.N("How many foods to grant on a death-respawn", 0, 3));

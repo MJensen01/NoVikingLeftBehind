@@ -109,7 +109,8 @@ namespace NoVikingLeftBehind
                 "of the default. [World] SelfTest logs every item in ObjectDB with " +
                 "m_useDurability and a positive m_durabilityDrain as a candidate, so this list can " +
                 "be extended to cover any other mod's torch-like items.",
-                Opt.T("Which items count as hand torches for the durability bonus"));
+                Opt.T("Which items count as hand torches for the durability bonus")
+                    .Pick(new PickerSpec(PickerSource.Torches)));
 
             ParseTorchItems();
         }
