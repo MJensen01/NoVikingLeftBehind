@@ -3,7 +3,7 @@
 A BepInEx 5 mod for Valheim 0.221.12, built and maintained for a small dedicated-server group
 and released here for anyone to use. MIT licensed.
 
-All-in-one, server-enforced quality-of-life and catch-up mechanics: 27 modules covering inventory,
+All-in-one, server-enforced quality-of-life and catch-up mechanics: 29 modules covering inventory,
 loadouts, combat (fists + shield), crafting from chests, food, corpse runs, guardian powers, ore
 regrowth, portals and a frontier-based catch-up system. One DLL, installed on the server and by
 every player. The server enforces every setting (via [ServerSync](https://github.com/blaxxun-boop/ServerSync)),
@@ -33,8 +33,8 @@ Pre-release (see version plan below), built and tested against Valheim `0.221.12
 
 ## Config overview
 
-27 modules, each with its own `[Section] Enabled` toggle, plus `Tiers` (shared config, always on,
-no toggle of its own) — 28 rows in `docs/MODULES.md`, the full per-module table (side, section,
+29 modules, each with its own `[Section] Enabled` toggle, plus `Tiers` (shared config, always on,
+no toggle of its own) — 30 rows in `docs/MODULES.md`, the full per-module table (side, section,
 settings, defaults, hot-reload). Every gameplay number is server-synced and hot-reloads (edit the
 cfg, it applies within a second — `Enabled` toggles need a restart to turn *on*, off is instant);
 hotkeys and HUD offsets (`ExtraSlots`, `Loadouts`, `CorpseRunPlus`) are per-player, local settings.
@@ -107,6 +107,19 @@ easier — the newest tier is never touched.
   (`RestedMinutes=10`), Grave Pull stamina boost that fades as you near your grave
   (`PullMinDistance=50m`, `PullFullDistance=1000m`), and the vanilla Corpse Run buff scaled by
   distance grave-to-home (`ScaledDurationPer100m=0.2`).
+
+### On the water
+
+- **SeaLegs** `[SeaLegs]` — with a crew aboard, your longship points closer into the wind: the
+  dead zone narrows from vanilla's 36.9° to 32° / 27° / 23° with 2 / 3 / 4 aboard, so you can tack
+  where a lone sailor has to row (`Crew2Cone=32`, `Crew3Cone=27`, `Crew4Cone=23`,
+  `MaxCrewCounted=4`). **Cone only** — top speed, downwind force and the sail force factor are
+  untouched, and the dead zone never closes below 20°. Crew count is written to the ship's ZDO by
+  its owner, so every client agrees. Passengers also get the read-only wind arrow on their HUD
+  (local `PassengerWindGauge=true`), with no rudder or sail controls.
+- **Lookout** `[Lookout]` — stand off the tiller on a moving ship and the map fog reveals wider
+  for you (`RadiusMultiplier=1.75`, `RequireMoving=true`, `MinSpeed=1.0`). Fog radius only: no
+  pins, no messages, no shared state; the helmsman gets the vanilla radius.
 
 ### Server-side knobs that need no client mod
 

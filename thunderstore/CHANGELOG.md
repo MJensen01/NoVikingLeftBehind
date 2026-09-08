@@ -1,5 +1,62 @@
 # Changelog — NoVikingLeftBehind
 
+## 0.5.0 (2026-09-08)
+**Crew sailing** — two modules that make a boat with people on it feel different from a boat with one person on it,
+without making anything faster. 29 modules now.
+
+- **SeaLegs — new module** (`src/Modules/Crew/SeaLegsModule.cs`, `[SeaLegs]`, side Both).
+  *With a crew aboard, your longship points closer into the wind — you can tack where a lone sailor must row.*
+  **Cone narrowing only. Nothing gets faster.** Vanilla's `Ship.GetWindAngleFactor()` is
+  `num = Vector3.Dot(EnvMan.instance.GetWindDir(), -transform.forward)`;
+  `num2 = Mathf.Lerp(0.7f, 1f, 1f - Utils.Abs(num))`;
+  `num3 = 1f - Utils.LerpStep(0.75f, 0.8f, num)`; `return num2 * num3`
+  (with `Utils.LerpStep(l,h,v) = Clamp01((v - l) / (h - l))`). The postfix **recomputes that expression verbatim and
+  replaces only the LerpStep pair** — `num2` (the off-wind floor: 1.0 beam-on, falling to 0.70 dead upwind and dead
+  downwind), `m_sailForceFactor` and `Speed.Full` are never touched, so downwind speed is bit-identical to vanilla at
+  every crew size. Crew 1 (or 0) returns without writing the result at all.
+  The pair comes from a cone in **degrees**: `hi = cos(deg)`, `lo = hi - 0.05` (vanilla's own ramp width). Defaults
+  32° / 27° / 23° for 2 / 3 / 4+ aboard against vanilla's 36.87°, i.e. `LerpStep(0.7980, 0.8480)` /
+  `(0.8410, 0.8910)` / `(0.8705, 0.9205)`. Degrees are clamped to **[20, 36.87]**: the dead zone can never close
+  (straight upwind is still oars) and can never be made wider than vanilla, and the table is forced monotonic so more
+  crew can never point worse than fewer.
+  **Crew count comes from the ship's ZDO, never from `m_players.Count` on a reader.** `Ship.m_players` is filled by
+  the local physics scene (`OnTriggerEnter`/`OnTriggerExit`), so at a zone edge two clients legitimately hold
+  different lists and anything derived per client would desync. The ship **owner** — the one machine that also runs
+  `Ship.CustomFixedUpdate`, which early-returns on everyone else — writes the count (helmsman included, clamped 0–8)
+  into ZDO int `nvlb_crew` from a postfix on `Ship.UpdateOwner`, which vanilla already runs on an
+  `InvokeRepeating("UpdateOwner", 2f, 2f)` started in `Ship.Start`, and only when the number actually changed. Everyone
+  (owner included) reads it back in the wind-angle postfix, so the owner's sail force and the passenger's sail
+  animation agree.
+  **Visual: the minimum.** No sounds, no messages, no vignette — vanilla already lerps `Hud.m_shipWindIcon`'s colour by
+  `GetWindAngleFactor()`, so the helmsman simply sees the wind arrow brighten when the crew makes the sail catch. The
+  one addition is a postfix on `Hud.UpdateShipHud(Player, float)` that gives **passengers** that same read-only gauge —
+  `m_shipWindIndicatorRoot` / `m_shipWindIconRoot` / `m_shipWindIcon` driven from the ship they are standing on, with
+  the rudder and sail controls hidden (local `PassengerWindGauge=true`). It restores the vanilla HUD unconditionally on
+  every frame it is not showing the gauge — including the frame you take the tiller — and only tracks the two objects
+  vanilla never re-activates itself.
+  `[SeaLegs] SelfTest=true` (local) logs the whole cone table at load — the LerpStep pair and resulting degrees for
+  crew 1..4, plus the beam-on and dead-downwind invariants — pure arithmetic, so a headless server can check it.
+  Settings: `Crew2Cone=32`, `Crew3Cone=27`, `Crew4Cone=23`, `MaxCrewCounted=4`, local `PassengerWindGauge=true`,
+  local `SelfTest=false`.
+
+- **Lookout — new module** (`src/Modules/Crew/LookoutModule.cs`, `[Lookout]`, client-side).
+  *Stand off the tiller on a moving ship and you see further — the map reveals wider for the lookout.*
+  Extra map-fog radius for the local player and **nothing else**: no broadcast line, no automatic pins, no serpent
+  callout, no voyage stat, never `ExploreAll`. Completely client-local — no ZDO, no RPC, no shared state — so two
+  clients with different settings (or one with none) can never disagree about anything.
+  Hook: prefix + postfix on `Minimap.UpdateExplore(float dt, Player player)`, whose vanilla body reads the radius
+  straight off `m_exploreRadius`; the prefix scales that field for the duration of the one call and the postfix puts
+  back the exact float it saved. A postfix that called `Explore()` a second time was rejected — `UpdateExplore` runs
+  every frame while only the timer decides whether the O(r²) pixel loop actually fires. Three guards against a leaked
+  scale: the restore is unconditional (not gated on `Active`), the prefix self-heals a value left behind by a call that
+  never reached its postfix, and `m_exploreRadius` is read from exactly one place in the whole game.
+  The helmsman (`player.GetControlledShip() != null`) always gets the vanilla radius. No "stand at the bow" rule and no
+  role system: anyone aboard who is not steering is the lookout.
+  Settings: `RadiusMultiplier=1.75` (clamp 1.0–3.0, 1.0 = off), `RequireMoving=true`, `MinSpeed=1.0`.
+
+- Docs: `docs/MODULES.md` gains the two rows (29 modules + `Tiers` = 30 rows), both READMEs gain an
+  **On the water** section.
+
 ## 0.4.9 (2026-09-08)
 - **RepairAll — new module** (`src/Modules/Repair/RepairAllModule.cs`, `[Repair]`, client-side; 27 modules now).
   Open a workbench, forge, artisan table or any other crafting station and **every item in your inventory that

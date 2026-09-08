@@ -1,9 +1,10 @@
 # NoVikingLeftBehind — the ultimate Valheim quality-of-life mod!
 
-**One install. Twenty-seven modules. Zero arguments about config.** NoVikingLeftBehind is the
+**One install. Twenty-nine modules. Zero arguments about config.** NoVikingLeftBehind is the
 all-in-one quality-of-life mod for co-op Valheim: extra inventory slots, one-key loadouts, fist
 weapons with a shield, crafting straight from your chests, food that never decays, a compass back
-to your corpse, dual guardian powers, ore that grows back, portals that carry your metal — and a
+to your corpse, dual guardian powers, ore that grows back, portals that carry your metal, a
+longship that points closer into the wind when your crew is aboard — and a
 catch-up system that keeps the whole crew playing together even when half of them only get online
 on weekends. It replaces six other mods and plays nicely with the content mods you already run.
 
@@ -112,6 +113,17 @@ all. The mod never makes the leaders' game easier; it only softens the trail beh
   screen and slides to the edge of the screen in its direction when it is not, so it only
   points dead ahead when you are actually walking at it. Hold **Delete** for a second and a
   half to dismiss a grave you have given up on, no console needed.
+
+### On the water
+
+- **SeaLegs** — with a crew aboard, your longship points closer into the wind. The angle you can
+  sail at tightens with every extra body on deck, so three of you can tack up a channel a lone
+  sailor would have to row. Nothing gets faster — downwind speed is exactly vanilla — you can just
+  go places you couldn't. The wind arrow on the HUD brightens as the sail catches, and passengers
+  get that same arrow now instead of a blank corner. `Tune it:` `[SeaLegs] Crew2Cone=32`, `Crew3Cone=27`, `Crew4Cone=23`, `MaxCrewCounted=4`, local `PassengerWindGauge=true`
+- **Lookout** — step off the tiller on a moving ship and you start earning your keep: the map fog
+  peels back noticeably wider for whoever is watching the horizon instead of steering. Fog only —
+  no pins, no callouts, nothing shared or spoiled. `Tune it:` `[Lookout] RadiusMultiplier=1.75`, `RequireMoving=true`, `MinSpeed=1.0`
 
 ### Server-side knobs that need no client mod
 
