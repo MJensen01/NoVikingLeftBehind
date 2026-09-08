@@ -305,6 +305,23 @@ namespace NoVikingLeftBehind
             GraveCompassHud.HintAlpha = _hintAlpha.Value;
             GraveCompassHud.HintScale = _hintScale.Value;
             _clearKey = ParseKey(_clearGraveKey.Value);
+
+            // 0.8.1: a real, rebindable Valheim keybinding, so Delete can be moved on the game's
+            // own Keyboard & Mouse page rather than only in a cfg file.
+            NvlbKeys.Declare("GraveDismiss", "Dismiss grave (hold)", delegate { return _clearKey; });
+        }
+
+        /// <summary>
+        /// What the dismiss key is bound to right now - the BOUND key, which since 0.8.1 can differ
+        /// from [CorpseRun] ClearGraveKey because the binding is rebindable on Valheim's own
+        /// Keyboard &amp; Mouse page. "" means nothing is bound, which switches the hint and the
+        /// hold check off entirely.
+        /// </summary>
+        private static string DismissKeyLabel()
+        {
+            var s = NvlbKeys.Label("GraveDismiss");
+            if (!string.IsNullOrEmpty(s)) return s;
+            return _clearKey == KeyCode.None ? "" : _clearKey.ToString();
         }
 
         /// <summary>KeyCode name -> KeyCode; an unparsable name disables the hotkey rather than throwing.</summary>
@@ -324,7 +341,7 @@ namespace NoVikingLeftBehind
         {
             return "compass=" + _compassEnabled.Value + "(" + _compassMode.Value + " margin " +
                    _compassEdgeMargin.Value + "px, hide<" + _compassHideDistance.Value +
-                   "m every " + _compassUpdateSec.Value + "s, dismiss=hold " + _clearKey + " " +
+                   "m every " + _compassUpdateSec.Value + "s, dismiss=hold " + DismissKeyLabel() + " " +
                    _clearGraveHoldSec.Value + "s, hint alpha " + _hintAlpha.Value + " scale " +
                    _hintScale.Value + ")" +
                    " food=" + _respawnFoodEnabled.Value + "(" + _respawnFoods.Value + " x" +
@@ -878,7 +895,7 @@ namespace NoVikingLeftBehind
         private static void UpdateClearHold(Player me, float dt, bool compassShown)
         {
             var c = _inst;
-            if (!compassShown || _clearKey == KeyCode.None || !_haveGrave || _looted)
+            if (!compassShown || DismissKeyLabel().Length == 0 || !_haveGrave || _looted)
             {
                 _clearHeld = 0f;
                 GraveCompassHud.SetHint("");
@@ -888,12 +905,12 @@ namespace NoVikingLeftBehind
             if (!DualPowersModule.InputAllowed(me))
             {
                 _clearHeld = 0f;
-                GraveCompassHud.SetHint("Hold " + _clearKey + " to dismiss grave");
+                GraveCompassHud.SetHint("Hold " + DismissKeyLabel() + " to dismiss grave");
                 return;
             }
 
             float need = c._clearGraveHoldSec.Value < 0.1f ? 0.1f : c._clearGraveHoldSec.Value;
-            if (ZInput.GetKey(_clearKey, false))
+            if (NvlbKeys.Held("GraveDismiss"))
             {
                 _clearHeld += dt;
                 if (_clearHeld >= need)
@@ -910,7 +927,7 @@ namespace NoVikingLeftBehind
             else
             {
                 _clearHeld = 0f;
-                GraveCompassHud.SetHint("Hold " + _clearKey + " to dismiss grave");
+                GraveCompassHud.SetHint("Hold " + DismissKeyLabel() + " to dismiss grave");
             }
         }
 

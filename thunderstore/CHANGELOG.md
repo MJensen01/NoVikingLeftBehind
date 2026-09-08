@@ -1,5 +1,25 @@
 # Changelog — NoVikingLeftBehind
 
+## 0.8.1 (2026-09-08)
+- **The loadout key no longer fights the game.** `Loadout1Key` was **V**, which is vanilla's own
+  auto-pickup toggle — so one press did both. It is **Z** now (unbound in vanilla, as is `B` for
+  loadout 2). If your config still holds the old default it is moved for you, once, with a line in the
+  log; a key you chose yourself is left exactly as it is.
+- **Rebind this mod's hotkeys on Valheim's own Keyboard & Mouse page.** Loadout 1, Loadout 2, the
+  save-loadout modifier, the second power slot, the craft-from-chests toggle, repair-all and
+  dismiss-grave are registered as real Valheim keybindings, so they can be rebound where every other
+  key in the game is rebound — and the rebind is saved by the game itself, alongside vanilla's. The
+  config entries are now just the **defaults**. Anything that clashes with a key vanilla already
+  owns is called out once in the log rather than silently double-firing.
+- **A loadout can be two hotbar slots instead of a saved pair.** Set `Loadout1Slots="1,2"` and the
+  key equips whatever is sitting in hotbar slots 1 and 2 at the moment you press it — main hand
+  first, then off-hand. Nothing is stored, so there is nothing to keep in step: rearrange the hotbar
+  and the loadout follows. An empty slot is left alone rather than emptying that hand, a two-handed
+  weapon in the first slot takes both hands, and the save modifier does nothing for a loadout in this
+  mode because there is nothing to save. Leave it empty for the original behaviour — both modes share
+  the same storage, so switching back finds your saved pair intact.
+- Docs: the readme's boss-altar paragraph still described the pre-0.8.0 mapping. Corrected.
+
 ## 0.8.0 (2026-09-08)
 - **Nobody has to back up their extra-slot items any more.** New module **SafeSlots** (35 modules -> **36**),
   on by default, three parts and nothing to configure.

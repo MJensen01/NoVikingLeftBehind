@@ -178,6 +178,11 @@ namespace NoVikingLeftBehind
                     _key = KeyCode.None;
                 }
             }
+
+            // 0.8.1: a real, rebindable Valheim keybinding. Worth knowing that the default R is
+            // vanilla's own "Hide" (holster weapon) - NvlbKeys logs that clash once, and the whole
+            // point of putting the key on Valheim's own page is that it can now be moved there.
+            NvlbKeys.Declare("Repair", "Repair all", delegate { return _key; });
         }
 
         // ---- patches --------------------------------------------------------------------------
@@ -336,13 +341,12 @@ namespace NoVikingLeftBehind
 
         private static bool HotkeyPressed()
         {
-            if (_key == KeyCode.None) return false;
             // UpdateRepair runs regardless of chat/console focus, so guard typing ourselves.
             if (Chat.instance != null && Chat.instance.HasFocus()) return false;
             // global:: - `using System;` above would otherwise resolve System.Console here.
             if (global::Console.IsVisible()) return false;
             if (TextInput.IsVisible()) return false;
-            return ZInput.GetKeyDown(_key, false);
+            return NvlbKeys.Down("Repair");
         }
 
         // ---- reporting --------------------------------------------------------------------------

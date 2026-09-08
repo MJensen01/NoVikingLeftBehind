@@ -64,10 +64,11 @@ all. The mod never makes the leaders' game easier; it only softens the trail beh
 
 - **DualPowers** — carry two Forsaken powers at once, each on its own cooldown, and hit **G** to
   fire the other one mid-fight instead of waiting out the first (the key is written on the second
-  power icon, so you never have to guess). At a boss altar, interacting normally fills the first
-  empty slot — hold **Shift** while interacting to put the power in slot 1 (**F**) instead, and
-  the game tells you which slot and which key it landed on. `nvlb.power clear 1|2` and
-  `nvlb.power swap` fix a power in the wrong slot. `Tune it:` `[Powers] Slots=2`, `IndependentCooldowns=true`, `CooldownMultiplier=1.0`, local `SecondSlotKey="G"`, local `Slot1Modifier="LeftShift"`
+  power icon, so you never have to guess). At a boss altar it works the way round you'd expect:
+  plain **E** sets slot 1 exactly like vanilla, **Shift+E** sets slot 2, **Ctrl+E** sets slot 3 if
+  you run three — and the stone's own tooltip says so, naming your keys and telling you which
+  power it would replace. `nvlb.power clear 1|2` and `nvlb.power swap` fix a power in the wrong
+  slot. `Tune it:` `[Powers] Slots=2`, `IndependentCooldowns=true`, `CooldownMultiplier=1.0`, local `SecondSlotKey="G"`, local `SecondSlotModifier="LeftShift"`, `ThirdSlotModifier="LeftControl"`
 - **Power HUD** — every Forsaken power icon is drawn as a circle with a thin charge ring around
   it that fills as the cooldown recovers: full ring means ready, and every second CombatRecharge
   shaves off jumps the ring forward, so you can *see* the power charging while you fight. Built
@@ -95,8 +96,12 @@ all. The mod never makes the leaders' game easier; it only softens the trail beh
   kept on the server after every save, and if you ever come back to an empty set of slots the game
   tells you they're there and how to get them back. `Tune it:` `[SafeSlots] VaultVersions=5`,
   `MinUploadIntervalSec=30`, local `CharacterBackup=true`, `KeepBackups=3`
-- **Loadouts** — hold Ctrl and tap V to save your current weapon+shield, then just tap V later to
-  snap both back into your hands mid-fight without opening the inventory. `Tune it:` `[Loadouts] Slots=2`, local `Loadout1Key="V"`, `Loadout2Key="B"`, `SaveModifier="LeftControl"`
+- **Loadouts** — hold Ctrl and tap Z to save your current weapon+shield, then just tap Z later to
+  snap both back into your hands mid-fight without opening the inventory. Or point a loadout at
+  two hotbar slots (`Loadout1Slots="1,2"`) and the key just equips whatever is sitting in them
+  right now — nothing to save, rearrange the hotbar and the loadout follows. Both keys are
+  rebindable on Valheim's own **Keyboard & Mouse** settings page, along with the rest of this
+  mod's hotkeys. `Tune it:` `[Loadouts] Slots=2`, local `Loadout1Key="Z"`, `Loadout2Key="B"`, `SaveModifier="LeftControl"`, `Loadout1Slots=""`, `Loadout2Slots=""`
 - **CraftFromChests** — stand at the forge near your storage wall and craft straight through it —
   no more running back and forth for one more bar. The stone oven bakes straight out of the chests
   too, while meat racks never pull, so the raw meat you stashed for a recipe is still there when

@@ -26,7 +26,7 @@ namespace NoVikingLeftBehind
     {
         public const string PluginGuid = "Nosferatu.NoVikingLeftBehind";
         public const string PluginName = "NoVikingLeftBehind";
-        public const string PluginVersion = "0.8.0";
+        public const string PluginVersion = "0.8.1";
 
         internal static ManualLogSource Log;
         internal static ConfigSync ConfigSync;
@@ -111,6 +111,28 @@ namespace NoVikingLeftBehind
             foreach (var m in Modules) m.TryEnable(PluginGuid, RunningSide);
 
             _bootstrap = new Harmony(PluginGuid + ".bootstrap");
+
+            // 0.8.1: the mod's hotkeys become real, rebindable Valheim keybindings and get rows on
+            // the game's own Keyboard & Mouse settings page. This is plugin-level rather than any
+            // one module's, the way Frontier and Tiers are: five different modules declare keys
+            // into it, and it has to keep working even when one of them is switched off. Client
+            // half only - a dedicated server has neither ZInput nor a settings page. A failure here
+            // costs the rebinding, never the plugin: every module falls back to its cfg KeyCode.
+            if (!IsServerSide)
+            {
+                try
+                {
+                    NvlbKeys.InstallPatches(_bootstrap);
+                    NvlbKeys.RegisterNow();
+                    Log.LogInfo("[Keys] " + NvlbKeys.Status());
+                }
+                catch (Exception e)
+                {
+                    Log.LogError("[Keys] rebindable hotkeys are unavailable, falling back to the " +
+                                 "configured keys: " + e);
+                }
+            }
+
             var znetStart = AccessTools.Method(typeof(ZNet), "Start");
             if (znetStart == null)
                 Log.LogError(PluginName + ": ZNet.Start not found - cannot log the module summary");

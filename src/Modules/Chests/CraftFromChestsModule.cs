@@ -252,6 +252,13 @@ namespace NoVikingLeftBehind
             }
             if (_keyMain == KeyCode.None) mods.Clear();
             _keyMods = mods.ToArray();
+
+            // 0.8.1: the MAIN key becomes a real, rebindable Valheim keybinding. The modifiers do
+            // not - Valheim's Keyboard & Mouse page binds one key per action and has no notion of a
+            // held modifier - so "LeftAlt+O" is registered as O there and the LeftAlt half stays
+            // ours, checked below. Rebinding it on that page moves the O; the modifier list still
+            // comes from [Chests] ToggleKey.
+            NvlbKeys.Declare("ChestToggle", "Craft from chests (toggle)", delegate { return _keyMain; });
         }
 
         public override void OnConfigChanged(ConfigEntryBase entry)
@@ -363,8 +370,7 @@ namespace NoVikingLeftBehind
         {
             if (_self == null || !_self.Active || !ClientActive()) return;
             if (__instance != Player.m_localPlayer) return;
-            if (_keyMain == KeyCode.None) return;
-            if (!Input.GetKeyDown(_keyMain)) return;
+            if (!NvlbKeys.Down("ChestToggle")) return;
             for (int i = 0; i < _keyMods.Length; i++)
                 if (!Input.GetKey(_keyMods[i])) return;
 

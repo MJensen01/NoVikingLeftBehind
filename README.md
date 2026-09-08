@@ -66,7 +66,9 @@ easier — the newest tier is never touched.
 ### Combat & powers
 
 - **DualPowers** `[Powers]` — carry two (optionally three) Forsaken powers with independent
-  cooldowns and a second hotkey (`Slots=2`, `IndependentCooldowns=true`, local `SecondSlotKey="G"`);
+  cooldowns and a second hotkey (`Slots=2`, `IndependentCooldowns=true`, local `SecondSlotKey="G"`).
+  At a boss altar plain E sets slot 1 (vanilla), Shift+E slot 2 and Ctrl+E slot 3, and the
+  stone's tooltip says so (local `SecondSlotModifier="LeftShift"`, `ThirdSlotModifier="LeftControl"`);
   also draws every power icon as a circle with a thin cooldown/charge ring, generated at runtime
   (local `RoundIcons=true`, `CooldownRing=true`, `RingThickness=4`, `RingColor="E6C88AD9"`,
   `RingTrackColor="00000066"`).
@@ -85,8 +87,7 @@ easier — the newest tier is never touched.
   hotkeyed row instead). 3 rolling backups + `nvlb.slots.restore`; rescues items left behind by
   shudnal's ExtraSlots.
 - **SafeSlots** `[SafeSlots]` — the safety net under ExtraSlots: your character's `.fch` is copied
-  into `characters_local
-vlb-backups\` on its first login with the mod and again whenever items are
+  into `characters_local\nvlb-backups\` on its first login with the mod and again whenever items are
   rescued from an older extra-slots mod (local `CharacterBackup=true`, `KeepBackups=3`); one on-screen
   receipt says what moved; and every character save uploads the same extra-slot block to the server,
   which keeps the five newest per character under `config/nvlb/vault/<playerId>.json` (`VaultVersions=5`,
@@ -94,8 +95,11 @@ vlb-backups\` on its first login with the mod and again whenever items are
   so it is per character and survives a rename. Log in to empty slots with items in the vault and you are
   told so — never restored silently; `nvlb.slots.vault` / `nvlb.slots.vault restore [n]` do it, through
   the same injection path as `nvlb.slots.restore`. `SelfTest` proves the whole store headlessly.
-- **Loadouts** `[Loadouts]` — Ctrl+V / Ctrl+B save the weapon+shield in hand; V / B equip both
-  with one key (`Slots=2`).
+- **Loadouts** `[Loadouts]` — Ctrl+Z / Ctrl+B save the weapon+shield in hand; Z / B equip both
+  with one key (`Slots=2`). Or set `Loadout1Slots="1,2"` and the key equips whatever is in
+  those hotbar slots at the moment you press it, with nothing stored. Keys default to Z/B
+  since 0.8.1 (V is vanilla's auto-pickup) and are rebindable on Valheim's own Keyboard &
+  Mouse settings page, as are the other NVLB hotkeys.
 - **CraftFromChests** `[Chests]` — crafting, building, smelters, fires and the stone oven pull
   materials from nearby containers (`Range=20`, `PullForOvens=true`, `OvenPrefabs="piece_oven"`);
   meat racks never pull (`PullForCookingStations=false`) so saved meat stays saved (adapted from

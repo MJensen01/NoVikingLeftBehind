@@ -42,6 +42,24 @@ namespace NoVikingLeftBehind
     ///
     /// Storage is Player.m_customData["nvlb.loadout1"/"2"] - the same channel the Powers module and
     /// ExtraSlots' save blob use, which vanilla persists verbatim for save version >= 26.
+    ///
+    /// TWO MODES, since 0.8.1.
+    ///   * **Saved pair** (the original, and still the default): hold SaveModifier and press the
+    ///     key to store the (prefab, quality, variant) of whatever is in your hands; press it alone
+    ///     to put that pair back.
+    ///   * **Hotbar slots**: set `Loadout1Slots = "1,2"` and the key equips whatever is sitting in
+    ///     hotbar slots 1 and 2 *right now* - main hand first, then off-hand. Nothing is stored, so
+    ///     there is nothing to keep in step: rearranging your hotbar rearranges the loadout. The
+    ///     save modifier is ignored for a loadout in this mode, because there is nothing to save.
+    /// A hotbar slot is simply column n-1 of row 0 of the player's own inventory - exactly what
+    /// vanilla's `Player.UseHotbarItem(int index)` reads (`m_inventory.GetItemAt(index - 1, 0)`).
+    ///
+    /// KEYS, since 0.8.1. The keys are registered as real ZInput buttons and appear on Valheim's
+    /// own **Keyboard &amp; Mouse** settings page, so they can be rebound there like any vanilla
+    /// action - see <see cref="NvlbKeys"/>. The config entries below are the DEFAULT for each
+    /// button; a rebind on that page wins over them. `Loadout1Key` also moved from **V to Z** in
+    /// 0.8.1: V is vanilla's own AutoPickup toggle (`ZInput.AddButton("AutoPickup", KeyToPath(Key.V)
+    /// ...)`, ZInput.cs:2651), so the old default fought the game.
     /// </summary>
     internal sealed class LoadoutsModule : FeatureModule
     {
@@ -60,10 +78,26 @@ namespace NoVikingLeftBehind
         private ConfigEntry<string> _key1;
         private ConfigEntry<string> _key2;
         private ConfigEntry<string> _saveModifier;
+        private ConfigEntry<string> _slots1;
+        private ConfigEntry<string> _slots2;
+
+        /// <summary>The ZInput button id (without the NVLB_ prefix) for loadout <c>n</c>.</summary>
+        internal static string KeyId(int slot) { return "Loadout" + slot; }
+
+        /// <summary>The ZInput button id for the save modifier.</summary>
+        internal const string SaveModifierId = "LoadoutSave";
+
+        /// <summary>Loadout1Key's default up to 0.8.0 - the one value that gets migrated to Z.</summary>
+        private const string OldLoadout1Default = "V";
 
         private static KeyCode[] _keys = new KeyCode[0];
         private static KeyCode _modifier = KeyCode.LeftControl;
+
+        /// <summary>Per loadout: the hotbar slot numbers it equips, or null for saved-pair mode.</summary>
+        private static int[][] _hotbar = new int[MaxSlots][];
+
         private static int _tickErrors;
+        private static bool _migrationLogged;
 
         // ---- config ---------------------------------------------------------------------------
 
@@ -71,15 +105,61 @@ namespace NoVikingLeftBehind
         {
             _slots = BindSynced("Slots", 2, "Server: how many weapon loadouts each player gets (0-" + MaxSlots + ").",
                 Opt.N("How many weapon loadouts each player gets", 0, MaxSlots, 1));
-            _key1 = BindLocal("Loadout1Key", "V", "Local: key that equips loadout 1. Unity KeyCode name, or None.",
-                Opt.T("Key that equips loadout 1"));
-            _key2 = BindLocal("Loadout2Key", "B", "Local: key that equips loadout 2. Unity KeyCode name, or None.",
-                Opt.T("Key that equips loadout 2"));
+            _key1 = BindLocal("Loadout1Key", "Z",
+                "Local: DEFAULT key that equips loadout 1. Since 0.8.1 this is a real Valheim " +
+                "keybinding, so it can be rebound on the game's own Keyboard & Mouse settings page - " +
+                "and a rebind there wins over this value. Changed from V to Z in 0.8.1 because V is " +
+                "vanilla's own auto-pickup toggle. Unity KeyCode name, or None.",
+                Opt.T("Default key that equips loadout 1"));
+            _key2 = BindLocal("Loadout2Key", "B",
+                "Local: DEFAULT key that equips loadout 2, rebindable on Valheim's own Keyboard & " +
+                "Mouse page. Unity KeyCode name, or None.",
+                Opt.T("Default key that equips loadout 2"));
             _saveModifier = BindLocal("SaveModifier", "LeftControl",
                 "Local: hold this and press a loadout key to SAVE what you are currently holding " +
-                "into that loadout instead of equipping it.",
-                Opt.T("Key held to save instead of equip a loadout"));
+                "into that loadout instead of equipping it. Ignored for a loadout that is set to " +
+                "hotbar-slot mode (Loadout1Slots / Loadout2Slots), which stores nothing. Also " +
+                "rebindable on Valheim's own Keyboard & Mouse page.",
+                Opt.T("Default key held to save instead of equip a loadout"));
+
+            _slots1 = BindLocal("Loadout1Slots", "",
+                "Local: make loadout 1 a pair of HOTBAR SLOTS instead of a saved weapon pair. " +
+                "\"1,2\" means 'equip whatever is in hotbar slot 1 (main hand) and slot 2 " +
+                "(off-hand)' at the moment you press the key - so rearranging your hotbar " +
+                "rearranges the loadout and there is nothing to save. \"1\" is main hand only. " +
+                "Slot numbers are 1-8, left to right. Empty = the original saved-pair mode.",
+                Opt.T("Hotbar slots loadout 1 equips (e.g. \"1,2\"), empty for the saved pair"));
+            _slots2 = BindLocal("Loadout2Slots", "",
+                "Local: the same for loadout 2. Empty = the original saved-pair mode.",
+                Opt.T("Hotbar slots loadout 2 equips (e.g. \"3,4\"), empty for the saved pair"));
+
+            MigrateLoadout1Key();
             ParseKeys();
+
+            // The hotkeys become real, rebindable Valheim keybindings. The lambdas are re-read on
+            // every registration, so a cfg edit moves the DEFAULT and a player's own rebind on the
+            // Keyboard & Mouse page still wins - see NvlbKeys.
+            NvlbKeys.Declare(KeyId(1), "Loadout 1", delegate { return _keys.Length > 0 ? _keys[0] : KeyCode.None; });
+            NvlbKeys.Declare(KeyId(2), "Loadout 2", delegate { return _keys.Length > 1 ? _keys[1] : KeyCode.None; });
+            NvlbKeys.Declare(SaveModifierId, "Save loadout (hold)", delegate { return _modifier; });
+        }
+
+        /// <summary>
+        /// 0.8.0 and earlier defaulted Loadout1Key to V, which is vanilla's AutoPickup toggle. A cfg
+        /// still holding exactly that old default is moved to the new one; anything a player chose
+        /// themselves - including a deliberate "V" typed after this release - is left alone, because
+        /// the only thing we can tell apart is "identical to the old default".
+        /// </summary>
+        private void MigrateLoadout1Key()
+        {
+            if (_key1 == null || _key1.Value != OldLoadout1Default) return;
+            _key1.Value = (string)_key1.DefaultValue;
+            if (_migrationLogged) return;
+            _migrationLogged = true;
+            Log.LogWarning("[Loadouts] Loadout1Key was still the old default '" + OldLoadout1Default +
+                           "', which is vanilla's own auto-pickup toggle - moved to '" + _key1.Value +
+                           "'. Rebind it on Valheim's Keyboard & Mouse settings page if you want " +
+                           "something else.");
         }
 
         public override void OnConfigChanged(ConfigEntryBase entry) { ParseKeys(); }
@@ -91,6 +171,48 @@ namespace NoVikingLeftBehind
             for (int i = 0; i < MaxSlots; i++) keys[i] = ParseKey(names[i]);
             _keys = keys;
             _modifier = ParseKey(_saveModifier.Value);
+
+            var pairs = new int[MaxSlots][];
+            pairs[0] = ParseSlots(_slots1.Value, "Loadout1Slots");
+            pairs[1] = ParseSlots(_slots2.Value, "Loadout2Slots");
+            _hotbar = pairs;
+        }
+
+        /// <summary>
+        /// "1,2" -> {1,2}. Null when empty (saved-pair mode) or unusable, which is the safe answer:
+        /// a typo leaves the loadout in the mode it has always had rather than doing nothing.
+        /// </summary>
+        internal static int[] ParseSlots(string raw, string what)
+        {
+            raw = (raw ?? "").Trim();
+            if (raw.Length == 0) return null;
+
+            var parts = raw.Split(',');
+            var outp = new List<int>();
+            for (int i = 0; i < parts.Length && outp.Count < 2; i++)
+            {
+                var s = parts[i].Trim();
+                if (s.Length == 0) continue;
+                int n;
+                if (!int.TryParse(s, NumberStyles.Integer, CultureInfo.InvariantCulture, out n) ||
+                    n < 1 || n > HotbarSlots)
+                {
+                    Log.LogWarning("[Loadouts] " + what + ": '" + s + "' is not a hotbar slot number " +
+                                   "(1-" + HotbarSlots + ") - falling back to the saved weapon pair");
+                    return null;
+                }
+                outp.Add(n);
+            }
+            return outp.Count == 0 ? null : outp.ToArray();
+        }
+
+        /// <summary>The hotbar is row 0 of the player's own inventory, eight cells wide.</summary>
+        internal const int HotbarSlots = 8;
+
+        /// <summary>The hotbar slots loadout <paramref name="slot"/> uses, or null for saved-pair mode.</summary>
+        private static int[] HotbarFor(int slot)
+        {
+            return slot >= 1 && slot <= _hotbar.Length ? _hotbar[slot - 1] : null;
         }
 
         private static KeyCode ParseKey(string s)
@@ -129,13 +251,20 @@ namespace NoVikingLeftBehind
             try
             {
                 if (!InputAllowed(__instance)) return;
-                bool save = _modifier != KeyCode.None && ZInput.GetKey(_modifier, false);
+
+                // Read through NvlbKeys, not the raw KeyCode: these are real ZInput buttons since
+                // 0.8.1, so a rebind on Valheim's own Keyboard & Mouse page takes effect at once.
+                // NvlbKeys falls back to the configured KeyCode if registration never happened.
+                bool save = NvlbKeys.Held(SaveModifierId);
                 for (int i = 0; i < _inst.SlotCount && i < _keys.Length; i++)
                 {
-                    if (_keys[i] == KeyCode.None) continue;
-                    if (!ZInput.GetKeyDown(_keys[i], false)) continue;
-                    if (save) SaveLoadout(__instance, i + 1);
-                    else ApplyLoadout(__instance, i + 1);
+                    int slot = i + 1;
+                    if (!NvlbKeys.Down(KeyId(slot))) continue;
+
+                    var pair = HotbarFor(slot);
+                    if (pair != null) ApplyHotbarPair(__instance, slot, pair);   // nothing to save
+                    else if (save) SaveLoadout(__instance, slot);
+                    else ApplyLoadout(__instance, slot);
                 }
             }
             catch (Exception e)
@@ -233,6 +362,77 @@ namespace NoVikingLeftBehind
             Log.LogInfo("[Loadouts] slot " + slot + " applied, " + done + " item(s) equipped: " + spec);
         }
 
+        // ---- hotbar-slot mode -----------------------------------------------------------------------
+
+        /// <summary>
+        /// Equip whatever is sitting in the given hotbar slots right now: the first is the main
+        /// hand, the second the off-hand. An empty slot is skipped rather than unequipping anything
+        /// - "slot 2 is empty" means "leave my off-hand alone", not "drop my shield". A two-handed
+        /// item in the first slot owns both hands, so the second is not even looked at.
+        ///
+        /// Nothing is stored and nothing is read back: the loadout IS the hotbar, which is why the
+        /// save modifier does not apply to a loadout in this mode.
+        /// </summary>
+        internal static void ApplyHotbarPair(Player p, int slot, int[] pair)
+        {
+            var inv = p.GetInventory();
+            if (inv == null || pair == null || pair.Length == 0) return;
+
+            var main = HotbarItem(inv, pair[0]);
+            var off = pair.Length > 1 ? HotbarItem(inv, pair[1]) : null;
+
+            if (main == null && off == null)
+            {
+                p.Message(MessageHud.MessageType.Center,
+                    "Loadout " + slot + ": hotbar " + Describe(pair) + " " +
+                    (pair.Length > 1 ? "are" : "is") + " empty");
+                return;
+            }
+
+            int done = 0;
+            bool twoHanded = false;
+            if (main != null)
+            {
+                if (p.IsItemEquiped(main) || p.EquipItem(main, false)) done++;
+                twoHanded = main.IsTwoHanded();
+            }
+            if (off != null && !twoHanded && !ReferenceEquals(off, main))
+            {
+                if (p.IsItemEquiped(off) || p.EquipItem(off, false)) done++;
+            }
+
+            p.Message(MessageHud.MessageType.Center,
+                "Loadout " + slot + ": slots " + Describe(pair) + " - " + Named(main, off));
+            Log.LogInfo("[Loadouts] slot " + slot + " applied from hotbar " + Describe(pair) + ", " +
+                        done + " item(s) equipped: " + (SlotBlob.PrefabNameOf(main) ?? "-") + " / " +
+                        (twoHanded ? "(two-handed)" : (SlotBlob.PrefabNameOf(off) ?? "-")));
+        }
+
+        private static ItemDrop.ItemData HotbarItem(Inventory inv, int oneBased)
+        {
+            // Exactly what Player.UseHotbarItem(int) reads: column index-1 of row 0.
+            int x = oneBased - 1;
+            if (x < 0 || x >= inv.GetWidth()) return null;
+            return inv.GetItemAt(x, 0);
+        }
+
+        /// <summary>"1+2", or just "1" for a main-hand-only pair.</summary>
+        private static string Describe(int[] pair)
+        {
+            if (pair == null || pair.Length == 0) return "-";
+            if (pair.Length == 1) return pair[0].ToString(CultureInfo.InvariantCulture);
+            return pair[0].ToString(CultureInfo.InvariantCulture) + "+" +
+                   pair[1].ToString(CultureInfo.InvariantCulture);
+        }
+
+        private static string Named(ItemDrop.ItemData main, ItemDrop.ItemData off)
+        {
+            string m = main != null && main.m_shared != null ? main.m_shared.m_name : "-";
+            if (main != null && main.IsTwoHanded()) return m;
+            string o = off != null && off.m_shared != null ? off.m_shared.m_name : null;
+            return o == null ? m : m + " + " + o;
+        }
+
         /// <summary>Best candidate in the inventory: exact quality+variant, else highest quality.</summary>
         internal static ItemDrop.ItemData Find(Inventory inv, string prefab, int quality, int variant)
         {
@@ -299,14 +499,31 @@ namespace NoVikingLeftBehind
             return true;
         }
 
+        /// <summary>What loadout n's key is actually bound to now, falling back to the cfg value.</summary>
+        private string Bound(int slot)
+        {
+            return Bound(KeyId(slot), slot == 1 ? _key1.Value : _key2.Value);
+        }
+
+        private static string Bound(string id, string fallback)
+        {
+            var s = NvlbKeys.Label(id);
+            return string.IsNullOrEmpty(s) ? (fallback ?? "None") : s;
+        }
+
         public override string StatusDetail()
         {
-            var s = "slots=" + SlotCount + " keys=" + _key1.Value + "," + _key2.Value +
-                    " saveModifier=" + _saveModifier.Value;
+            // The bound key, not the configured one: they differ the moment a player rebinds on
+            // Valheim's own Keyboard & Mouse page, and the bound one is the one that fires.
+            var s = "slots=" + SlotCount +
+                    " keys=" + Bound(1) + "," + Bound(2) +
+                    " saveModifier=" + Bound(SaveModifierId, _saveModifier.Value);
             var p = Player.m_localPlayer;
             if (p != null)
                 for (int i = 1; i <= SlotCount; i++)
                 {
+                    var pair = HotbarFor(i);
+                    if (pair != null) { s += "  L" + i + "=hotbar " + Describe(pair); continue; }
                     string blob;
                     p.m_customData.TryGetValue(KeyPrefix + i, out blob);
                     var spec = Decode(blob);

@@ -226,6 +226,15 @@ namespace NoVikingLeftBehind
             if (Keys.Length > 1) Keys[1] = ParseKey(_thirdSlotKey.Value, KeyCode.None, "ThirdSlotKey");
             Mods[0] = ParseKey(_secondSlotModifier.Value, KeyCode.LeftShift, "SecondSlotModifier");
             if (Mods.Length > 1) Mods[1] = ParseKey(_thirdSlotModifier.Value, KeyCode.LeftControl, "ThirdSlotModifier");
+
+            // 0.8.1: the extra power keys are real, rebindable Valheim keybindings. The lambdas are
+            // re-read on every registration, so the cfg supplies the DEFAULT and a player's rebind
+            // on the Keyboard & Mouse page wins. The altar MODIFIERS stay ours: that page binds one
+            // key per action and has no notion of a held modifier.
+            NvlbKeys.Declare(PowerKeyId(1), "Power slot 2", delegate { return Keys[0]; });
+            if (Keys.Length > 1)
+                NvlbKeys.Declare(PowerKeyId(2), "Power slot 3", delegate { return Keys[1]; });
+
             PowerHud.SetOffset(new Vector2(_hudOffsetX.Value, _hudOffsetY.Value));
             // The whole point of 0.4.5's Powers half: the key is written ON the icon, so nobody has
             // to read the config to discover that the second power is on G.
@@ -258,8 +267,15 @@ namespace NoVikingLeftBehind
                 return "F";
             }
             if (slot < 1 || slot > Keys.Length) return "";
+            // The BOUND key, which since 0.8.1 can differ from the configured one - it is what the
+            // player will actually press, and this string is written onto the HUD icon.
+            string bound = NvlbKeys.Label(PowerKeyId(slot));
+            if (!string.IsNullOrEmpty(bound)) return bound;
             return Keys[slot - 1] == KeyCode.None ? "" : Keys[slot - 1].ToString();
         }
+
+        /// <summary>The ZInput button id (without the NVLB_ prefix) for the extra power slot n+1.</summary>
+        internal static string PowerKeyId(int slot) { return "PowerSlot" + (slot + 1); }
 
         /// <summary>
         /// Printable name of the modifier that targets <paramref name="slot"/> ("LeftShift" ->
@@ -710,9 +726,10 @@ namespace NoVikingLeftBehind
                 if (!InputAllowed(__instance)) return;
                 for (int slot = 1; slot <= PowerSlots.ExtraCount; slot++)
                 {
-                    var key = Keys[slot - 1];
-                    if (key == KeyCode.None) continue;
-                    if (ZInput.GetKeyDown(key, false)) _inst.TryActivate(__instance, slot);
+                    // Through NvlbKeys since 0.8.1: these are real ZInput buttons now, so a rebind
+                    // on Valheim's own Keyboard & Mouse page takes effect at once. It falls back to
+                    // the configured KeyCode whenever registration did not happen.
+                    if (NvlbKeys.Down(PowerKeyId(slot))) _inst.TryActivate(__instance, slot);
                 }
             }
             catch (Exception e)
