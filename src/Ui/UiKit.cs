@@ -473,13 +473,35 @@ namespace NoVikingLeftBehind
         /// in them, on purpose: a click on a row's label or hint must be a dead click. Without
         /// that, the press has no handler here and the event system keeps looking, and a click on
         /// the "Window days" label was landing on the slider and slamming it to its minimum.
+        ///
+        /// Swallowing the press is right for the settings pane and wrong for the module list: a
+        /// label is the most obvious thing on a row to click, and there the click has somewhere
+        /// sensible to go. <see cref="OnClick"/> is that opt-in - null by default, so every label
+        /// that does not ask for it keeps the dead click exactly as before.
         /// </summary>
         internal sealed class Hover : MonoBehaviour, IPointerEnterHandler, IPointerExitHandler,
                                       IPointerDownHandler, IPointerUpHandler, IPointerClickHandler
         {
+            /// <summary>
+            /// What a click here should do, or null for "nothing at all". Left null - which is
+            /// what every right-hand-pane label and hint leaves it - a click on this object is
+            /// still swallowed and cannot reach the control behind it.
+            /// </summary>
+            public Action OnClick;
+
             public void OnPointerDown(PointerEventData eventData) { }
             public void OnPointerUp(PointerEventData eventData) { }
-            public void OnPointerClick(PointerEventData eventData) { }
+
+            public void OnPointerClick(PointerEventData eventData)
+            {
+                if (OnClick == null) return;                    // the 0.7.5 behaviour, unchanged
+                if (eventData != null && eventData.button != PointerEventData.InputButton.Left) return;
+                try { OnClick(); }
+                catch (Exception e)
+                {
+                    NoVikingLeftBehindPlugin.Log.LogError("[SettingsMenu] hover click: " + e);
+                }
+            }
 
             public string Text;
             public static RectTransform Panel;
@@ -598,14 +620,24 @@ namespace NoVikingLeftBehind
             }
         }
 
-        /// <summary>Attach hover text to anything with a raycast target.</summary>
-        public static void Tip(GameObject go, string text)
+        /// <summary>
+        /// Attach hover text to anything with a raycast target, and - only when asked - make a
+        /// click on it do something.
+        /// </summary>
+        /// <param name="onClick">
+        /// Left at its default the object keeps 0.7.5's behaviour exactly: the press is swallowed
+        /// and nothing happens, so a click on a setting's name cannot fall through onto the
+        /// slider behind it. Passed an action, that swallowed click runs the action instead -
+        /// which is how a module row's name became clickable without giving the press back to the
+        /// event system.
+        /// </param>
+        public static void Tip(GameObject go, string text, Action onClick = null)
         {
             if (go == null) return;
-            if (string.IsNullOrEmpty(text))
+            if (string.IsNullOrEmpty(text) && onClick == null)
             {
                 var old = go.GetComponent<Hover>();
-                if (old != null) old.Text = null;      // clear it, do not leave a stale tooltip
+                if (old != null) { old.Text = null; old.OnClick = null; }  // no stale tooltip, no stale click
                 return;
             }
             // The hover needs something the graphic raycaster can hit. It used to add an Image
@@ -627,7 +659,8 @@ namespace NoVikingLeftBehind
             var h = go.GetComponent<Hover>();
             if (h == null) h = go.AddComponent<Hover>();
             if (h == null) return;
-            h.Text = text;
+            h.Text = string.IsNullOrEmpty(text) ? null : text;
+            h.OnClick = onClick;
         }
     }
 }

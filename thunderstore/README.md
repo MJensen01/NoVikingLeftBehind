@@ -1,6 +1,6 @@
 # NoVikingLeftBehind — the ultimate Valheim quality-of-life mod!
 
-**One install. Thirty-three modules. Zero arguments about config.** NoVikingLeftBehind is the
+**One install. Thirty-six modules. Zero arguments about config.** NoVikingLeftBehind is the
 all-in-one quality-of-life mod for co-op Valheim: extra inventory slots, one-key loadouts, fist
 weapons with a shield, crafting straight from your chests, food that never decays, a compass back
 to your corpse, dual guardian powers, ore that grows back, portals that carry your metal, a
@@ -90,6 +90,11 @@ all. The mod never makes the leaders' game easier; it only softens the trail beh
   eats into carry space. Stored outside the vanilla save package (a vanilla client or tool can't
   delete them), with 3 rolling backups and a rescue path for characters migrating off shudnal's
   ExtraSlots. `Tune it:` `[Slots] EquipmentSlots=true`, `UtilitySlots=2`, `FoodSlots=3`, `AmmoSlots=2`, `GenericSlots=2`, `QuickSlots=0`, `AutoEatFromFoodSlots=true`
+- **SafeSlots** — your extra-slot items are backed up locally and to the server; nothing to do.
+  Your character file is copied aside before this mod first touches it, the items themselves are
+  kept on the server after every save, and if you ever come back to an empty set of slots the game
+  tells you they're there and how to get them back. `Tune it:` `[SafeSlots] VaultVersions=5`,
+  `MinUploadIntervalSec=30`, local `CharacterBackup=true`, `KeepBackups=3`
 - **Loadouts** — hold Ctrl and tap V to save your current weapon+shield, then just tap V later to
   snap both back into your hands mid-fight without opening the inventory. `Tune it:` `[Loadouts] Slots=2`, local `Loadout1Key="V"`, `Loadout2Key="B"`, `SaveModifier="LeftControl"`
 - **CraftFromChests** — stand at the forge near your storage wall and craft straight through it —

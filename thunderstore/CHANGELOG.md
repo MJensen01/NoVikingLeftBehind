@@ -1,5 +1,52 @@
 # Changelog — NoVikingLeftBehind
 
+## 0.8.0 (2026-09-08)
+- **Nobody has to back up their extra-slot items any more.** New module **SafeSlots** (35 modules -> **36**),
+  on by default, three parts and nothing to configure.
+- **Your character file is copied before this mod first touches it.** On a character's first login with
+  NoVikingLeftBehind — and again any time items are found parked in an older extra-slots mod's layout — the
+  `.fch` is copied to `characters_local\nvlb-backups\<name>-<date-time>.fch`, keeping the newest three per
+  character. Both copies are taken from inside the load itself, which is the last instant at which the file on
+  disk is still exactly what it was before the mod existed. The path comes from the game's own profile, so it
+  follows the game if a future update moves the save folder; a cloud save (no local file to copy) logs one line
+  and is skipped rather than failing.
+- **A receipt when items are moved.** Migrating off shudnal's ExtraSlots used to be silent unless you read the
+  log. You now get one message — `Moved N items from your old extra slots` — and a second, distinct one naming
+  anything there was genuinely no room for, so you know to pick it up. The message and the log line are built
+  from the same record, so they cannot disagree.
+- **And a copy on the server.** After every character save the client sends the same block of extra-slot items
+  it writes into your character to the server, which keeps the five newest versions per character under
+  `config/nvlb/vault/`. Unchanged items are never uploaded, uploads are spaced at least 30 seconds apart, logging
+  out always uploads, and anything over 64 KB is refused with a log line rather than written. The vault is keyed
+  on the character's own permanent id, not on your account, so each of your vikings has its own and renaming one
+  cannot lose it.
+- **If you ever log in to empty slots, the game tells you they are safe.** When — and only when — your extra
+  slots come up completely empty and nothing was rescued, and the server does hold items for that character, you
+  get: `Your server vault holds N extra-slot items (saved 2 hours ago). Type nvlb.slots.vault restore to get them
+  back.` Nothing is ever restored behind your back: slots you emptied on purpose stay empty. `nvlb.slots.vault`
+  lists what the server has; `nvlb.slots.vault restore [n]` puts a version back through exactly the same path as
+  `nvlb.slots.restore` — its own slot first, then any slot that fits, then your bag, and the ground only if the
+  bag is full. Items already where they belong are recognised, so restoring twice says *already present, nothing
+  to do* instead of duplicating anything. The server refuses a vault that is not the character you are playing.
+  `[SafeSlots] SelfTest` proves the whole store on a headless server: 26 checks, including a byte-for-byte file
+  round trip, the version cap, the size guard and one byte under it.
+- **Boss altars work the way round you expect now.** Pressing E at a guardian stone used to fill whichever slot
+  happened to be empty, and holding Shift was what forced slot 1 — backwards. From 0.8.0: **E on its own always
+  sets slot 1**, exactly like vanilla; **Shift+E sets slot 2**; **Ctrl+E sets slot 3** when you run three slots.
+  The stone's own tooltip now says so — a line under vanilla's `[E] Activate power`, in the same style, naming
+  your actual configured keys, telling you which power it would replace, or that the slot already holds this one.
+  You no longer have to keep the modifier held for the two seconds the stone takes to charge: the slot is decided
+  the moment you press. A power can only live in one slot, so it is taken out of its old one. With the module off
+  or `Slots=1` this is all exactly vanilla — no extra line, no re-routing, no messages. `SecondSlotModifier`
+  (LeftShift) and `ThirdSlotModifier` (LeftControl) replace `Slot1Modifier`, which is now ignored; your existing
+  config still loads and says so once in the log if you had changed it.
+- **The settings tab: clicking a module's name selects it.** Only the blank strip between the name and the
+  checkbox used to work — the name itself was a dead click, because 0.7.5 made every label swallow presses so a
+  click on a setting's name could not fall through onto the slider behind it. That swallowing is still exactly
+  right for the settings pane and is untouched there; the module list's labels now hand the swallowed click to
+  the row instead. The checkbox stays its own control and does not select. The selected module also **looks**
+  selected now — a faint bar behind its row and a brighter name — and the hover tooltips are unchanged.
+
 ## 0.7.6 (2026-09-08)
 - **Fixes 0.7.5's blank page.** Putting a tooltip on the module names — one of 0.7.5's own fixes — threw on the
   very first row and took the whole tab down with it. The hover needs something the pointer can hit, and it added

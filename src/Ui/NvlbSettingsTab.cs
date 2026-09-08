@@ -705,6 +705,54 @@ namespace NoVikingLeftBehind
             public Toggle Enabled;
             public SettingInfo EnabledInfo;
             public GameObject Root;
+
+            /// <summary>The bar behind the row, shown only while this row is the selected one.</summary>
+            public Image Highlight;
+
+            /// <summary>For the rows that are not a module: the cfg section this row stands for.</summary>
+            public string Section;
+
+            /// <summary>This is the SmoothServer panel's row, which stands for no section at all.</summary>
+            public bool IsNetwork;
+        }
+
+        /// <summary>How strong the bar behind the selected row is, over the tab's own text colour.</summary>
+        private const float SelectedBarAlpha = 0.12f;
+
+        private static Color SelectedBarColor()
+        {
+            return new Color(UiKit.TextColor.r, UiKit.TextColor.g, UiKit.TextColor.b, SelectedBarAlpha);
+        }
+
+        /// <summary>The selected row's name, lifted out of the page's own text colour - not a new one.</summary>
+        private static Color SelectedTint(Color tone) { return Color.Lerp(tone, Color.white, 0.35f); }
+
+        /// <summary>
+        /// The faint parchment bar that marks the selected row. Built before anything else on the
+        /// row so it sits behind the name, the pick area and the checkbox, and it never takes a
+        /// click of its own - <see cref="UiKit.Fill"/> leaves raycastTarget off.
+        /// </summary>
+        private static Image SelectionBar(RectTransform rowRt)
+        {
+            var bar = UiKit.Fill(rowRt, SelectedBarColor());
+            bar.gameObject.name = "NVLB_Selected";
+            var brt = UiKit.Stretch((RectTransform)bar.transform);
+            brt.offsetMin = new Vector2(2f, 1f);
+            brt.offsetMax = new Vector2(-2f, -1f);
+            brt.SetAsFirstSibling();
+            bar.gameObject.SetActive(false);
+            return bar;
+        }
+
+        /// <summary>Which of the left-hand rows the right-hand pane is currently showing.</summary>
+        private bool IsSelectedRow(ModuleRow mr)
+        {
+            if (mr == null) return false;
+            if (_network) return mr.IsNetwork;
+            if (mr.IsNetwork) return false;
+            if (_selected != null) return mr.Module == _selected;
+            return mr.Module == null && !string.IsNullOrEmpty(_selectedSection) &&
+                   mr.Section == _selectedSection;
         }
 
         private void BuildModuleList()
@@ -735,6 +783,7 @@ namespace NoVikingLeftBehind
                 var rowGo = new GameObject("Mod_" + module.Name, typeof(RectTransform));
                 rowGo.transform.SetParent(_leftContent, false);
                 var rowRt = UiKit.Place((RectTransform)rowGo.transform, 0f, y, LeftW - 12f, ModuleRowH);
+                var bar = SelectionBar(rowRt);
 
                 var name = UiKit.Label(rowRt, module.Name, UiKit.BaseFontSize * 0.92f,
                                        TextAlignmentOptions.MidlineLeft);
@@ -750,9 +799,22 @@ namespace NoVikingLeftBehind
                 // Attached after the Button, and to the name as well: the toggle sits on top of
                 // the right-hand end of this row, so hovering there used to reach nothing at all.
                 UiKit.Tip(picker, ModuleTooltip(mod));
-                UiKit.Tip(name.gameObject, ModuleTooltip(mod));
+                // The name is the obvious thing to click and, up to 0.7.6, the one part of the row
+                // that did nothing: the tooltip made it a raycast target, so the press landed on
+                // the label rather than on the Pick button stretched underneath, and the label's
+                // handler swallowed it. Only the bare strip between the name and the checkbox
+                // still reached Pick. Give the label the same job instead of taking its tooltip
+                // away - whichever of the two the pointer lands on now selects the module.
+                UiKit.Tip(name.gameObject, ModuleTooltip(mod), delegate { Select(mod); });
 
-                var mr = new ModuleRow { Module = module, Label = name, Root = rowGo };
+                var mr = new ModuleRow
+                {
+                    Module = module,
+                    Label = name,
+                    Root = rowGo,
+                    Highlight = bar,
+                    Section = module.Section
+                };
 
                 mr.EnabledInfo = ConfigCatalog.Find(module.Section, "Enabled");
                 var toggle = UiKit.Toggle(rowRt);
@@ -790,6 +852,9 @@ namespace NoVikingLeftBehind
             // onto five of another mod's settings, so it gets its own theme heading and one row.
             if (SmoothServerBridge.Available && SmoothServerBridge.Rows().Count > 0)
             {
+              // Guarded like the module rows above: this row failing must not cost the list.
+              try
+              {
                 var netHead = UiKit.Label(_leftContent, SmoothServerBridge.PanelTheme.ToUpperInvariant(),
                                           UiKit.BaseFontSize * 0.72f, TextAlignmentOptions.BottomLeft,
                                           UiKit.HintColor);
@@ -799,23 +864,42 @@ namespace NoVikingLeftBehind
                 var netGo = new GameObject("Sec_Network", typeof(RectTransform));
                 netGo.transform.SetParent(_leftContent, false);
                 var netRt = UiKit.Place((RectTransform)netGo.transform, 0f, y, LeftW - 12f, ModuleRowH);
+                var netBar = SelectionBar(netRt);
                 var netName = UiKit.Label(netRt, SmoothServerBridge.PanelLabel, UiKit.BaseFontSize * 0.92f,
                                           TextAlignmentOptions.MidlineLeft);
                 UiKit.Place((RectTransform)netName.transform, 14f, 2f, LeftW - 30f, ModuleRowH - 4f);
 
+                string netTip = SmoothServerBridge.PanelHint + "\n\nSmoothServer " +
+                    SmoothServerBridge.Version + " is installed on this machine. These are its own " +
+                    "settings, not this mod's - only the few that are worth reaching for mid-game " +
+                    "are here; the rest stay in its config file.";
+
                 var netPick = new GameObject("Pick", typeof(RectTransform));
                 netPick.transform.SetParent(netRt, false);
                 UiKit.Stretch((RectTransform)netPick.transform);
-                UiKit.Tip(netPick, SmoothServerBridge.PanelHint + "\n\nSmoothServer " +
-                    SmoothServerBridge.Version + " is installed on this machine. These are its own " +
-                    "settings, not this mod's - only the few that are worth reaching for mid-game " +
-                    "are here; the rest stay in its config file.");
+                UiKit.Tip(netPick, netTip);
                 var netBtn = netPick.AddComponent<Button>();
                 netBtn.transition = Selectable.Transition.None;
                 netBtn.onClick.AddListener(delegate { SelectNetwork(); });
+                // Same tooltip on the name, so making it clickable cannot cost the hover: the
+                // label becomes a raycast target the moment it carries one, and would otherwise
+                // hide the Pick area's tooltip along the whole width of the word.
+                UiKit.Tip(netName.gameObject, netTip, delegate { SelectNetwork(); });
 
-                _moduleRows.Add(new ModuleRow { Module = null, Label = netName, Root = netGo });
-                y += ModuleRowH + 2f;
+                _moduleRows.Add(new ModuleRow
+                {
+                    Module = null,
+                    Label = netName,
+                    Root = netGo,
+                    Highlight = netBar,
+                    IsNetwork = true
+                });
+              }
+              catch (Exception e)
+              {
+                  NoVikingLeftBehindPlugin.Log.LogError("[SettingsMenu] the Network row could not be built: " + e);
+              }
+              finally { y += ModuleRowH + 2f; }
             }
 
             // Plugin-level settings that belong to no module: [General], [Frontier], [Tiers].
@@ -829,25 +913,46 @@ namespace NoVikingLeftBehind
 
                 foreach (var section in OrphanSections(orphans))
                 {
+                  // Guarded like the module rows above: one section failing costs one row.
+                  try
+                  {
                     var rowGo = new GameObject("Sec_" + section, typeof(RectTransform));
                     rowGo.transform.SetParent(_leftContent, false);
                     var rowRt = UiKit.Place((RectTransform)rowGo.transform, 0f, y, LeftW - 12f, ModuleRowH);
+                    var bar = SelectionBar(rowRt);
                     var name = UiKit.Label(rowRt, section, UiKit.BaseFontSize * 0.92f,
                                            TextAlignmentOptions.MidlineLeft);
                     UiKit.Place((RectTransform)name.transform, 14f, 2f, LeftW - 30f, ModuleRowH - 4f);
+
+                    const string orphanTip = "Settings that apply to the whole mod rather than one feature.";
 
                     var picker = new GameObject("Pick", typeof(RectTransform));
                     picker.transform.SetParent(rowRt, false);
                     UiKit.Stretch((RectTransform)picker.transform);
                     string sec = section;
-                    UiKit.Tip(picker, "Settings that apply to the whole mod rather than one feature.");
+                    UiKit.Tip(picker, orphanTip);
                     var pickBtn = picker.AddComponent<Button>();
                     pickBtn.transition = Selectable.Transition.None;
                     pickBtn.onClick.AddListener(delegate { SelectSection(sec); });
+                    // The name too - same tooltip, same action, so the whole row is one target.
+                    UiKit.Tip(name.gameObject, orphanTip, delegate { SelectSection(sec); });
 
-                    _moduleRows.Add(new ModuleRow { Module = null, Label = name, Root = rowGo });
+                    _moduleRows.Add(new ModuleRow
+                    {
+                        Module = null,
+                        Label = name,
+                        Root = rowGo,
+                        Highlight = bar,
+                        Section = section
+                    });
                     _orphanSectionOf[rowGo] = section;
-                    y += ModuleRowH + 2f;
+                  }
+                  catch (Exception e)
+                  {
+                      NoVikingLeftBehindPlugin.Log.LogError("[SettingsMenu] section row '" +
+                          section + "' could not be built: " + e);
+                  }
+                  finally { y += ModuleRowH + 2f; }
                 }
             }
 
@@ -1514,19 +1619,40 @@ namespace NoVikingLeftBehind
                 if (mr.EnabledInfo == info) { RefreshModuleRowDirect(mr); return; }
         }
 
+        /// <summary>
+        /// One left-hand row: its checkbox, its name's tone, and whether it is the selected one.
+        /// Selection is settled here rather than in a pass of its own so that a live change to a
+        /// module's Enabled - which comes through this same method - cannot quietly repaint the
+        /// selected row's name back to the unselected colour.
+        /// </summary>
         private void RefreshModuleRowDirect(ModuleRow mr)
         {
-            if (mr == null || mr.Module == null || mr.Enabled == null || mr.EnabledInfo == null) return;
-            _suppress = true;
-            try
+            if (mr == null) return;
+
+            bool selected = IsSelectedRow(mr);
+            if (mr.Highlight != null && mr.Highlight.gameObject.activeSelf != selected)
+                mr.Highlight.gameObject.SetActive(selected);
+
+            // The Network panel and the plugin-level sections are rows without a module behind
+            // them: there is no Enabled toggle to read, so "off" never applies to them.
+            bool on = mr.Module == null || mr.Module.Enabled;
+
+            if (mr.Module != null && mr.Enabled != null && mr.EnabledInfo != null)
             {
-                bool on = mr.Module.Enabled;
-                mr.Enabled.isOn = on;
-                string why = WhyNot(mr.EnabledInfo, on ? "false" : "true");
-                mr.Enabled.interactable = why == null;
-                mr.Label.color = on ? UiKit.TextColor : UiKit.DimColor;
+                _suppress = true;
+                try
+                {
+                    mr.Enabled.isOn = on;
+                    mr.Enabled.interactable = WhyNot(mr.EnabledInfo, on ? "false" : "true") == null;
+                }
+                finally { _suppress = false; }
             }
-            finally { _suppress = false; }
+
+            if (mr.Label != null)
+            {
+                var tone = on ? UiKit.TextColor : UiKit.DimColor;
+                mr.Label.color = selected ? SelectedTint(tone) : tone;
+            }
         }
 
         private void RefreshRow(Row row)

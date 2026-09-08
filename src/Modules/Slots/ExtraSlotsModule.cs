@@ -367,6 +367,10 @@ namespace NoVikingLeftBehind
                 SlotStore.Managed = inv;
                 SlotStore.SetHeight(inv, SlotLayout.VanillaHeight);
                 SlotsRescue.BeginCapture(inv);
+
+                // The last instant at which the .fch on disk is still exactly what it was before
+                // this mod touched the character - so this is where the first-login copy is taken.
+                SafeSlotsModule.OnCharacterLoading();
             }
             catch (Exception e) { Log.LogError("[Slots] load prefix failed: " + e); }
         }
@@ -392,6 +396,11 @@ namespace NoVikingLeftBehind
                 SlotsRescue.Place(__instance, inv);
                 SlotStore.Changed(inv);
                 SlotsUi.Invalidate();
+
+                // Everything is now where it belongs, so the receipt's numbers are final and the
+                // "is this character empty?" question has its real answer.
+                SafeSlotsModule.ShowRescueReceipt(__instance);
+                SafeSlotsModule.OnCharacterLoaded(__instance, inv);
             }
             catch (Exception e) { Log.LogError("[Slots] load postfix failed: " + e); }
         }

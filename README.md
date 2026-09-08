@@ -3,7 +3,7 @@
 A BepInEx 5 mod for Valheim 0.221.12, built and maintained for a small dedicated-server group
 and released here for anyone to use. MIT licensed.
 
-All-in-one, server-enforced quality-of-life and catch-up mechanics: 35 modules covering inventory,
+All-in-one, server-enforced quality-of-life and catch-up mechanics: 36 modules covering inventory,
 loadouts, combat (fists + shield), crafting from chests, building and gathering, food, corpse
 runs, guardian powers, ore regrowth, portals and a frontier-based catch-up system. One DLL, installed on the server and by
 every player. The server enforces every setting (via [ServerSync](https://github.com/blaxxun-boop/ServerSync)),
@@ -33,8 +33,8 @@ Pre-release (see version plan below), built and tested against Valheim `0.221.12
 
 ## Config overview
 
-35 modules, each with its own `[Section] Enabled` toggle, plus `Tiers` (shared config, always on,
-no toggle of its own) — 36 rows in `docs/MODULES.md`, the full per-module table (side, section,
+36 modules, each with its own `[Section] Enabled` toggle, plus `Tiers` (shared config, always on,
+no toggle of its own) — 37 rows in `docs/MODULES.md`, the full per-module table (side, section,
 settings, defaults, hot-reload). Every gameplay number is server-synced and hot-reloads (edit the
 cfg, it applies within a second — `Enabled` toggles need a restart to turn *on*, off is instant);
 hotkeys and HUD offsets (`ExtraSlots`, `Loadouts`, `CorpseRunPlus`) are per-player, local settings.
@@ -84,6 +84,16 @@ easier — the newest tier is never touched.
   can't delete them (`QuickSlots` defaults to 0; raise it to swap the generic slots for a
   hotkeyed row instead). 3 rolling backups + `nvlb.slots.restore`; rescues items left behind by
   shudnal's ExtraSlots.
+- **SafeSlots** `[SafeSlots]` — the safety net under ExtraSlots: your character's `.fch` is copied
+  into `characters_local
+vlb-backups\` on its first login with the mod and again whenever items are
+  rescued from an older extra-slots mod (local `CharacterBackup=true`, `KeepBackups=3`); one on-screen
+  receipt says what moved; and every character save uploads the same extra-slot block to the server,
+  which keeps the five newest per character under `config/nvlb/vault/<playerId>.json` (`VaultVersions=5`,
+  `MinUploadIntervalSec=30`, blobs over 64 KB refused). Keyed on the profile's own permanent player id,
+  so it is per character and survives a rename. Log in to empty slots with items in the vault and you are
+  told so — never restored silently; `nvlb.slots.vault` / `nvlb.slots.vault restore [n]` do it, through
+  the same injection path as `nvlb.slots.restore`. `SelfTest` proves the whole store headlessly.
 - **Loadouts** `[Loadouts]` — Ctrl+V / Ctrl+B save the weapon+shield in hand; V / B equip both
   with one key (`Slots=2`).
 - **CraftFromChests** `[Chests]` — crafting, building, smelters, fires and the stone oven pull

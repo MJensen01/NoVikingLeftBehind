@@ -16,13 +16,24 @@ namespace NoVikingLeftBehind
     ///
     /// What is patched, and why
     /// ------------------------
+    /// * `ItemStand.Interact` (postfix) - latches WHICH slot the player asked for at the moment
+    ///   they press the key, because vanilla only sets the power 2 s later
+    ///   (`Invoke("DelayedPowerActivation", m_powerActivationDelay)`, ItemStand.decompiled.cs:221)
+    ///   and by then the modifier is long released.
     /// * `ItemStand.DelayedPowerActivation` (prefix) - the boss-stone altar. Vanilla calls
-    ///   Player.SetGuardianPower(m_guardianPower.name) here (ItemStand.decompiled.cs:248). We route
-    ///   it: first empty slot, else replace the LAST slot, and say which one it went to. When the
+    ///   Player.SetGuardianPower(m_guardianPower.name) here (ItemStand.decompiled.cs:248). Since
+    ///   0.8.0 the mapping is the plain one: **interact = slot 1** (vanilla), SecondSlotModifier +
+    ///   interact = slot 2, ThirdSlotModifier + interact = slot 3 (only when Slots = 3). When the
     ///   target is slot 1 we let vanilla run untouched so its per-boss PlayerStat bookkeeping
     ///   still happens.
-    /// * `ItemStand.IsGuardianPowerActive` (postfix) - vanilla only compares against slot 1, so
-    ///   without this the altar would happily re-grant a power you already hold in slot 2.
+    /// * `ItemStand.GetHoverText` (postfix) - vanilla's last tooltip line is
+    ///   `[<color=yellow><b>$KEY_Use</b></color>] $guardianstone_hook_activate`
+    ///   (ItemStand.decompiled.cs:136). We append one line per EXTRA slot in exactly that shape,
+    ///   naming the configured modifier. Never throws: on any surprise the original text is kept.
+    /// * `ItemStand.IsGuardianPowerActive` (postfix) - vanilla only compares against slot 1
+    ///   (`(user as Player).GetGuardianPowerName() == m_guardianPower.name`), which is the right
+    ///   answer for a plain interact. With a modifier held the question is really "is it in the
+    ///   slot that modifier targets", so we answer that one instead.
     /// * `Player.Update` (postfix) - reads the SecondSlotKey hotkey. Vanilla's F stays exactly as
     ///   it is: `ZInput.GetButtonDown("GP")` -> Player.StartGuardianPower() -> slot 1.
     /// * `Player.ActivateGuardianPower` (prefix + postfix) - this is the method the *animation
@@ -59,6 +70,9 @@ namespace NoVikingLeftBehind
         private ConfigEntry<int> _slots;
         private ConfigEntry<string> _secondSlotKey;
         private ConfigEntry<string> _thirdSlotKey;
+        private ConfigEntry<string> _secondSlotModifier;
+        private ConfigEntry<string> _thirdSlotModifier;
+        /// <summary>Obsolete since 0.8.0. Bound only so an existing cfg still loads unchanged.</summary>
         private ConfigEntry<string> _slot1Modifier;
         private ConfigEntry<bool> _independentCooldowns;
         private ConfigEntry<float> _cooldownMultiplier;
@@ -75,8 +89,23 @@ namespace NoVikingLeftBehind
         /// <summary>Parsed hotkeys, index 0 -> slot 1 (the second slot).</summary>
         private static readonly KeyCode[] Keys = new KeyCode[PowerSlots.MaxSlots - 1];
 
-        /// <summary>Held while interacting with an altar = "put it in slot 1".</summary>
-        private static KeyCode _modifier = KeyCode.LeftShift;
+        /// <summary>
+        /// Altar modifiers, same indexing as <see cref="Keys"/>: index 0 -> slot 2, index 1 ->
+        /// slot 3. Holding none means slot 1, which is vanilla's own behaviour.
+        /// </summary>
+        private static readonly KeyCode[] Mods = new KeyCode[PowerSlots.MaxSlots - 1];
+
+        // The altar sets the power m_powerActivationDelay (2 s) AFTER the interact, so the slot the
+        // player asked for has to be latched at interact time - nobody keeps a modifier held for
+        // two seconds while the stone hums.
+        private static ItemStand _pendingStand;
+        private static int _pendingSlot;
+        private static float _pendingUntil;
+
+        // One-shot logging for the hover-text postfix; see HoverTextPostfix.
+        private static bool _hoverLogged;
+        private static bool _hoverShapeWarned;
+        private static bool _hoverErrorLogged;
 
         private static float _suppressUntil;
         private static bool _skippedVanilla;
@@ -124,12 +153,27 @@ namespace NoVikingLeftBehind
                 "Machine-local. KeyCode for a third slot, only used when Slots = 3. " +
                 "'None' disables it.",
                 Opt.T("Key that activates the third power slot"));
-            _slot1Modifier = BindLocal("Slot1Modifier", "LeftShift",
-                "Machine-local. Hold this while interacting with a boss altar to put the power in " +
-                "SLOT 1 (the vanilla F slot). Without it the altar fills the first empty slot and, " +
-                "when both are full, replaces the last one. 'None' disables the modifier. " +
+            _secondSlotModifier = BindLocal("SecondSlotModifier", "LeftShift",
+                "Machine-local. Hold this while activating a boss altar to put the power in SLOT 2. " +
+                "The whole altar scheme: interact on its own = slot 1, exactly " +
+                "like vanilla; SecondSlotModifier + interact = slot 2; ThirdSlotModifier + interact " +
+                "= slot 3 (only when Slots = 3). The slot is decided the moment you interact, so you " +
+                "can let go while the stone charges. 'None' disables it. " +
                 "LeftShift/LeftControl/LeftAlt also accept their right-hand twin.",
-                Opt.T("Modifier key held to put a power in the first slot"));
+                Opt.T("Modifier key held at an altar to set the second power slot"));
+            _thirdSlotModifier = BindLocal("ThirdSlotModifier", "LeftControl",
+                "Machine-local. Hold this while activating a boss altar to put the power in SLOT 3. " +
+                "Ignored unless Slots = 3. Same scheme as SecondSlotModifier: interact alone = slot 1, " +
+                "SecondSlotModifier = slot 2, ThirdSlotModifier = slot 3. If you bind both to the " +
+                "same key the lower slot wins. 'None' disables it.",
+                Opt.T("Modifier key held at an altar to set the third power slot"));
+            _slot1Modifier = BindLocal("Slot1Modifier", "LeftShift",
+                "OBSOLETE - this setting does nothing at all any more. It is still here only so an " +
+                "existing cfg keeps loading without an error. Up to 0.7.x a plain altar interact " +
+                "filled the first EMPTY slot and this key forced slot 1, which felt backwards; from " +
+                "0.8.0 a plain interact always sets slot 1 (vanilla) and the modifiers pick the extra " +
+                "slots instead. Use SecondSlotModifier / ThirdSlotModifier. Safe to delete.",
+                Opt.T("Obsolete - replaced by SecondSlotModifier and ThirdSlotModifier"));
             _showHud = BindLocal("ShowHud", true,
                 "Machine-local. Clone the vanilla power icon so slot 2 gets its own icon, name " +
                 "and cooldown readout. Turn off if it clashes with another HUD mod.",
@@ -180,7 +224,8 @@ namespace NoVikingLeftBehind
             PowerSlots.CooldownMultiplier = Mathf.Clamp(_cooldownMultiplier.Value, 0f, 100f);
             Keys[0] = ParseKey(_secondSlotKey.Value, KeyCode.G, "SecondSlotKey");
             if (Keys.Length > 1) Keys[1] = ParseKey(_thirdSlotKey.Value, KeyCode.None, "ThirdSlotKey");
-            _modifier = ParseKey(_slot1Modifier.Value, KeyCode.LeftShift, "Slot1Modifier");
+            Mods[0] = ParseKey(_secondSlotModifier.Value, KeyCode.LeftShift, "SecondSlotModifier");
+            if (Mods.Length > 1) Mods[1] = ParseKey(_thirdSlotModifier.Value, KeyCode.LeftControl, "ThirdSlotModifier");
             PowerHud.SetOffset(new Vector2(_hudOffsetX.Value, _hudOffsetY.Value));
             // The whole point of 0.4.5's Powers half: the key is written ON the icon, so nobody has
             // to read the config to discover that the second power is on G.
@@ -216,29 +261,50 @@ namespace NoVikingLeftBehind
             return Keys[slot - 1] == KeyCode.None ? "" : Keys[slot - 1].ToString();
         }
 
-        /// <summary>Printable name of the altar modifier ("LeftShift" -> "Shift").</summary>
-        internal static string ModifierLabel()
+        /// <summary>
+        /// Printable name of the modifier that targets <paramref name="slot"/> ("LeftShift" ->
+        /// "Shift", "LeftControl" -> "Ctrl"). "" for slot 1 - it needs no modifier - and for a
+        /// modifier set to None.
+        /// </summary>
+        internal static string ModifierLabel(int slot)
         {
-            if (_modifier == KeyCode.None) return "";
-            string s = _modifier.ToString();
+            if (slot < 1 || slot > Mods.Length) return "";
+            KeyCode k = Mods[slot - 1];
+            if (k == KeyCode.None) return "";
+            string s = k.ToString();
             if (s.StartsWith("Left", StringComparison.Ordinal)) s = s.Substring(4);
             else if (s.StartsWith("Right", StringComparison.Ordinal)) s = s.Substring(5);
+            if (s == "Control") s = "Ctrl";
             return s;
         }
 
-        /// <summary>Is the slot-1 altar modifier down? Left/Right twins count as the same key.</summary>
-        private static bool ModifierHeld()
+        /// <summary>Is <paramref name="k"/> down? Left/Right twins count as the same key.</summary>
+        private static bool ModifierHeld(KeyCode k)
         {
-            if (_modifier == KeyCode.None) return false;
-            if (ZInput.GetKey(_modifier, false)) return true;
-            KeyCode twin = _modifier == KeyCode.LeftShift ? KeyCode.RightShift
-                         : _modifier == KeyCode.RightShift ? KeyCode.LeftShift
-                         : _modifier == KeyCode.LeftControl ? KeyCode.RightControl
-                         : _modifier == KeyCode.RightControl ? KeyCode.LeftControl
-                         : _modifier == KeyCode.LeftAlt ? KeyCode.RightAlt
-                         : _modifier == KeyCode.RightAlt ? KeyCode.LeftAlt
+            if (k == KeyCode.None) return false;
+            if (ZInput.GetKey(k, false)) return true;
+            KeyCode twin = k == KeyCode.LeftShift ? KeyCode.RightShift
+                         : k == KeyCode.RightShift ? KeyCode.LeftShift
+                         : k == KeyCode.LeftControl ? KeyCode.RightControl
+                         : k == KeyCode.RightControl ? KeyCode.LeftControl
+                         : k == KeyCode.LeftAlt ? KeyCode.RightAlt
+                         : k == KeyCode.RightAlt ? KeyCode.LeftAlt
                          : KeyCode.None;
             return twin != KeyCode.None && ZInput.GetKey(twin, false);
+        }
+
+        /// <summary>
+        /// Which slot the altar would target right now: 0 (plain interact, vanilla) unless one of
+        /// the extra-slot modifiers is held. Slots the config does not enable are never returned,
+        /// so at Slots = 1 this is always 0 and at Slots = 2 it is never 2.
+        /// </summary>
+        private static int TargetSlot()
+        {
+            int extras = PowerSlots.ExtraCount;
+            if (extras > Mods.Length) extras = Mods.Length;
+            for (int slot = 1; slot <= extras; slot++)
+                if (ModifierHeld(Mods[slot - 1])) return slot;
+            return 0;
         }
 
         private static KeyCode ParseKey(string s, KeyCode fallback, string what)
@@ -273,6 +339,16 @@ namespace NoVikingLeftBehind
             if (stand == null) throw new Exception("ItemStand.DelayedPowerActivation() not found");
             var standActive = AccessTools.Method(typeof(ItemStand), "IsGuardianPowerActive", new[] { typeof(Humanoid) });
             if (standActive == null) throw new Exception("ItemStand.IsGuardianPowerActive(Humanoid) not found");
+            var standInteract = AccessTools.Method(typeof(ItemStand), "Interact", new[] { typeof(Humanoid), typeof(bool), typeof(bool) });
+            if (standInteract == null) throw new Exception("ItemStand.Interact(Humanoid,bool,bool) not found");
+            var standHover = AccessTools.Method(typeof(ItemStand), "GetHoverText");
+            if (standHover == null) throw new Exception("ItemStand.GetHoverText() not found");
+            if (AccessTools.Field(typeof(ItemStand), "m_guardianPower") == null)
+                throw new Exception("ItemStand.m_guardianPower not found");
+            if (AccessTools.Field(typeof(ItemStand), "m_canBeRemoved") == null)
+                throw new Exception("ItemStand.m_canBeRemoved not found");
+            if (AccessTools.Field(typeof(ItemStand), "m_powerActivationDelay") == null)
+                throw new Exception("ItemStand.m_powerActivationDelay not found");
             var update = AccessTools.Method(typeof(Player), "Update");
             if (update == null) throw new Exception("Player.Update() not found");
             var activate = AccessTools.Method(typeof(Player), "ActivateGuardianPower");
@@ -303,6 +379,8 @@ namespace NoVikingLeftBehind
             var self = typeof(DualPowersModule);
             Harmony.Patch(stand, prefix: new HarmonyMethod(self, nameof(StandPrefix)));
             Harmony.Patch(standActive, postfix: new HarmonyMethod(self, nameof(StandActivePostfix)));
+            Harmony.Patch(standInteract, postfix: new HarmonyMethod(self, nameof(StandInteractPostfix)));
+            Harmony.Patch(standHover, postfix: new HarmonyMethod(self, nameof(HoverTextPostfix)));
             Harmony.Patch(update, postfix: new HarmonyMethod(self, nameof(PlayerUpdatePostfix)));
             Harmony.Patch(activate,
                 prefix: new HarmonyMethod(self, nameof(ActivatePrefix)),
@@ -319,7 +397,7 @@ namespace NoVikingLeftBehind
             Log.LogInfo("[DualPowers] slots=" + PowerSlots.SlotCount +
                         " key1=" + KeyLabel(0) + " key2=" + Keys[0] +
                         (PowerSlots.SlotCount > 2 ? " key3=" + Keys[1] : "") +
-                        " altarSlot1Modifier=" + _modifier +
+                        " altar=" + AltarScheme() +
                         " independentCooldowns=" + PowerSlots.IndependentCooldowns +
                         " cooldownMultiplier=" + PowerSlots.CooldownMultiplier +
                         " hud=" + _showHud.Value + " storage=" + PowerSlots.NameKey(1) + "/" +
@@ -330,10 +408,28 @@ namespace NoVikingLeftBehind
                         " colour=#" + ColorUtility.ToHtmlStringRGBA(PowerRing.RingColor) +
                         " track=#" + ColorUtility.ToHtmlStringRGBA(PowerRing.TrackColor) +
                         " (the 'decorated' line follows on a client once the HUD lays out)");
+            if (_slot1Modifier != null && _slot1Modifier.Value != (string)_slot1Modifier.DefaultValue)
+                Log.LogWarning("[DualPowers] [Powers] Slot1Modifier = '" + _slot1Modifier.Value +
+                               "' is obsolete and is IGNORED. A plain altar interact now sets slot 1 " +
+                               "(vanilla); the extra slots are on SecondSlotModifier / ThirdSlotModifier.");
+        }
+
+        /// <summary>"interact=slot1 Shift=slot2 Ctrl=slot3", for the log and nvlb.status.</summary>
+        private static string AltarScheme()
+        {
+            if (PowerSlots.ExtraCount <= 0) return "vanilla (Slots=1)";
+            string s = "interact:slot1";
+            for (int slot = 1; slot <= PowerSlots.ExtraCount && slot <= Mods.Length; slot++)
+            {
+                string m = ModifierLabel(slot);
+                s += " " + (m.Length == 0 ? "(unbound)" : m + "+interact") + ":slot" + (slot + 1);
+            }
+            return s;
         }
 
         public override void Disable()
         {
+            _pendingStand = null;
             PowerHud.Destroy();
             PowerRing.UndecorateAll();
             base.Disable();
@@ -341,9 +437,50 @@ namespace NoVikingLeftBehind
 
         // ---- altar routing ----------------------------------------------------------------
 
+        /// <summary>
+        /// Remember which slot the player asked for. Vanilla's Interact only *starts* the two-second
+        /// activation (`Invoke("DelayedPowerActivation", m_powerActivationDelay)`), and it returns
+        /// true only on the call that starts it - the "already invoking" and "already have it"
+        /// paths both return false. So `__result &amp;&amp; IsInvoking(...)` is exactly "this press
+        /// began an activation", and that is the instant the modifier state means something.
+        /// </summary>
+        private static void StandInteractPostfix(ItemStand __instance, Humanoid user, bool __result)
+        {
+            if (_inst == null || !_inst.Active || !ClientActive()) return;
+            if (PowerSlots.ExtraCount <= 0) return;              // Slots = 1 -> nothing to route
+            try
+            {
+                if (!__result || __instance == null || __instance.m_guardianPower == null) return;
+                var p = user as Player;
+                if (p == null || p != Player.m_localPlayer) return;
+                if (!__instance.IsInvoking("DelayedPowerActivation")) return;
+
+                _pendingStand = __instance;
+                _pendingSlot = TargetSlot();
+                _pendingUntil = Time.time + Mathf.Max(0f, __instance.m_powerActivationDelay) + 2f;
+            }
+            catch (Exception e) { Log.LogWarning("[DualPowers] altar interact latch: " + e.Message); }
+        }
+
+        /// <summary>
+        /// The slot this activation was started for. Normally the one latched at interact time; if
+        /// that latch is missing or stale (another mod invoked the activation, a reload happened)
+        /// fall back to reading the modifiers now, which is still better than guessing.
+        /// </summary>
+        private static int ConsumePendingSlot(ItemStand stand)
+        {
+            int slot;
+            if (ReferenceEquals(_pendingStand, stand) && Time.time <= _pendingUntil) slot = _pendingSlot;
+            else slot = TargetSlot();
+            _pendingStand = null;
+            return Mathf.Clamp(slot, 0, Mathf.Min(PowerSlots.ExtraCount, Mods.Length));
+        }
+
         private static bool StandPrefix(ItemStand __instance)
         {
             if (_inst == null || !_inst.Active || !ClientActive()) return true;
+            // Slots = 1 is vanilla, full stop: no routing, no message, no extra hover line.
+            if (PowerSlots.ExtraCount <= 0) return true;
             try
             {
                 var me = Player.m_localPlayer;
@@ -353,41 +490,38 @@ namespace NoVikingLeftBehind
                 string power = __instance.m_guardianPower.name;
                 string label = Localization.instance.Localize(__instance.m_guardianPower.m_name);
 
-                // ---- the two explicit rules, 0.4.5 -------------------------------------------
-                //  * interact normally      -> first EMPTY slot, else replace the LAST slot (2)
-                //  * hold Slot1Modifier     -> replace slot 1, the vanilla F slot
+                // ---- the mapping, 0.8.0 -------------------------------------------------------
+                //  * interact on its own       -> slot 1, exactly like vanilla
+                //  * SecondSlotModifier + it   -> slot 2
+                //  * ThirdSlotModifier  + it   -> slot 3 (only when Slots = 3)
                 // Whatever happens, say so in the centre of the screen AND name the key, because
                 // "which slot did that go in, and how do I fire it" was the whole complaint.
-                bool wantSlot1 = ModifierHeld();
-
+                int target = ConsumePendingSlot(__instance);
                 int have = PowerSlots.FindSlot(me, power);
-                if (have >= 0 && !(wantSlot1 && have != 0))
+
+                if (have == target)
                 {
+                    // The gate in IsGuardianPowerActive normally stops this, but the player can let
+                    // go of the modifier while the stone charges - then re-granting is a no-op.
                     me.Message(MessageHud.MessageType.Center,
-                        label + " is already in slot " + (have + 1) + " (" + KeyLabel(have) + "). " +
+                        label + " is already in slot " + (target + 1) + " (" + KeyLabel(target) + "). " +
                         HintLine());
                     return false;
                 }
 
-                int target;
-                if (wantSlot1) target = 0;
-                else
-                {
-                    target = PowerSlots.FirstEmptySlot(me);
-                    if (target < 0) target = PowerSlots.ExtraCount;   // all full -> replace the last
-                }
+                // A power lives in exactly one slot: clear it wherever else it was sitting.
+                if (have >= 0) PowerSlots.SetPower(me, have, "");
 
                 if (target == 0)
                 {
                     // Vanilla handles slot 1, including its per-boss PlayerStat bookkeeping, so let
-                    // it run - we only add the message. If the power was sitting in slot 2, clear it
-                    // there so it does not end up in two slots at once.
-                    if (have > 0) PowerSlots.SetPower(me, have, "");
+                    // it run - we only add the message.
                     string had1 = PowerSlots.GetName(me, 0);
                     me.Message(MessageHud.MessageType.Center,
                         "Power of " + label + " set to slot 1 (" + KeyLabel(0) + ")" +
-                        (string.IsNullOrEmpty(had1) ? "" : ", replacing " + had1) + ".");
-                    Log.LogInfo("[DualPowers] altar granted '" + power + "' to slot 1 (modifier held)" +
+                        (string.IsNullOrEmpty(had1) ? "" : ", replacing " + PowerLabel(had1)) + ". " +
+                        HintLine());
+                    Log.LogInfo("[DualPowers] altar granted '" + power + "' to slot 1 (plain interact)" +
                                 (string.IsNullOrEmpty(had1) ? "" : ", replacing '" + had1 + "'"));
                     return true;
                 }
@@ -399,8 +533,9 @@ namespace NoVikingLeftBehind
 
                 me.Message(MessageHud.MessageType.Center,
                     "Power of " + label + " set to slot " + (target + 1) + " (" + KeyLabel(target) + ")" +
-                    (string.IsNullOrEmpty(replaced) ? "" : ", replacing " + replaced) + ". " + HintLine());
+                    (string.IsNullOrEmpty(replaced) ? "" : ", replacing " + PowerLabel(replaced)) + ".");
                 Log.LogInfo("[DualPowers] altar granted '" + power + "' to slot " + (target + 1) +
+                            " (" + ModifierLabel(target) + " held at interact)" +
                             (string.IsNullOrEmpty(replaced) ? "" : ", replacing '" + replaced + "'"));
                 return false;
             }
@@ -411,28 +546,154 @@ namespace NoVikingLeftBehind
             }
         }
 
-        /// <summary>"Hold Shift when choosing to set slot 1 (F)." - appended to every altar message.</summary>
+        /// <summary>"Hold Shift for slot 2 (G)." - appended to the slot-1 altar messages.</summary>
         private static string HintLine()
         {
-            string mod = ModifierLabel();
-            if (mod.Length == 0) return "";
-            return "Hold " + mod + " when choosing to set slot 1 (" + KeyLabel(0) + ").";
+            string s = "";
+            for (int slot = 1; slot <= PowerSlots.ExtraCount && slot <= Mods.Length; slot++)
+            {
+                string mod = ModifierLabel(slot);
+                string key = KeyLabel(slot);
+                if (mod.Length == 0 || key.Length == 0) continue;
+                s += (s.Length == 0 ? "Hold " : ", ") + mod + " for slot " + (slot + 1) + " (" + key + ")";
+            }
+            return s.Length == 0 ? "" : s + ".";
         }
 
+        /// <summary>Localised display name of a stored power name ("GP_Eikthyr" -> "Eikthyr").</summary>
+        private static string PowerLabel(string name)
+        {
+            if (string.IsNullOrEmpty(name)) return "";
+            try
+            {
+                if (ObjectDB.instance != null)
+                {
+                    var se = ObjectDB.instance.GetStatusEffect(name.GetStableHashCode());
+                    if (se != null && !string.IsNullOrEmpty(se.m_name))
+                        return Localization.instance.Localize(se.m_name);
+                }
+            }
+            catch { /* fall through to the raw prefab name */ }
+            return name;
+        }
+
+        /// <summary>
+        /// Vanilla answers "is this stone's power already yours" by looking at slot 1 only, which is
+        /// the right answer for a plain interact. With an extra-slot modifier held the real question
+        /// is whether THAT slot already holds it, so answer that instead - which keeps the altar
+        /// usable for a power you carry in another slot, and makes the hover text agree.
+        /// </summary>
         private static void StandActivePostfix(ItemStand __instance, Humanoid user, ref bool __result)
         {
-            if (__result || _inst == null || !_inst.Active || !ClientActive()) return;
+            if (_inst == null || !_inst.Active || !ClientActive()) return;
+            if (PowerSlots.ExtraCount <= 0) return;              // Slots = 1 -> vanilla's answer stands
             try
             {
                 var p = user as Player;
-                if (p == null || p != Player.m_localPlayer || __instance.m_guardianPower == null) return;
-                int slot = PowerSlots.FindSlot(p, __instance.m_guardianPower.name);
-                // Holding the modifier is an explicit "move this into slot 1", so the altar must
-                // stay usable for a power already parked in slot 2.
-                if (slot > 0 && ModifierHeld()) return;
-                if (slot >= 0) __result = true;
+                if (p == null || p != Player.m_localPlayer) return;
+                if (__instance == null || __instance.m_guardianPower == null) return;
+
+                int target = TargetSlot();
+                if (target == 0) return;                         // plain interact -> vanilla is right
+                PowerSlots.Bind(p);
+                __result = PowerSlots.GetName(p, target) == __instance.m_guardianPower.name;
             }
             catch (Exception e) { Log.LogWarning("[DualPowers] IsGuardianPowerActive postfix: " + e.Message); }
+        }
+
+        // ---- altar hover text ---------------------------------------------------------------
+
+        /// <summary>Vanilla's last tooltip line on a guardian stone (ItemStand.decompiled.cs:136).</summary>
+        private const string VanillaActivateLine = "[<color=yellow><b>$KEY_Use</b></color>] $guardianstone_hook_activate";
+
+        /// <summary>Vanilla's alternative last line when you already carry the power (line 134).</summary>
+        private const string VanillaAlreadyLine = "$guardianstone_hook_alreadyactive";
+
+        /// <summary>
+        /// Append one hint line per EXTRA slot under vanilla's "[E] Activate power", in exactly the
+        /// shape vanilla uses on that line. Anchored on the localised tail of the vanilla string, so
+        /// if the game ever rewrites that line we simply add nothing rather than mangling it. Never
+        /// throws: __result is only assigned once everything has been built.
+        /// </summary>
+        private static void HoverTextPostfix(ItemStand __instance, ref string __result)
+        {
+            if (_inst == null || !_inst.Active || !ClientActive()) return;
+            if (PowerSlots.ExtraCount <= 0) return;              // Slots = 1 -> exactly vanilla
+            try
+            {
+                if (__instance == null || __instance.m_guardianPower == null) return;
+                if (__instance.m_canBeRemoved) return;            // an ordinary item stand, not an altar
+                if (string.IsNullOrEmpty(__result)) return;
+                var me = Player.m_localPlayer;
+                if (me == null) return;
+
+                var loc = Localization.instance;
+                if (loc == null) return;
+                bool onActivate = __result.EndsWith(loc.Localize(VanillaActivateLine), StringComparison.Ordinal);
+                bool onAlready = !onActivate &&
+                                 __result.EndsWith(loc.Localize(VanillaAlreadyLine), StringComparison.Ordinal);
+                if (!onActivate && !onAlready)
+                {
+                    // A warded stone is vanilla's third shape and perfectly normal - stay quiet.
+                    if (__result.EndsWith(loc.Localize("$piece_noaccess"), StringComparison.Ordinal)) return;
+                    // Anything else means a game patch moved the line we anchor on. Say so once.
+                    if (!_hoverShapeWarned)
+                    {
+                        _hoverShapeWarned = true;
+                        Log.LogWarning("[DualPowers] boss-stone hover text does not end in the vanilla " +
+                                       "activate/already line, so no slot hints were added. Tail seen: '" +
+                                       Tail(__result) + "'");
+                    }
+                    return;
+                }
+
+                PowerSlots.Bind(me);
+                string power = __instance.m_guardianPower.name;
+                string extra = "";
+                for (int slot = 1; slot <= PowerSlots.ExtraCount && slot <= Mods.Length; slot++)
+                {
+                    string line = HoverSlotLine(loc, me, slot, power);
+                    if (line.Length != 0) extra += "\n" + line;
+                }
+                if (extra.Length == 0) return;
+
+                __result = __result + extra;
+                if (!_hoverLogged)
+                {
+                    _hoverLogged = true;
+                    Log.LogInfo("[DualPowers] altar hover hints active: " + AltarScheme());
+                }
+            }
+            catch (Exception e)
+            {
+                // A hover postfix must never take the tooltip down with it.
+                if (!_hoverErrorLogged)
+                {
+                    _hoverErrorLogged = true;
+                    Log.LogWarning("[DualPowers] hover text postfix failed, leaving vanilla text: " + e);
+                }
+            }
+        }
+
+        /// <summary>One "[Shift + E] Set as second power" line, or "" when that slot has no modifier.</summary>
+        private static string HoverSlotLine(Localization loc, Player me, int slot, string power)
+        {
+            string mod = ModifierLabel(slot);
+            if (mod.Length == 0) return "";                       // modifier set to None -> no hint
+            string what = (slot == 1) ? "second" : "third";
+            string held = PowerSlots.GetName(me, slot);
+            if (held == power)
+                return "Already your " + what + " power";
+            string line = loc.Localize("[<color=yellow><b>" + mod + " + $KEY_Use</b></color>] Set as " +
+                                       what + " power");
+            if (!string.IsNullOrEmpty(held)) line += " (replaces " + PowerLabel(held) + ")";
+            return line;
+        }
+
+        private static string Tail(string s)
+        {
+            if (string.IsNullOrEmpty(s)) return "";
+            return s.Length <= 60 ? s : s.Substring(s.Length - 60);
         }
 
         // ---- input ------------------------------------------------------------------------
@@ -645,7 +906,7 @@ namespace NoVikingLeftBehind
                 keys.Add("slot" + (s + 1) + ":" + (KeyLabel(s).Length == 0 ? "-" : KeyLabel(s)));
             return slots +
                    "  keys=" + string.Join("/", keys.ToArray()) +
-                   " altarSlot1=" + (ModifierLabel().Length == 0 ? "-" : ModifierLabel() + "+interact") +
+                   " altar=" + AltarScheme() +
                    " independent=" + PowerSlots.IndependentCooldowns +
                    " cdx" + PowerSlots.CooldownMultiplier +
                    " uses=" + _activations +
@@ -735,7 +996,7 @@ namespace NoVikingLeftBehind
             Log.LogInfo("[DualPowers] SelfTest: config slots=" + PowerSlots.SlotCount +
                         " independent=" + PowerSlots.IndependentCooldowns +
                         " cdMultiplier=" + PowerSlots.CooldownMultiplier +
-                        " key2=" + Keys[0]);
+                        " key2=" + Keys[0] + " altar=" + AltarScheme());
             Log.LogInfo("[DualPowers] SelfTest: --- end ---");
         }
     }
