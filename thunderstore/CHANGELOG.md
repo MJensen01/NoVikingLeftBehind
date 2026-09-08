@@ -1,5 +1,32 @@
 # Changelog — NoVikingLeftBehind
 
+## 0.4.8 (2026-09-08)
+- **DualPowers / CombatRecharge — the Forsaken-power HUD, upgraded** (`src/Modules/Powers/PowerRing.cs`, new).
+  CombatRecharge already turns a fight into cooldown recovery, but vanilla shows that as a square icon and a
+  shrinking number, so nobody could see it happening. Every power icon — vanilla's slot 1 *and* DualPowers'
+  cloned slot 2/3 — is now drawn as a **circle** with a thin **charge ring** around its edge that fills as the
+  cooldown recovers: full ring = ready, and every second a landed or taken hit shaves off makes the ring jump
+  forward. One soft pulse at the moment the power comes ready, nothing animating while idle.
+  Still **no shipped UI assets**: both sprites (an antialiased disc for the circle mask, an annulus for the ring)
+  are generated at runtime into a 256×256 RGBA32 `Texture2D` and cached for the process. The ring is a plain
+  Unity `Image` with `type=Filled` / `fillMethod=Radial360` / `fillOrigin=Top`, `fillAmount = 1 - remaining/total`,
+  where *total* is the power's own `StatusEffect.m_cooldown` (times `CooldownMultiplier`), never a hardcoded
+  20 minutes — the ring self-corrects if the remaining time ever exceeds it.
+  The vanilla icon's sprite and colour are never replaced: the icon object is moved inside a generated
+  circle `Mask` and put back — parent, sibling index, anchors, pivot, size — the moment the decoration is torn
+  down. Because PowerHud maps the cloned widget's leaves by component index, it now un-decorates before cloning
+  and the ring re-applies on the same frame, so the clone can never inherit or duplicate the decoration.
+  New, all **machine-local** (cosmetic, per player, never server-synced) and all live on a config edit:
+  `[Powers] RoundIcons=true`, `CooldownRing=true`, `RingThickness=4` (pixels, 1–24), `RingColor="E6C88AD9"`
+  (Valheim's warm parchment gold at 85% alpha) and `RingTrackColor="00000066"` for the un-filled remainder.
+  `RoundIcons` and `CooldownRing` are independent — either alone works.
+  Robustness, because this runs inside `Hud.UpdateGuardianPower` every frame: one throw anywhere logs once,
+  tears the decoration down and permanently disables it (the powers themselves keep working); a widget that has
+  not been laid out yet is retried instead of failing; a non-square icon rect uses the smaller side; a Hud
+  rebuild, `ShowHud` toggle or player respawn re-decorates lazily. A client logs
+  `[Powers] HUD ring: decorated slots=… icon=…px ring=…px …` once when it builds. `[Powers] SelfTest=true` now
+  also proves the disc/annulus coverage maths and the sprite generation headlessly on a dedicated server.
+
 ## 0.4.7 (2026-09-07)
 - Docs only: the mod page now leads with what it is — the ultimate Valheim quality-of-life mod — with the catch-up
   story as the "why" underneath. No code change. Version bumped so Thunderstore takes the new page; the server's

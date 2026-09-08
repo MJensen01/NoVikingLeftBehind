@@ -63,6 +63,11 @@ namespace NoVikingLeftBehind
         private ConfigEntry<bool> _showHud;
         private ConfigEntry<float> _hudOffsetX;
         private ConfigEntry<float> _hudOffsetY;
+        private ConfigEntry<bool> _roundIcons;
+        private ConfigEntry<bool> _cooldownRing;
+        private ConfigEntry<float> _ringThickness;
+        private ConfigEntry<string> _ringColor;
+        private ConfigEntry<string> _ringTrackColor;
         private ConfigEntry<bool> _selfTest;
 
         /// <summary>Parsed hotkeys, index 0 -> slot 1 (the second slot).</summary>
@@ -124,6 +129,22 @@ namespace NoVikingLeftBehind
                 "Machine-local. Pixels to move the second power icon sideways from the vanilla one.");
             _hudOffsetY = BindLocal("HudOffsetY", -56f,
                 "Machine-local. Pixels to move the second power icon vertically (negative = below).");
+            _roundIcons = BindLocal("RoundIcons", true,
+                "Machine-local, cosmetic. Draw every Forsaken power icon (slot 1 and the extra " +
+                "slots) as a circle instead of vanilla's square. The vanilla icon sprite is never " +
+                "replaced - it is masked to a circle, generated at runtime, no shipped assets.");
+            _cooldownRing = BindLocal("CooldownRing", true,
+                "Machine-local, cosmetic. Draw a thin charge ring around each power icon that " +
+                "fills as the cooldown recovers - full ring = ready. Every second CombatRecharge " +
+                "shaves off jumps the ring forward, so a fight visibly charges your power.");
+            _ringThickness = BindLocal("RingThickness", 4f,
+                "Machine-local, cosmetic. Ring thickness in pixels (1-24). ~4 suits 1080p; the " +
+                "ring is drawn on the icon's own edge, so it scales with the HUD.");
+            _ringColor = BindLocal("RingColor", "E6C88AD9",
+                "Machine-local, cosmetic. RGBA hex for the filled (recovered) part of the ring. " +
+                "Default E6C88AD9 is Valheim's warm parchment gold at 85% alpha.");
+            _ringTrackColor = BindLocal("RingTrackColor", "00000066",
+                "Machine-local, cosmetic. RGBA hex for the un-filled remainder of the ring.");
             _selfTest = BindLocal("SelfTest", false,
                 "Diagnostic, machine-local. Runs the module on a dedicated server too and logs a " +
                 "storage + recharge self test at world load. Leave false in normal use.");
@@ -144,6 +165,14 @@ namespace NoVikingLeftBehind
             // The whole point of 0.4.5's Powers half: the key is written ON the icon, so nobody has
             // to read the config to discover that the second power is on G.
             PowerHud.KeyLabel = KeyLabel(1);
+            // 0.4.8: round icons + charge ring. Cosmetic and machine-local, so it is pushed the
+            // same way as everything else and re-applies live on a config edit.
+            PowerRing.Configure(
+                _roundIcons.Value,
+                _cooldownRing.Value,
+                _ringThickness.Value,
+                PowerRing.ParseColor(_ringColor.Value, new Color(0.902f, 0.784f, 0.541f, 0.851f), "RingColor"),
+                PowerRing.ParseColor(_ringTrackColor.Value, new Color(0f, 0f, 0f, 0.4f), "RingTrackColor"));
         }
 
         /// <summary>Printable name of the key that fires a slot. Slot 0 asks ZInput for vanilla's own binding.</summary>
@@ -209,7 +238,8 @@ namespace NoVikingLeftBehind
             Push();
             if (entry == _showHud && !_showHud.Value) PowerHud.Destroy();
             if (entry == _showHud && _showHud.Value) PowerHud.Reset();
-            if (entry == EnabledCfg && !EnabledCfg.Value) PowerHud.Destroy();
+            if (entry == EnabledCfg && !EnabledCfg.Value) { PowerHud.Destroy(); PowerRing.UndecorateAll(); }
+            if (entry == EnabledCfg && EnabledCfg.Value) PowerRing.Reset();
             if (entry == _selfTest)
                 Log.LogInfo("[DualPowers] SelfTest=" + _selfTest.Value +
                             " takes effect on the next game start (module side is decided at load).");
@@ -274,11 +304,18 @@ namespace NoVikingLeftBehind
                         " cooldownMultiplier=" + PowerSlots.CooldownMultiplier +
                         " hud=" + _showHud.Value + " storage=" + PowerSlots.NameKey(1) + "/" +
                         PowerSlots.CooldownKey(1) + " selfTest=" + _selfTest.Value);
+            Log.LogInfo("[Powers] HUD ring: roundIcons=" + PowerRing.RoundIcons +
+                        " cooldownRing=" + PowerRing.CooldownRing +
+                        " thickness=" + PowerRing.Thickness + "px" +
+                        " colour=#" + ColorUtility.ToHtmlStringRGBA(PowerRing.RingColor) +
+                        " track=#" + ColorUtility.ToHtmlStringRGBA(PowerRing.TrackColor) +
+                        " (the 'decorated' line follows on a client once the HUD lays out)");
         }
 
         public override void Disable()
         {
             PowerHud.Destroy();
+            PowerRing.UndecorateAll();
             base.Disable();
         }
 
@@ -560,10 +597,14 @@ namespace NoVikingLeftBehind
         private static void HudPostfix(Hud __instance, Player player)
         {
             if (_inst == null || !_inst.Active || !ClientActive()) return;
-            if (!_inst._showHud.Value || PowerSlots.ExtraCount <= 0) return;
             if (player == null || player != Player.m_localPlayer) return;
             PowerSlots.Bind(player);
-            PowerHud.Refresh(__instance, player, 1);
+            if (_inst._showHud.Value && PowerSlots.ExtraCount > 0)
+                PowerHud.Refresh(__instance, player, 1);
+            // The ring/round-icon decoration is independent of the extra slot: it applies to
+            // vanilla's own widget even at Slots=1 or ShowHud=false. It must run AFTER
+            // PowerHud.Refresh, which needs a pristine m_gpRoot to clone (see PowerRing).
+            PowerRing.Refresh(__instance, player);
         }
 
         private static void ObjectDBPostfix(ObjectDB __instance)
@@ -587,7 +628,9 @@ namespace NoVikingLeftBehind
                    " altarSlot1=" + (ModifierLabel().Length == 0 ? "-" : ModifierLabel() + "+interact") +
                    " independent=" + PowerSlots.IndependentCooldowns +
                    " cdx" + PowerSlots.CooldownMultiplier +
-                   " uses=" + _activations;
+                   " uses=" + _activations +
+                   "  hud=round:" + PowerRing.RoundIcons + "/ring:" + PowerRing.CooldownRing +
+                   "@" + PowerRing.Thickness + "px";
         }
 
         // ---- player actions the console exposes (nvlb.power clear/swap) ------------------------
@@ -664,6 +707,10 @@ namespace NoVikingLeftBehind
 
             // (3) hand the combat-recharge maths a 300 s cooldown, 5 hits dealt + 2 taken.
             CombatRechargeModule.LogSelfTest(300f, 5, 2);
+
+            // (4) the 0.4.8 HUD decoration: the circle/ring coverage maths is pure, so it proves
+            // itself headlessly; the Texture2D/Sprite build is attempted too and only reported.
+            PowerRing.LogSelfTest();
 
             Log.LogInfo("[DualPowers] SelfTest: config slots=" + PowerSlots.SlotCount +
                         " independent=" + PowerSlots.IndependentCooldowns +

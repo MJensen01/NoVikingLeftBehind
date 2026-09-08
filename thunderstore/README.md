@@ -64,8 +64,14 @@ all. The mod never makes the leaders' game easier; it only softens the trail beh
   empty slot — hold **Shift** while interacting to put the power in slot 1 (**F**) instead, and
   the game tells you which slot and which key it landed on. `nvlb.power clear 1|2` and
   `nvlb.power swap` fix a power in the wrong slot. `Tune it:` `[Powers] Slots=2`, `IndependentCooldowns=true`, `CooldownMultiplier=1.0`, local `SecondSlotKey="G"`, local `Slot1Modifier="LeftShift"`
+- **Power HUD** — every Forsaken power icon is drawn as a circle with a thin charge ring around
+  it that fills as the cooldown recovers: full ring means ready, and every second CombatRecharge
+  shaves off jumps the ring forward, so you can *see* the power charging while you fight. Built
+  at runtime in Valheim's own parchment gold — no extra downloads, no flashy overlay, and the
+  vanilla icon and cooldown text are untouched underneath. `Tune it:` local `[Powers] RoundIcons=true`, `CooldownRing=true`, `RingThickness=4`, `RingColor="E6C88AD9"`, `RingTrackColor="00000066"`
 - **CombatRecharge** — every hit you land or take visibly chips seconds off your power's
-  cooldown bar, so a hard fight brings your power back around, not the clock. `Tune it:` `[Recharge] SecondsPerHitDealt=2`, `SecondsPerHitTaken=3`, `MaxPerSecond=10`, `AffectAllSlots=true`
+  cooldown bar, so a hard fight brings your power back around, not the clock. Watch the charge
+  ring on the icon jump forward with each hit. `Tune it:` `[Recharge] SecondsPerHitDealt=2`, `SecondsPerHitTaken=3`, `MaxPerSecond=10`, `AffectAllSlots=true`
 - **FistsAndShields** — put the Flesh Rippers (or Hugo's bronze knuckles) in one hand and a
   shield in the other. Vanilla calls every fist weapon two-handed, so equipping one drops your
   shield — even though bare fists and a shield have always worked fine together. Now they don't

@@ -66,9 +66,13 @@ easier — the newest tier is never touched.
 ### Combat & powers
 
 - **DualPowers** `[Powers]` — carry two (optionally three) Forsaken powers with independent
-  cooldowns and a second hotkey (`Slots=2`, `IndependentCooldowns=true`, local `SecondSlotKey="G"`).
+  cooldowns and a second hotkey (`Slots=2`, `IndependentCooldowns=true`, local `SecondSlotKey="G"`);
+  also draws every power icon as a circle with a thin cooldown/charge ring, generated at runtime
+  (local `RoundIcons=true`, `CooldownRing=true`, `RingThickness=4`, `RingColor="E6C88AD9"`,
+  `RingTrackColor="00000066"`).
 - **CombatRecharge** `[Recharge]` — dealing/taking damage shaves seconds off power cooldowns,
-  rate-capped (`SecondsPerHitDealt=2`, `SecondsPerHitTaken=3`, `MaxPerSecond=10`).
+  rate-capped (`SecondsPerHitDealt=2`, `SecondsPerHitTaken=3`, `MaxPerSecond=10`); each hit visibly
+  jumps the charge ring forward.
 - **FistsAndShields** `[Fists]` — fist weapons stop being two-handed, so Flesh Rippers or Hugo's
   Armory knuckles go in one hand and a shield in the other (`ExtraPrefabs=""`,
   `ExcludePrefabs=""`). Everything with the Unarmed skill is found automatically in `ObjectDB`.

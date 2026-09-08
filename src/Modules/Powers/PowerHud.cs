@@ -80,9 +80,20 @@ namespace NoVikingLeftBehind
             }
         }
 
+        /// <summary>
+        /// The cloned slot-2 icon, so PowerRing can decorate it exactly like the vanilla one.
+        /// Null until the clone exists (or after a teardown).
+        /// </summary>
+        public static Image CloneIcon { get { return _icon; } }
+
         private static bool Ensure(Hud hud)
         {
             if (_built && _clone != null && ReferenceEquals(_hud, hud)) return true;
+
+            // We are about to clone m_gpRoot and map its leaves by component INDEX, so the tree
+            // has to be pristine: PowerRing's mask/ring objects would shift every index and end up
+            // duplicated inside the clone. It re-decorates on its own next Refresh, same frame.
+            PowerRing.UndecorateAll();
 
             // The Hud was rebuilt (scene change) - start over.
             if (!ReferenceEquals(_hud, hud)) Destroy();
@@ -164,6 +175,7 @@ namespace NoVikingLeftBehind
 
         public static void Destroy()
         {
+            PowerRing.Undecorate(1);
             try { if (_clone != null) UnityEngine.Object.Destroy(_clone); }
             catch (Exception e) { NoVikingLeftBehindPlugin.Log.LogWarning("[DualPowers] HUD teardown: " + e.Message); }
             _clone = null; _rt = null; _name = null; _cooldown = null; _icon = null;
