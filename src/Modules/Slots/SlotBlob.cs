@@ -32,6 +32,13 @@ namespace NoVikingLeftBehind
         public const int BlobVersion = 1;
         private const int ItemVersion = 106;   // mirrors Inventory.Save's own version tag
 
+        // Sanity caps for the two counts Decode reads straight out of the package (0.8.8). The
+        // real layout tops out around 30 slots, so these are generous by an order of magnitude
+        // and no honest blob can reach them; they exist so a corrupt or hand-made blob cannot
+        // turn a ReadInt into a multi-gigabyte allocation on the character-load path.
+        private const int MaxEntries = 512;
+        private const int MaxCustomData = 256;
+
         // ---- encode ------------------------------------------------------------------------
 
         /// <summary>Serialise entries into the blob string. Never throws on an odd item; it logs and skips.</summary>
@@ -107,7 +114,16 @@ namespace NoVikingLeftBehind
                     return null;
                 }
                 int count = pkg.ReadInt();
-                var list = new List<SlotEntry>(count);
+                if (count < 0 || count > MaxEntries)
+                {
+                    NoVikingLeftBehindPlugin.Log.LogWarning("[Slots] blob claims " + count +
+                        " entries (max " + MaxEntries + ") - refusing to read it; a backup will be tried");
+                    return null;
+                }
+
+                // Deliberately NOT new List<SlotEntry>(count): the capacity hint is the allocation,
+                // so it is only ever grown by what actually decodes.
+                var list = new List<SlotEntry>();
                 for (int i = 0; i < count; i++)
                 {
                     string slotKey = pkg.ReadString();
@@ -121,6 +137,12 @@ namespace NoVikingLeftBehind
                     string crafterName = pkg.ReadString();
                     var cd = new Dictionary<string, string>();
                     int n = pkg.ReadInt();
+                    if (n < 0 || n > MaxCustomData)
+                    {
+                        NoVikingLeftBehindPlugin.Log.LogWarning("[Slots] blob item '" + name + "' claims " + n +
+                            " custom-data pairs (max " + MaxCustomData + ") - refusing to read this blob");
+                        return null;
+                    }
                     for (int j = 0; j < n; j++) { var k = pkg.ReadString(); cd[k] = pkg.ReadString(); }
                     int worldLevel = pkg.ReadInt();
                     bool pickedUp = pkg.ReadBool();

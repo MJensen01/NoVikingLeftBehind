@@ -453,8 +453,16 @@ namespace NoVikingLeftBehind
                     }
                 }
 
+                // NOWHERE to put it. The one thing we must never do here is nothing: the item was
+                // taken out of the list at the top of this loop, so leaving it here would destroy
+                // it outright (0.8.8 - the old message claimed it "stays in the save blob", which
+                // is not true for an item that came out of a blob and was never in the list).
+                // Putting it back is always recoverable; dropping it on the floor is not.
+                if (list != null && !list.Contains(item)) list.Add(item);
+
                 NoVikingLeftBehindPlugin.Log.LogError("[Slots] evacuate (" + why + "): NOWHERE to put " +
-                    SlotBlob.Describe(item) + " - it stays in the save blob, use nvlb.slots.restore");
+                    SlotBlob.Describe(item) + " (bag full and it could not be dropped) - it has been " +
+                    "KEPT in your inventory rather than lost; free a slot and relog to tidy it up");
             }
 
             if (inv != null) Changed(inv);

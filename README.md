@@ -3,7 +3,7 @@
 A BepInEx 5 mod for Valheim 0.221.12, built and maintained for a small dedicated-server group
 and released here for anyone to use. MIT licensed.
 
-All-in-one, server-enforced quality-of-life and catch-up mechanics: 36 modules covering inventory,
+All-in-one, server-enforced quality-of-life and catch-up mechanics: 37 modules covering inventory,
 loadouts, combat (fists + shield), crafting from chests, building and gathering, food, corpse
 runs, guardian powers, ore regrowth, portals and a frontier-based catch-up system. One DLL, installed on the server and by
 every player. The server enforces every setting (via [ServerSync](https://github.com/blaxxun-boop/ServerSync)),
@@ -33,8 +33,8 @@ Pre-release (see version plan below), built and tested against Valheim `0.221.12
 
 ## Config overview
 
-36 modules, each with its own `[Section] Enabled` toggle, plus `Tiers` (shared config, always on,
-no toggle of its own) — 37 rows in `docs/MODULES.md`, the full per-module table (side, section,
+37 modules, each with its own `[Section] Enabled` toggle, plus `Tiers` (shared config, always on,
+no toggle of its own) — 38 rows in `docs/MODULES.md`, the full per-module table (side, section,
 settings, defaults, hot-reload). Every gameplay number is server-synced and hot-reloads (edit the
 cfg, it applies within a second — `Enabled` toggles need a restart to turn *on*, off is instant);
 hotkeys and HUD offsets (`ExtraSlots`, `Loadouts`, `CorpseRunPlus`) are per-player, local settings.

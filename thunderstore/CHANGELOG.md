@@ -1,6 +1,31 @@
 
 # Changelog — NoVikingLeftBehind
 
+## 0.8.8 (2026-09-08)
+
+A pre-launch safety pass over the code, looking only for things that could crash the game, hang it,
+or lose an item. Two were found, both in the extra-slots plumbing, and both are guards rather than
+changes — nothing about how the mod plays is different in this version.
+
+- **An extra-slot item can no longer be lost when there is nowhere to put it.** When the extra slots
+  have to be emptied — you turned the module off, the server changed the slot counts, a rescue ran at
+  login — each item is taken out of its cell and then given a home: a free bag slot first, the ground
+  at your feet second. If your bag was completely full *and* the drop failed (which is possible at
+  login, before the world is fully awake), the item had already been taken out of the inventory and
+  was simply gone — while the log said it was safe in the save blob, which for an item that came out
+  of that blob was not true. Such an item is now kept in your inventory instead, and the log says
+  plainly that it was kept. Nothing is ever destroyed for want of a slot.
+- **A corrupt extra-slots blob can no longer take the game down on login.** The saved blob starts with
+  a count of how many items it holds, and that number was trusted: a corrupted character file could
+  claim two billion items and the game would try to reserve room for all of them before reading a
+  single one — a hang or an outright close, on the character-load path, with no message. The count and
+  the per-item custom-data count are now sanity-checked (512 and 256, against a real layout of about
+  30 slots), and a blob that fails the check is refused the same way a version-mismatched one already
+  was, so your backups are tried instead. The same check covers a blob arriving from the server's
+  SafeSlots vault.
+- Docs: the module count is corrected to **37** in the README and the Thunderstore listing (the
+  in-game log has said 37 since SafeSlots landed; the docs still said 36).
+
 ## 0.8.7 (2026-09-08)
 - **Turning the extra slots off and on again no longer empties them.** This is the fix for "my extra-slot
   items got moved back into my inventory". Switching `[Slots] Enabled` **off** deliberately moves every
