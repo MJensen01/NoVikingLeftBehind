@@ -1,12 +1,15 @@
 # Changelog — NoVikingLeftBehind
 
 ## 0.8.4 (2026-09-08)
-- **One place decides what a hotkey is.** A key had two owners — the mod's config and the binding Valheim saves
-  for you — and the saved one silently won, so rebinding in the settings tab did nothing at all and a rebind on
-  vanilla's own Keyboard & Mouse page did not take effect until a relaunch. The **saved binding is now the only
-  thing consulted**, the config value is the default it starts from, and a rebind applies immediately from either
-  screen. A default that moves in an update moves a saved binding that was still sitting on the old default with
-  it — which is what left one tester being told to hold Alt while Ctrl was what actually worked.
+- **One place decides what a hotkey is.** Changing a hotkey in the config did nothing — and you did not have to
+  rebind anything for that to happen. Valheim writes every rebindable key into your saved settings the moment you
+  close the Settings window with **OK**, so the first time anyone did that, whatever the defaults happened to be
+  at that moment were frozen — and from then on the saved copy was re-applied over the config on every load. The
+  config was dead and nothing said so. Now the saved binding is the single answer, the config value is the
+  default it starts from, and this mod remembers which default a saved binding was frozen from: a binding that is
+  merely a stale copy of a default we have since changed moves with it, while a key you actually chose is never
+  touched. That is what left one tester being told to hold Alt while Ctrl was still what worked. Setting a key in
+  our own tab now writes the binding itself, which is what it should have been doing all along.
 - **Clicking a setting's name stopped dragging its slider.** The click was never landing on the name: a cloned
   vanilla slider brings the whole width of the settings row it came from, so a piece of the slider was stretched
   out underneath the label, and a slider answers a press anywhere on itself by jumping to wherever that press

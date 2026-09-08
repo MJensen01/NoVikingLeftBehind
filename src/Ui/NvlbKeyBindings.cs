@@ -126,6 +126,11 @@ namespace NoVikingLeftBehind
             // so it is worked out once and then held until something actually changes it.
             public bool FallbackResolved;
             public KeyCode Fallback;
+
+            // The config default this button's saved binding was last reconciled against, so a
+            // config edit mid-session is noticed rather than waiting for the next launch.
+            public bool ReconciledDefaultKnown;
+            public KeyCode ReconciledDefault;
         }
 
         private static readonly List<Decl> Decls = new List<Decl>();
@@ -191,11 +196,25 @@ namespace NoVikingLeftBehind
                 }
                 d.Label = string.IsNullOrEmpty(label) ? id : label;
                 d.DefaultKey = defaultKey;
+                Invalidate(d);
 
                 // A module that declares late (config reload, a feature switched on at runtime)
                 // still gets a live button; the normal path is ZInput not existing yet and the
                 // Reset postfix picking this up on the first rebuild.
-                if (ZInput.instance != null) RegisterOne(ZInput.instance, d);
+                var zi = ZInput.instance;
+                if (zi == null) return;
+
+                if (!IsRegistered(d)) { RegisterOne(zi, d); return; }
+
+                // Already live, and this call is a config reload telling us the default moved.
+                // Reconcile against the new one, so editing the config is not something you have
+                // to restart the game to see.
+                KeyCode fresh = SafeDefault(d);
+                if (d.ReconciledDefaultKnown && d.ReconciledDefault != fresh)
+                {
+                    Reconciled.Remove(d.Id);
+                    ApplySavedBinding(zi, d, fresh);
+                }
             }
             catch (Exception e)
             {
@@ -296,6 +315,23 @@ namespace NoVikingLeftBehind
                 _healFailures++;
             }
             catch { _healFailures++; }
+        }
+
+        /// <summary>
+        /// The binding in force, cached, for the per-frame path that has no ZInput button to ask.
+        /// Anything that can change the answer calls <see cref="Invalidate"/>.
+        /// </summary>
+        private static KeyCode FallbackKey(Decl d)
+        {
+            if (d.FallbackResolved) return d.Fallback;
+            d.Fallback = Current(d.Id);
+            d.FallbackResolved = true;
+            return d.Fallback;
+        }
+
+        private static void Invalidate(Decl d)
+        {
+            if (d != null) d.FallbackResolved = false;
         }
 
         private static void LogFired(Decl d, string via)
@@ -417,9 +453,13 @@ namespace NoVikingLeftBehind
                 // From here on this binding is a deliberate choice, so the reconcile in
                 // ApplySavedBinding must leave it alone for the rest of the session, and the
                 // remembered default moves to whatever the config says now.
+                KeyCode cfg = SafeDefault(d);
                 Reconciled.Add(d.Id);
+                d.ReconciledDefault = cfg;
+                d.ReconciledDefaultKnown = true;
+                Invalidate(d);
                 PlatformPrefs.SetString(BindingPref + d.Name, path);
-                PlatformPrefs.SetString(DefaultPref + d.Name, SafeDefault(d).ToString());
+                PlatformPrefs.SetString(DefaultPref + d.Name, cfg.ToString());
                 PlatformPrefs.Save();
 
                 Log.LogInfo("[Keys] " + d.Name + " is now bound to " +
@@ -454,6 +494,9 @@ namespace NoVikingLeftBehind
                 KeyCode cfg = SafeDefault(d);
 
                 Reconciled.Add(d.Id);
+                d.ReconciledDefault = cfg;
+                d.ReconciledDefaultKnown = true;
+                Invalidate(d);
                 PlatformPrefs.DeleteKey(BindingPref + d.Name);
                 PlatformPrefs.SetString(DefaultPref + d.Name, cfg.ToString());
                 PlatformPrefs.Save();
@@ -508,6 +551,9 @@ namespace NoVikingLeftBehind
                 Decl d;
                 if (ById.TryGetValue(id, out d))
                 {
+                    d.ReconciledDefault = newDefault;
+                    d.ReconciledDefaultKnown = true;
+                    Invalidate(d);
                     var zi = ZInput.instance;
                     if (zi != null)
                     {
@@ -935,6 +981,7 @@ namespace NoVikingLeftBehind
             // to no control, so nothing here can throw on an unbound default.
             string path = SafePath(key);
             zi.AddButton(d.Name, path, false, false, true, 0f, 0f);
+            Invalidate(d);
 
             WarnOnVanillaClash(zi, d, key, path);
 
@@ -993,6 +1040,10 @@ namespace NoVikingLeftBehind
                         PlatformPrefs.SetString(defaultPref, cfgDefault.ToString());
                         PlatformPrefs.Save();
                     }
+
+                    d.ReconciledDefault = cfgDefault;
+                    d.ReconciledDefaultKnown = true;
+                    Invalidate(d);
                 }
 
                 if (hasSaved) def.Rebind(savedPath);
