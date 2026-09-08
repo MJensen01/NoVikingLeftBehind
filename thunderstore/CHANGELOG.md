@@ -1,5 +1,13 @@
 # Changelog — NoVikingLeftBehind
 
+## 0.8.3 (2026-09-08)
+- **Closes the last way a typed value could vanish.** 0.8.2 picks up anything typed once the caret leaves the
+  field — but the right-hand pane is torn down and rebuilt from scratch on *every keystroke in the search box*
+  and on every click in the module list, and Unity destroys a field without ever telling it that it lost focus.
+  So typing a value and then reaching for Search, or for another module, still threw it away. Every open field is
+  now read **before** the pane is rebuilt, and again when the tab closes, which depends on nothing arriving in
+  time. This was the exact path that swallowed a `Loadout1Slots` edit outright: no write, no error, nothing.
+
 ## 0.8.2 (2026-09-08)
 **Nothing in the settings tab happens until you say so.** Until now every click, every nudge of a slider and
 every mis-click went straight to the server. The tab now **queues**: an edit marks its row — tinted, with a

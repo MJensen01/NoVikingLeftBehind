@@ -617,6 +617,10 @@ namespace NoVikingLeftBehind
 
         public void Terminate()
         {
+            // Last chance to notice something typed and never committed. It only reaches the
+            // queue, not the server - closing still needs an OK or the Save button.
+            try { CommitOpenFields(); } catch { /* closing down */ }
+
             try
             {
                 if (NoVikingLeftBehindPlugin.Cfg != null)
@@ -1272,6 +1276,13 @@ namespace NoVikingLeftBehind
 
         private void RebuildRight()
         {
+            // Read every open field BEFORE the pane is torn down. This rebuild runs on each
+            // keystroke in the search box and on every click in the module list, and Unity's
+            // Destroy does not run a focused field's deselect first - so an edit still being
+            // typed when one of those happened was lost outright, with no write and no error.
+            // Reading the text here does not depend on any event arriving in time.
+            CommitOpenFields();
+
             foreach (var r in _rows) if (r.Root != null) UnityEngine.Object.Destroy(r.Root);
             _rows.Clear();
             for (int i = _rightContent.childCount - 1; i >= 0; i--)
