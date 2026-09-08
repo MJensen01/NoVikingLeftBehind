@@ -90,6 +90,8 @@ namespace NoVikingLeftBehind
         public override string Name => "FistsAndShields";
         public override ModuleSide Side => ModuleSide.Both;
         public override string Section => "Fists";
+        public override string Theme => "Combat & powers";
+        public override string Hint => "Wear fist weapons together with a shield";
 
         private static FistsAndShieldsModule _self;
 
@@ -121,12 +123,14 @@ namespace NoVikingLeftBehind
                 "fist weapon that does not use the Unarmed skill - everything with " +
                 "SkillType.Unarmed is found automatically. Matched against the item's PREFAB name " +
                 "and its shared item name, so either works. Example: " +
-                "BlackMetalClawsSMR, SilverGlovesSMR");
+                "BlackMetalClawsSMR, SilverGlovesSMR",
+                Opt.T("Extra fist weapons to make wearable with a shield"));
 
             _excludePrefabs = BindSynced("ExcludePrefabs", "",
                 "Fist weapons to LEAVE two-handed, comma-separated. Takes priority over " +
                 "ExtraPrefabs and over the automatic Unarmed detection. Matched against the " +
-                "prefab name and the shared item name. Example: FistFenrirClaw");
+                "prefab name and the shared item name. Example: FistFenrirClaw",
+                Opt.T("Fist weapons to leave two-handed, blocking a shield"));
 
             ParseNames();
         }

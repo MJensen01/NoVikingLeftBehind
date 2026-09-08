@@ -52,6 +52,10 @@ namespace NoVikingLeftBehind
     {
         public override string Name => "Lookout";
 
+        public override string Theme => "On the water";
+
+        public override string Hint => "See further while riding a ship you are not steering";
+
         /// <summary>Client only - a dedicated server has no Minimap and no local player.</summary>
         public override ModuleSide Side => ModuleSide.Client;
 
@@ -88,16 +92,20 @@ namespace NoVikingLeftBehind
             _multiplier = BindSynced("RadiusMultiplier", 1.75f,
                 "How much wider the map reveals for a crewmate who is aboard a moving ship and " +
                 "NOT at the tiller. 1.0 = vanilla (feature off). Clamped to " +
-                MinMultiplier.ToString("0.0") + "-" + MaxMultiplier.ToString("0.0") + ".");
+                MinMultiplier.ToString("0.0") + "-" + MaxMultiplier.ToString("0.0") + ".",
+                Opt.N("How much wider the map reveals for a lookout not at the tiller",
+                    MinMultiplier, MaxMultiplier, 0.05));
 
             _requireMoving = BindSynced("RequireMoving", true,
                 "Only widen the radius while the ship is actually under way. Off = anyone " +
-                "standing on a ship gets the wider radius, moored included.");
+                "standing on a ship gets the wider radius, moored included.",
+                Opt.B("Only widen the map reveal while the ship is moving"));
 
             _minSpeed = BindSynced("MinSpeed", 1.0f,
                 "Ship speed (m/s along its own forward axis, from Ship.GetSpeed(), sign " +
                 "ignored) at or above which the ship counts as under way. Only used when " +
-                "RequireMoving is on.");
+                "RequireMoving is on.",
+                Opt.N("How fast the ship must go to count as under way", 0, 10, 0.5));
         }
 
         public override void OnConfigChanged(ConfigEntryBase entry)

@@ -46,6 +46,8 @@ namespace NoVikingLeftBehind
     {
         public override string Name => "CorpseRunPlus";
         public override string Section => "CorpseRun";
+        public override string Theme => "Death";
+        public override string Hint => "Compass, food, rest and stamina help getting back to your corpse";
 
         // Configure() runs before TryEnable(), so reading the config entry here is safe.
         public override ModuleSide Side =>
@@ -138,100 +140,130 @@ namespace NoVikingLeftBehind
                 "Machine-local diagnostic: flip the module's Side to Both so a dedicated server " +
                 "registers the status effect and runs the self test (top-10 stamina foods, the " +
                 "vanilla Rested/CorpseRun fields, and the pull/duration maths) with zero players. " +
-                "Never synced. Leave false in normal play.");
+                "Never synced. Leave false in normal play.",
+                Opt.B("Prove the corpse-run buffs work with no players online").Admin().Restart());
 
             _compassEnabled = BindSynced("CompassEnabled", true,
                 "GraveCompass: show a HUD arrow and distance pointing at your death point until " +
-                "you reach or loot the grave.");
+                "you reach or loot the grave.",
+                Opt.B("Show a compass pointing at your death point"));
             _compassHideDistance = BindSynced("CompassHideDistance", 10f,
-                "GraveCompass: hide the compass once you are this close to the grave, in metres.");
+                "GraveCompass: hide the compass once you are this close to the grave, in metres.",
+                Opt.N("Metres from the grave before the compass hides", 0, 50));
             _compassUpdateSec = BindSynced("CompassUpdateSec", 0.25f,
-                "GraveCompass: seconds between compass refreshes.");
+                "GraveCompass: seconds between compass refreshes.",
+                Opt.N("Seconds between compass position refreshes", 0.05, 2));
             _compassOffsetX = BindLocal("CompassOffsetX", 0f,
                 "GraveCompass: horizontal position of the compass, in HUD units from the centre " +
-                "of the screen. Machine-local - it is a personal HUD preference.");
+                "of the screen. Machine-local - it is a personal HUD preference.",
+                Opt.N("Horizontal position of the compass on screen", -500, 500));
             _compassOffsetY = BindLocal("CompassOffsetY", 200f,
                 "GraveCompass: vertical position of the compass, in HUD units from the centre of " +
-                "the screen (positive = up). Machine-local.");
+                "the screen (positive = up). Machine-local.",
+                Opt.N("Vertical position of the compass on screen", -500, 500));
             _compassArrow = BindLocal("CompassArrow", "^",
                 "GraveCompass: the character used as the arrow. It is rotated to point at the " +
-                "grave. \"^\" is ASCII and always renders; a nicer glyph may not exist in the font.");
+                "grave. \"^\" is ASCII and always renders; a nicer glyph may not exist in the font.",
+                Opt.T("Character used as the compass arrow"));
             _compassArrowScale = BindLocal("CompassArrowScale", 1.6f,
-                "GraveCompass: arrow font size as a multiple of the donor label's size.");
+                "GraveCompass: arrow font size as a multiple of the donor label's size.",
+                Opt.N("Size of the compass arrow relative to text", 0.5, 5));
 
             _respawnFoodEnabled = BindSynced("RespawnFoodEnabled", true,
                 "RespawnFood: put food in your belly when you respawn after a death (never on " +
-                "login). The item is created from the prefab - it is not taken from any inventory.");
+                "login). The item is created from the prefab - it is not taken from any inventory.",
+                Opt.B("Give free food when you respawn after dying"));
             _respawnFoods = BindSynced("RespawnFoods", "Bread",
                 "RespawnFood: comma-separated item prefab names, best first. Only the first " +
-                "RespawnFoodCount that exist in ObjectDB are used (Valheim allows 3 food slots).");
+                "RespawnFoodCount that exist in ObjectDB are used (Valheim allows 3 food slots).",
+                Opt.T("Which foods to grant on a death-respawn, in order"));
             _respawnFoodCount = BindSynced("RespawnFoodCount", 1,
-                "RespawnFood: how many of the RespawnFoods entries to grant, 0-3.");
+                "RespawnFood: how many of the RespawnFoods entries to grant, 0-3.",
+                Opt.N("How many foods to grant on a death-respawn", 0, 3));
 
             _respawnRestedEnabled = BindSynced("RespawnRestedEnabled", true,
                 "RespawnRested: give the vanilla Rested buff on a death-respawn, with at least " +
-                "RestedMinutes left on it.");
+                "RestedMinutes left on it.",
+                Opt.B("Give the Rested buff when you respawn after dying"));
             _restedMinutes = BindSynced("RestedMinutes", 10f,
                 "RespawnRested: minimum minutes of Rested granted on a death-respawn. Vanilla's " +
-                "base is 5 minutes plus 1 per comfort level; this raises it, never lowers it.");
+                "base is 5 minutes plus 1 per comfort level; this raises it, never lowers it.",
+                Opt.N("Minimum minutes of Rested granted on respawn", 0, 60));
 
             _pullEnabled = BindSynced("PullEnabled", true,
                 "GravePull: a stamina buff that scales with how far your corpse still is. " +
-                "Affects only your own stamina - enemies are completely untouched.");
+                "Affects only your own stamina - enemies are completely untouched.",
+                Opt.B("Give a stamina buff while your corpse is far away"));
             _pullMinDistance = BindSynced("PullMinDistance", 50f,
-                "GravePull: no buff at all within this many metres of the grave.");
+                "GravePull: no buff at all within this many metres of the grave.",
+                Opt.N("Metres from the grave before the stamina buff starts", 0, 500));
             _pullFullDistance = BindSynced("PullFullDistance", 1000f,
-                "GravePull: metres BEYOND PullMinDistance at which the buff reaches full strength.");
+                "GravePull: metres BEYOND PullMinDistance at which the buff reaches full strength.",
+                Opt.N("Extra metres beyond the start distance for full strength", 0, 5000));
             _pullMaxRegenBonus = BindSynced("PullMaxRegenBonus", 1f,
-                "GravePull: extra stamina regeneration at full strength (1.0 = +100%).");
+                "GravePull: extra stamina regeneration at full strength (1.0 = +100%).",
+                Opt.N("Extra stamina regeneration at full strength", 0, 5));
             _pullMaxDrainReduction = BindSynced("PullMaxDrainReduction", 0.5f,
                 "GravePull: fraction of run and jump stamina cost removed at full strength " +
-                "(0.5 = half price).");
+                "(0.5 = half price).",
+                Opt.N("Run and jump stamina cost cut at full strength", 0, 1, 0.05));
             _pullUpdateSec = BindSynced("PullUpdateSec", 1f,
-                "GravePull: seconds between strength recalculations.");
+                "GravePull: seconds between strength recalculations.",
+                Opt.N("Seconds between stamina-buff strength recalculations", 0.1, 10));
             _pullIconFrom = BindSynced("PullIconFrom", "Rested",
                 "GravePull: borrow this status effect's HUD icon. The mod ships no art. " +
-                "'CorpseRun' is the other obvious choice.");
+                "'CorpseRun' is the other obvious choice.",
+                Opt.T("Status effect to borrow the stamina-buff icon from"));
 
             _scaledEnabled = BindSynced("ScaledEnabled", true,
                 "CorpseRunScaled: stretch vanilla's 'CorpseRun' loot buff by how far the grave was " +
-                "from your bed or home point, so a long death costs less than a short one.");
+                "from your bed or home point, so a long death costs less than a short one.",
+                Opt.B("Stretch the loot buff duration based on grave distance"));
             _scaledDurationPer100m = BindSynced("ScaledDurationPer100m", 0.2f,
                 "CorpseRunScaled: extra duration per 100 m from home, as a fraction of the vanilla " +
-                "duration (0.2 = +20% per 100 m).");
+                "duration (0.2 = +20% per 100 m).",
+                Opt.N("Extra loot-buff duration per 100 metres from home", 0, 2));
             _scaledMaxDurationSec = BindSynced("ScaledMaxDurationSec", 900f,
-                "CorpseRunScaled: hard cap on the stretched duration, in seconds.");
+                "CorpseRunScaled: hard cap on the stretched duration, in seconds.",
+                Opt.N("Maximum length the loot buff can be stretched to", 0, 3600));
             _scaledExtraRegen = BindSynced("ScaledExtraRegen", 0.5f,
                 "CorpseRunScaled: extra stamina-regen multiplier added at ScaledRegenFullDistance " +
-                "and beyond, scaled linearly by distance from home. 0 disables the strengthening.");
+                "and beyond, scaled linearly by distance from home. 0 disables the strengthening.",
+                Opt.N("Extra stamina regen added at the full distance", 0, 3));
             _scaledRegenFullDistance = BindSynced("ScaledRegenFullDistance", 1000f,
                 "CorpseRunScaled: distance from home, in metres, at which ScaledExtraRegen is " +
-                "applied in full.");
+                "applied in full.",
+                Opt.N("Distance from home where the extra regen is full", 0, 5000));
 
             _compassMode = BindLocal("CompassMode", "Edge",
                 "Machine-local. Edge = the marker is an off-screen waypoint: it sits on the grave " +
                 "while the grave is on screen and slides to the screen edge in its direction when " +
                 "it is not, so it is only ever dead centre when you are walking straight at it. " +
-                "Fixed = the pre-0.4.5 behaviour, a static arrow at CompassOffsetX/Y.");
+                "Fixed = the pre-0.4.5 behaviour, a static arrow at CompassOffsetX/Y.",
+                Opt.C("How the compass marker behaves off-screen", "Edge", "Fixed"));
 
             _compassEdgeMargin = BindLocal("CompassEdgeMargin", 60f,
                 "Machine-local. Pixels of inset kept between the marker and the edge of the screen " +
-                "in Edge mode.");
+                "in Edge mode.",
+                Opt.N("Pixel gap kept between the marker and the screen edge", 0, 300));
 
             _clearGraveKey = BindLocal("ClearGraveKey", "Delete",
                 "Machine-local. HOLD this key (see ClearGraveHoldSec) to dismiss the grave marker " +
                 "and Grave Pull without opening the console - the same thing nvlb.grave.clear does. " +
                 "A UnityEngine.KeyCode name; 'None' disables it. Ignored while a menu, the map, " +
-                "chat or the console has your input.");
+                "chat or the console has your input.",
+                Opt.T("Key held to dismiss the grave marker"));
 
             _clearGraveHoldSec = BindLocal("ClearGraveHoldSec", 1.5f,
                 "Machine-local. Seconds ClearGraveKey must be held before the grave is dismissed. " +
-                "Long enough that a stray keypress cannot lose your grave marker.");
+                "Long enough that a stray keypress cannot lose your grave marker.",
+                Opt.N("Seconds to hold the key to dismiss the grave", 0, 10));
 
             _lootMatchDistance = BindSynced("LootMatchDistance", 20f,
                 "How close a tombstone must be to your recorded death point to count as YOUR " +
                 "grave when it is looted or emptied. Guards against another player's grave " +
-                "clearing your compass.");
+                "clearing your compass.",
+                Opt.N("Metres a tombstone must be from your grave to count", 0, 200));
         }
 
         public override void OnConfigChanged(ConfigEntryBase entry)

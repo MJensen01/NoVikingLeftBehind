@@ -33,6 +33,8 @@ namespace NoVikingLeftBehind
     {
         public override string Name => "CombatRecharge";
         public override string Section => "Recharge";
+        public override string Theme => "Combat & powers";
+        public override string Hint => "Landing or taking hits shortens your Forsaken power cooldowns";
         public override ModuleSide Side => ModuleSide.Client;
 
         private static CombatRechargeModule _inst;
@@ -58,19 +60,25 @@ namespace NoVikingLeftBehind
         protected override void Bind()
         {
             _perHitDealt = BindSynced("SecondsPerHitDealt", 2f,
-                "Seconds taken off your power cooldowns for every hit you land.");
+                "Seconds taken off your power cooldowns for every hit you land.",
+                Opt.N("Cooldown seconds removed for every hit you land", 0, 15, 0.1));
             _perHitTaken = BindSynced("SecondsPerHitTaken", 3f,
-                "Seconds taken off your power cooldowns for every hit you take.");
+                "Seconds taken off your power cooldowns for every hit you take.",
+                Opt.N("Cooldown seconds removed for every hit you take", 0, 20, 0.1));
             _maxPerSecond = BindSynced("MaxPerSecond", 10f,
                 "Hard cap on how many cooldown seconds one real second of combat can remove. " +
-                "Stops multi-hit AoE and damage-over-time from emptying a cooldown instantly.");
+                "Stops multi-hit AoE and damage-over-time from emptying a cooldown instantly.",
+                Opt.N("Highest cooldown reduction allowed per real second", 0, 60, 1));
             _affectAllSlots = BindSynced("AffectAllSlots", true,
-                "Also shorten the DualPowers extra slots. False = only the vanilla slot 1 cooldown.");
+                "Also shorten the DualPowers extra slots. False = only the vanilla slot 1 cooldown.",
+                Opt.B("Also shorten DualPowers' extra power slots"));
             _countPlayerTargets = BindSynced("CountPlayerTargets", false,
-                "Count hits you land on other players (PvP) as well as on creatures.");
+                "Count hits you land on other players (PvP) as well as on creatures.",
+                Opt.B("Count hits landed on other players toward recharge"));
             _showMessages = BindLocal("ShowMessages", false,
                 "Machine-local. Pop a small message every time a hit shortens a cooldown. " +
-                "Noisy - for tuning only.");
+                "Noisy - for tuning only.",
+                Opt.B("Show a message whenever a hit shortens a cooldown"));
             _inst = this;
         }
 

@@ -42,6 +42,10 @@ namespace NoVikingLeftBehind
         public override ModuleSide Side => ModuleSide.Client;
         public override string Section => "Portals";
 
+        public override string Theme => "World";
+
+        public override string Hint => "Let ore behind the frontier travel through portals";
+
         private ConfigEntry<bool> _allowBehindFrontier;
         private ConfigEntry<int> _extraTiersBehind;
         private ConfigEntry<string> _alwaysAllow;
@@ -61,23 +65,27 @@ namespace NoVikingLeftBehind
                 "A non-teleportable item (m_shared.m_teleportable == false, e.g. raw ore) is " +
                 "still let through a portal if its material tier is behind the frontier " +
                 "(Tiers.IsBehind, same rule every other catch-up module uses). The newest tier " +
-                "the group is still actively farming stays blocked, same as vanilla.");
+                "the group is still actively farming stays blocked, same as vanilla.",
+                Opt.B("Let ore behind the frontier ride a portal"));
 
             _extraTiersBehind = BindSynced("ExtraTiersBehind", 0,
                 "Extra margin on top of [Frontier] TiersBehind before a material's raw ore counts " +
                 "as 'behind' for portal purposes specifically. 0 = the same cutoff every other " +
                 "catch-up module uses (WorldTier - TiersBehind). 1 = one tier further back than " +
-                "that, i.e. requires two tiers behind before ore may ride a portal.");
+                "that, i.e. requires two tiers behind before ore may ride a portal.",
+                Opt.N("Extra tiers behind before ore is allowed through a portal", 0, 5, 1));
 
             _alwaysAllow = BindSynced("AlwaysAllow", "",
                 "Comma-separated prefab names always allowed through a portal regardless of tier " +
                 "or vanilla m_teleportable (e.g. a quest item another mod flagged non-teleportable). " +
-                "Empty by default.");
+                "Empty by default.",
+                Opt.T("Items always allowed through a portal"));
 
             _neverAllow = BindSynced("NeverAllow", "",
                 "Comma-separated prefab names that may never ride a portal even if the tier rule " +
                 "would otherwise allow them, and even if vanilla itself would allow them - takes " +
-                "priority over everything else, including AlwaysAllow. Empty by default.");
+                "priority over everything else, including AlwaysAllow. Empty by default.",
+                Opt.T("Items that may never ride a portal"));
 
             ParseLists();
         }

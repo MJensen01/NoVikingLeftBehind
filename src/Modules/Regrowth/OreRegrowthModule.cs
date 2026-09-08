@@ -54,6 +54,8 @@ namespace NoVikingLeftBehind
         public override string Name => "OreRegrowth";
         public override ModuleSide Side => ModuleSide.Server;
         public override string Section => "Regrowth";
+        public override string Theme => "Catching up";
+        public override string Hint => "Mined ore nodes come back after a while";
 
         protected override string EnabledDescription =>
             "Regrow mined-out ore nodes whose material tier is behind the frontier. " +
@@ -129,26 +131,33 @@ namespace NoVikingLeftBehind
                 "tier is the material tier used against the frontier (see [Tiers]/[Frontier]). " +
                 "The old two-part form name:tier is still accepted and is migrated automatically " +
                 "when a <name>_frac prefab exists. Names are resolved against ZNetScene's prefab " +
-                "list at runtime; unknown names are logged and ignored.");
+                "list at runtime; unknown names are logged and ignored.",
+                Opt.T("Which ore nodes regrow and what they turn into"));
 
             _regrowDays = BindSynced("RegrowDays", 7,
-                "In-game days a mined-out node stays gone before it may regrow.");
+                "In-game days a mined-out node stays gone before it may regrow.",
+                Opt.N("Days before a mined ore node comes back", 0, 60));
 
             _checkIntervalSec = BindSynced("CheckIntervalSec", 60f,
-                "Real seconds between respawn sweeps on the server.");
+                "Real seconds between respawn sweeps on the server.",
+                Opt.N("How often the server checks for nodes to respawn", 5, 600));
 
             _minPlayerDistance = BindSynced("MinPlayerDistance", 64f,
-                "Never respawn a node with a player this close (metres) - nobody sees ore pop in.");
+                "Never respawn a node with a player this close (metres) - nobody sees ore pop in.",
+                Opt.N("Minimum distance from a player before a node can respawn", 0, 256));
 
             _maxPerTick = BindSynced("MaxPerTick", 5,
-                "Maximum nodes respawned per sweep, so a long backlog trickles back in.");
+                "Maximum nodes respawned per sweep, so a long backlog trickles back in.",
+                Opt.N("Maximum nodes respawned in one check", 1, 50));
 
             _dryRun = BindLocal("DryRun", false,
-                "Log what would be respawned without creating any ZDO. Machine-local.");
+                "Log what would be respawned without creating any ZDO. Machine-local.",
+                Opt.B("Log what would respawn without actually doing it").Admin());
 
             _selfTest = BindLocal("SelfTest", false,
                 "Headless proof: pick an existing copper node, fake a due destroy record for it, " +
-                "run one sweep and verify a new ZDO appeared. Machine-local, runs once per boot.");
+                "run one sweep and verify a new ZDO appeared. Machine-local, runs once per boot.",
+                Opt.B("Run a one-time headless test of ore regrowth").Admin());
         }
 
         protected override void ApplyPatches()

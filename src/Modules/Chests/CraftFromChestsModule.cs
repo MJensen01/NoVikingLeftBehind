@@ -54,6 +54,8 @@ namespace NoVikingLeftBehind
         public override string Name => "CraftFromChests";
         public override ModuleSide Side => ModuleSide.Client;
         public override string Section => "Chests";
+        public override string Theme => "Inventory";
+        public override string Hint => "Craft, build, smelt and cook from nearby containers";
 
         private static CraftFromChestsModule _self;
 
@@ -133,68 +135,82 @@ namespace NoVikingLeftBehind
             _self = this;
 
             _range = BindSynced("Range", 20f,
-                "How far a container may be from the player and still count, in metres.");
+                "How far a container may be from the player and still count, in metres.",
+                Opt.N("How far a container can be and still count", 0, 100));
 
             _pullCrafting = BindSynced("PullForCrafting", true,
                 "Recipes in the crafting / forge / workbench GUI, upgrades included, may take " +
-                "their materials from nearby containers.");
+                "their materials from nearby containers.",
+                Opt.B("Let crafting and upgrading pull materials from nearby containers"));
 
             _pullBuilding = BindSynced("PullForBuilding", true,
                 "Build pieces placed with the hammer (and the hoe/cultivator) may take their " +
-                "materials from nearby containers.");
+                "materials from nearby containers.",
+                Opt.B("Let building pull materials from nearby containers"));
 
             _pullSmelters = BindSynced("PullForSmelters", true,
                 "Smelter, blast furnace, charcoal kiln, windmill, spinning wheel: interacting " +
-                "with one may pull its ore and its fuel from nearby containers.");
+                "with one may pull its ore and its fuel from nearby containers.",
+                Opt.B("Let smelters and similar stations pull ore and fuel from containers"));
 
             _pullFires = BindSynced("PullForFires", true,
                 "Fireplaces, hearths, bonfires and standing torches may pull their fuel from " +
-                "nearby containers.");
+                "nearby containers.",
+                Opt.B("Let fireplaces and torches pull fuel from nearby containers"));
 
             _pullCooking = BindSynced("PullForCookingStations", false,
                 "EVERY cooking station: meat racks, the iron cooking station AND the oven. FALSE " +
                 "by default on purpose - the group keeps raw meat for recipes, and an auto-feeding " +
                 "rack empties the chests. Covers BOTH the cookable item and the station's fuel. " +
-                "Leave this false and use PullForOvens to let just the oven pull.");
+                "Leave this false and use PullForOvens to let just the oven pull.",
+                Opt.B("Let every cooking station pull ingredients and fuel from containers"));
 
             _pullOvens = BindSynced("PullForOvens", true,
                 "OVENS ONLY: the stone oven pulls bread dough, pies and its fuel from nearby " +
                 "containers even while PullForCookingStations is false, so baking works through " +
                 "the storage wall while meat racks stay manual. Which prefabs count as an oven is " +
-                "OvenPrefabs. Ignored (already covered) when PullForCookingStations is true.");
+                "OvenPrefabs. Ignored (already covered) when PullForCookingStations is true.",
+                Opt.B("Let ovens alone pull ingredients and fuel from containers"));
 
             _ovenPrefabs = BindSynced("OvenPrefabs", "piece_oven",
                 "Which CookingStation PREFABS PullForOvens applies to, comma-separated. Default " +
                 "is the vanilla stone oven. The meat racks are piece_cookingstation and " +
                 "piece_cookingstation_iron - adding them here is the same as turning " +
-                "PullForCookingStations on.");
+                "PullForCookingStations on.",
+                Opt.T("Which cooking station prefabs count as an oven"));
 
             _leaveOne = BindSynced("LeaveOneItem", false,
                 "Always leave one of an item behind in a container instead of emptying the stack. " +
-                "Useful if you sort chests by what is in them.");
+                "Useful if you sort chests by what is in them.",
+                Opt.B("Always leave one item behind instead of emptying a container"));
 
             _includeVehicles = BindSynced("IncludeVehicles", true,
                 "Count the cargo of carts and ships as nearby containers. A cart currently being " +
-                "pulled is skipped either way.");
+                "pulled is skipped either way.",
+                Opt.B("Count cart and ship cargo as nearby containers"));
 
             _excludedContainers = BindSynced("ExcludedContainers", "piece_chest_private",
                 "Container PREFAB names that are never pulled from, comma-separated. " +
-                "Example: piece_chest_private, piece_chest_wood");
+                "Example: piece_chest_private, piece_chest_wood",
+                Opt.T("Container types that are never pulled from"));
 
             _excludedItems = BindSynced("ExcludedItems", "",
                 "Item prefab names that are never pulled out of a container, comma-separated. " +
-                "They still count from the player's own inventory. Example: FineWood, Coins");
+                "They still count from the player's own inventory. Example: FineWood, Coins",
+                Opt.T("Items that are never pulled out of a container"));
 
             _showNearbyCount = BindSynced("ShowNearbyCount", true,
                 "Show the requirement rows in the crafting and build UI as have/needed, where " +
-                "'have' includes nearby containers, instead of just the required number.");
+                "'have' includes nearby containers, instead of just the required number.",
+                Opt.B("Show have/needed counts that include nearby containers"));
 
             _toggleKey = BindLocal("ToggleKey", "LeftAlt+O",
                 "MACHINE-LOCAL. Key combination that turns this player's own container pulling on " +
                 "and off, with a HUD message. Format: optional modifiers then the key, joined by " +
                 "'+', using Unity KeyCode names - LeftAlt+O, LeftControl+LeftShift+K, F7, or " +
                 "None to disable the hotkey. A modifier is recommended so it cannot fire while " +
-                "you are typing in chat.");
+                "you are typing in chat.",
+                Opt.T("Key combination to toggle container pulling for yourself"));
 
             PushSettings();
         }

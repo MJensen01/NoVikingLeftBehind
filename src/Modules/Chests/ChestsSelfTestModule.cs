@@ -26,6 +26,10 @@ namespace NoVikingLeftBehind
         public override string Name => "ChestsSelfTest";
         public override ModuleSide Side => ModuleSide.Both;
         public override string Section => "ChestsSelfTest";
+        public override string Theme => "Server";
+        public override string Hint => "Logs a one-time diagnostic self-test for craft-from-chests";
+
+        protected override Opt EnabledOpt => base.EnabledOpt.Admin();
 
         private static ConfigEntry<bool> _selfTest;
         private static bool _ran;
@@ -37,7 +41,8 @@ namespace NoVikingLeftBehind
                 "CookingStation prefabs this build actually has, and a unit run of the " +
                 "counting/consuming core against inventories this module creates itself. " +
                 "Machine-local and never synced, so turning it on for a server boot affects no " +
-                "client. Leave it false in normal use.");
+                "client. Leave it false in normal use.",
+                Opt.B("Log a one-time diagnostic self-test at world load").Admin());
         }
 
         protected override void ApplyPatches()

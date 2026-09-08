@@ -46,6 +46,8 @@ namespace NoVikingLeftBehind
         public override string Name => "GroupSkillCatchup";
         public override ModuleSide Side => ModuleSide.Both;
         public override string Section => "SkillCatchup";
+        public override string Theme => "Catching up";
+        public override string Hint => "Lift skills that are behind the group's best towards it";
 
         protected override string EnabledDescription =>
             "Lift skills that are below the group's best towards it. Capped, and the leaders " +
@@ -91,20 +93,26 @@ namespace NoVikingLeftBehind
         protected override void Bind()
         {
             _reportSec = BindSynced("ReportSec", 60,
-                "Seconds between a client sending its skill levels to the server.");
+                "Seconds between a client sending its skill levels to the server.",
+                Opt.N("How often a player's skill levels are reported to the server", 10, 300));
             _windowDays = BindSynced("WindowDays", 14,
-                "Only reports newer than this many days count towards the group ceiling.");
+                "Only reports newer than this many days count towards the group ceiling.",
+                Opt.N("How many recent days count towards the group's skill ceiling", 1, 60));
             _broadcastSec = BindSynced("BroadcastSec", 300,
-                "Server re-broadcasts the ceiling at least this often, even when unchanged.");
+                "Server re-broadcasts the ceiling at least this often, even when unchanged.",
+                Opt.N("How often the group's skill ceiling is re-sent to players", 10, 1800));
             _bonus = BindSynced("Bonus", 1.0f,
-                "Strength of the catch-up. 1.0 = a skill at half the group ceiling gains 1.5x.");
+                "Strength of the catch-up. 1.0 = a skill at half the group ceiling gains 1.5x.",
+                Opt.N("Strength of the skill catch-up bonus", 0, 5, 0.1));
             _maxFactor = BindSynced("MaxFactor", 3.0f,
-                "Hard cap on this module's multiplier, whatever the gap.");
+                "Hard cap on this module's multiplier, whatever the gap.",
+                Opt.N("Highest possible skill gain multiplier", 1, 10, 0.5));
 
             if (CatchupUtil.SelfTestCfg == null)
                 CatchupUtil.SelfTestCfg = BindLocal("Catchup", "SelfTest", false,
                     "LOCAL diagnostic. Seeds fake playtime and skill data once, logs the computed " +
-                    "median / factors / ceilings, then does nothing more. Never sync this on.");
+                    "median / factors / ceilings, then does nothing more. Never sync this on.",
+                    Opt.B("Run a one-time diagnostic test with fake data").Admin());
         }
 
         protected override void ApplyPatches()

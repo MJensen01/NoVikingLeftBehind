@@ -73,6 +73,8 @@ namespace NoVikingLeftBehind
         public override ModuleSide Side => _selfTest != null && _selfTest.Value ? ModuleSide.Both : ModuleSide.Client;
 
         public override string Section => "Repair";
+        public override string Theme => "Inventory";
+        public override string Hint => "Repair every item the station allows in one go";
 
         private enum TriggerMode { OnOpen, Hotkey, Both }
 
@@ -115,21 +117,25 @@ namespace NoVikingLeftBehind
                 "opens, and again whenever the repair panel refreshes with something new to fix " +
                 "while it is open (you dragged a damaged item out of a chest). Hotkey = only when " +
                 "you press [Repair] Hotkey with the station GUI open. Both = either. " +
-                "Values: OnOpen | Hotkey | Both.");
+                "Values: OnOpen | Hotkey | Both.",
+                Opt.C("When the batch repair happens", "OnOpen", "Hotkey", "Both"));
 
             _showMessage = BindSynced("ShowMessage", true,
                 "Show one top-left message per batch (\"Repaired 7 items\"), using vanilla's own " +
-                "$msg_repaired localisation. Never one message per item.");
+                "$msg_repaired localisation. Never one message per item.",
+                Opt.B("Show one message per repair batch"));
 
             _hotkey = BindLocal("Hotkey", "R",
                 "Local: key that repairs everything, while a crafting station's inventory GUI is " +
-                "open. Unity KeyCode name, or None. Only used when Trigger is Hotkey or Both.");
+                "open. Unity KeyCode name, or None. Only used when Trigger is Hotkey or Both.",
+                Opt.T("Key that repairs everything at an open station"));
 
             _selfTest = BindLocal("SelfTest", false,
                 "Diagnostic, local only, never synced. Logs every repairable item in ObjectDB " +
                 "grouped by the station (and station level) vanilla would require to repair it, " +
                 "so the eligibility rules can be checked without a client. Flips this module's " +
-                "side to Both so a dedicated server runs it. Changes no game state.");
+                "side to Both so a dedicated server runs it. Changes no game state.",
+                Opt.B("Log a one-time diagnostic self-test of repair eligibility").Admin().Restart());
 
             ParseSettings();
         }

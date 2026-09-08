@@ -27,6 +27,8 @@ namespace NoVikingLeftBehind
         public override string Name => "ExtraSlots";
         public override ModuleSide Side => ModuleSide.Client;
         public override string Section => "Slots";
+        public override string Theme => "Inventory";
+        public override string Hint => "Extra inventory rows and dedicated equipment slots";
 
         internal static ExtraSlotsModule Inst;
 
@@ -60,43 +62,55 @@ namespace NoVikingLeftBehind
         {
             _equipmentSlots = BindSynced("EquipmentSlots", true,
                 "Server: give every player four dedicated equipment slots (head, chest, legs, cape). " +
-                "Off removes the four slots; anything in them is moved back into the bag first.");
+                "Off removes the four slots; anything in them is moved back into the bag first.",
+                Opt.B("Give every player four dedicated equipment slots"));
             _utilitySlots = BindSynced("UtilitySlots", 2,
                 "Server: how many utility slots (0-4). 2 lets a player wear Megingjord and the " +
-                "Wishbone at the same time. 0 disables the group.");
+                "Wishbone at the same time. 0 disables the group.",
+                Opt.N("How many extra utility (belt-type) slots", 0, 4));
             _foodSlots = BindSynced("FoodSlots", 3,
-                "Server: how many food slots (0-3). Only food goes in them.");
+                "Server: how many food slots (0-3). Only food goes in them.",
+                Opt.N("How many dedicated food slots", 0, 3));
             _ammoSlots = BindSynced("AmmoSlots", 2,
-                "Server: how many ammo slots (0-4). The equipped ammo stack lives here.");
+                "Server: how many ammo slots (0-4). The equipped ammo stack lives here.",
+                Opt.N("How many dedicated ammo slots", 0, 4));
             _quickSlots = BindSynced("QuickSlots", 0,
                 "Server: how many quick slots (0-8). Anything can go in them; a hotkey uses it. " +
                 "0 by default since 0.4.2 - the bottom row is GenericSlots plain storage instead. " +
                 "Set it above 0 to bring the hotkey row back; quick slots are drawn first, then " +
-                "the generic ones, on the same row.");
+                "the generic ones, on the same row.",
+                Opt.N("How many hotkeyed quick-use slots", 0, 8));
             _genericSlots = BindSynced("GenericSlots", 2,
                 "Server: how many plain storage slots (0-8) on the bottom row. Any item fits, " +
                 "there is no hotkey and nothing is drawn on the cell - they are simply two more " +
-                "places to put things.");
+                "places to put things.",
+                Opt.N("How many plain extra storage slots", 0, 8));
             _autoEat = BindSynced("AutoEatFromFoodSlots", true,
                 "Server: when a food buff runs out and the same food is sitting in a food slot, " +
-                "eat it automatically.");
+                "eat it automatically.",
+                Opt.B("Automatically eat from a food slot when a buff runs out"));
 
             _quickKeys = BindLocal("QuickSlotKeys", "Z,X,C",
                 "Local: comma-separated keys for the quick slots, in order. Unity KeyCode names " +
                 "(Z, X, C, F1, Keypad1 ...). Use None to leave a quick slot without a hotkey. " +
-                "Never synced, so each player picks their own.");
+                "Never synced, so each player picks their own.",
+                Opt.T("Which keys trigger each quick slot, in order"));
             _showUi = BindLocal("ShowUI", true,
                 "Local: draw the extra slots in their own panel beside the inventory window. " +
                 "Turn off if a game update breaks the layout - the items stay exactly where they " +
-                "are and stay reachable, they just fall back to plain extra rows under the bag.");
+                "are and stay reachable, they just fall back to plain extra rows under the bag.",
+                Opt.B("Show the extra slots in their own panel"));
             _panelOffsetX = BindLocal("PanelOffsetX", 0f,
                 "Local: nudge the extra-slot panel right (negative moves it left, towards the " +
-                "inventory window). Pixels at 100% UI scale.");
+                "inventory window). Pixels at 100% UI scale.",
+                Opt.N("How far to shift the extra-slot panel sideways", -500, 500));
             _panelOffsetY = BindLocal("PanelOffsetY", 0f,
-                "Local: nudge the extra-slot panel down. Pixels at 100% UI scale.");
+                "Local: nudge the extra-slot panel down. Pixels at 100% UI scale.",
+                Opt.N("How far to shift the extra-slot panel up or down", -500, 500));
             _panelScale = BindLocal("PanelScale", 1f,
                 "Local: size of the extra-slot panel relative to the inventory grid (0.4-2.5). " +
-                "1 draws the slots exactly the size of the bag's own slots.");
+                "1 draws the slots exactly the size of the bag's own slots.",
+                Opt.N("Size of the extra-slot panel relative to the inventory grid", 0.4, 2.5, 0.05));
 
             ParseKeys();
             RebuildLayout();

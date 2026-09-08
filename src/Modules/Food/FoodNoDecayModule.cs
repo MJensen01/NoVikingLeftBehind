@@ -54,6 +54,8 @@ namespace NoVikingLeftBehind
     internal sealed class FoodNoDecayModule : FeatureModule
     {
         public override string Name => "FoodNoDecay";
+        public override string Theme => "Food & survival";
+        public override string Hint => "Eaten food stays at full strength until it expires";
 
         /// <summary>
         /// Normally Client (the shipping default). Setting the machine-local [Food] SelfTest = true
@@ -96,27 +98,32 @@ namespace NoVikingLeftBehind
                 "Floor applied to each eaten food's health/stamina/eitr contribution, as a " +
                 "fraction of its full (freshly-eaten) value: 1.0 = no decay at all until the food " +
                 "expires (default). 0.5 = the value never decays below half, but may still decay " +
-                "further towards 0.5 like vanilla. 0.0 = vanilla behaviour, unchanged.");
+                "further towards 0.5 like vanilla. 0.0 = vanilla behaviour, unchanged.",
+                Opt.N("Lowest fraction eaten food keeps before expiring", 0, 1, 0.05));
 
             _curveExponent = BindSynced("CurveExponent", 0.3f,
                 "Exponent used for the vanilla decay curve before the KeepFraction floor is " +
                 "applied. Leave at 0.3 (vanilla's own curve) unless you specifically want a " +
-                "different decay shape for the portion below KeepFraction.");
+                "different decay shape for the portion below KeepFraction.",
+                Opt.N("Shape of the decay curve below the keep floor", 0, 3, 0.05));
 
             _hidePulse = BindSynced("HidePulse", true,
                 "Stop the food icons and their timers flashing in the HUD. Vanilla pulses an " +
                 "icon once the food is past half its timer and flashes its countdown under a " +
                 "minute; with decay removed that flashing is telling you about a decay that no " +
-                "longer happens. See PulseBelowSeconds to keep it as a last-seconds warning.");
+                "longer happens. See PulseBelowSeconds to keep it as a last-seconds warning.",
+                Opt.B("Stop food icons flashing when decay is disabled"));
 
             _pulseBelowSeconds = BindSynced("PulseBelowSeconds", 0f,
                 "When HidePulse is on, still let a food icon pulse once it has fewer than this " +
-                "many seconds left, as an 'about to run out' warning. 0 (default) = never pulse.");
+                "many seconds left, as an 'about to run out' warning. 0 (default) = never pulse.",
+                Opt.N("Still flash food icons this many seconds before expiry", 0, 120, 5));
 
             _selfTest = BindLocal("SelfTest", false,
                 "Local debug only, not synced. When true, on (re)load and on Enabled toggling logs " +
                 "the decay fraction across three consecutive simulated ticks for CookedMeat, " +
-                "asserting it does not move. Leave false in normal play.");
+                "asserting it does not move. Leave false in normal play.",
+                Opt.B("Log decay math proof for a sample food").Admin().Restart());
         }
 
         protected override void ApplyPatches()

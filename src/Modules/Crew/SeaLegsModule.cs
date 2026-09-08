@@ -69,6 +69,10 @@ namespace NoVikingLeftBehind
     {
         public override string Name => "SeaLegs";
 
+        public override string Theme => "On the water";
+
+        public override string Hint => "A crew lets your ship point closer into the wind";
+
         /// <summary>Both: the owner may be a client or (with nobody aboard) the server.</summary>
         public override ModuleSide Side => ModuleSide.Both;
 
@@ -124,27 +128,33 @@ namespace NoVikingLeftBehind
             _crew2Cone = BindSynced("Crew2Cone", 32f,
                 "With 2 aboard: how close to the wind's eye, in DEGREES, the sail still pulls. " +
                 "Vanilla is 36.87. Clamped to " + MinConeDeg.ToString("0") + "-36.87 - smaller " +
-                "is a narrower dead zone (you point higher), and it can never close completely.");
+                "is a narrower dead zone (you point higher), and it can never close completely.",
+                Opt.N("How close to the wind's eye you can point with 2 crew, in degrees", 20, 37));
 
             _crew3Cone = BindSynced("Crew3Cone", 27f,
-                "With 3 aboard: dead-zone half-angle in degrees. Same clamp as Crew2Cone.");
+                "With 3 aboard: dead-zone half-angle in degrees. Same clamp as Crew2Cone.",
+                Opt.N("How close to the wind's eye you can point with 3 crew, in degrees", 20, 37));
 
             _crew4Cone = BindSynced("Crew4Cone", 23f,
-                "With 4 or more aboard: dead-zone half-angle in degrees. Same clamp as Crew2Cone.");
+                "With 4 or more aboard: dead-zone half-angle in degrees. Same clamp as Crew2Cone.",
+                Opt.N("How close to the wind's eye you can point with 4+ crew, in degrees", 20, 37));
 
             _maxCrewCounted = BindSynced("MaxCrewCounted", MaxTableCrew,
                 "Crew above this number stops helping (1-" + MaxTableCrew + "). 1 turns the " +
-                "narrowing off entirely without disabling the module.");
+                "narrowing off entirely without disabling the module.",
+                Opt.N("How much crew keeps helping the ship point into the wind", 1, MaxTableCrew, 1));
 
             _passengerGauge = BindLocal("PassengerWindGauge", true,
                 "Local: show the read-only ship wind arrow on your HUD while you are aboard a " +
                 "ship someone ELSE is steering. Rudder and sail controls stay hidden - it is a " +
-                "gauge, not a set of controls.");
+                "gauge, not a set of controls.",
+                Opt.B("Show the wind arrow to passengers who are not steering"));
 
             _selfTest = BindLocal("SelfTest", false,
                 "Diagnostic, local only, never synced. Logs the whole cone table (the LerpStep " +
                 "pair and the resulting degrees for crew 1..4) at load, so the arithmetic can be " +
-                "checked on a headless server. Changes no game state.");
+                "checked on a headless server. Changes no game state.",
+                Opt.B("Log the wind-cone numbers for every crew size at load").Admin());
 
             RebuildTable();
         }

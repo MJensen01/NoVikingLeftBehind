@@ -38,6 +38,8 @@ namespace NoVikingLeftBehind
     {
         public override string Name => "VanguardShadow";
         public override string Section => "Vanguard";
+        public override string Theme => "Catching up";
+        public override string Hint => "Damage reduction, extra XP and stamina near a stronger ally";
         public override ModuleSide Side =>
             (_selfTest != null && _selfTest.Value) ? ModuleSide.Both : ModuleSide.Client;
 
@@ -80,34 +82,45 @@ namespace NoVikingLeftBehind
         protected override void Bind()
         {
             _radius = BindSynced("Radius", 20f,
-                "Metres. A player this close to a better-geared player gets Vanguard's Shadow.");
+                "Metres. A player this close to a better-geared player gets Vanguard's Shadow.",
+                Opt.N("How close you must be to a better-geared ally", 1, 100, 1));
             _tierGap = BindSynced("TierGap", 1,
-                "How many gear tiers ahead the other player must be. 1 = one tier ahead is enough.");
+                "How many gear tiers ahead the other player must be. 1 = one tier ahead is enough.",
+                Opt.N("How many gear tiers ahead the other player must be", 1, 5, 1));
             _updateSec = BindSynced("UpdateSec", 5f,
                 "Seconds between gear-tier writes and proximity scans. Also drives the buff's " +
-                "safety-net lifetime (3x this).");
+                "safety-net lifetime (3x this).",
+                Opt.N("Seconds between gear-tier and proximity checks", 1, 30, 0.5));
             _damageReduction = BindSynced("DamageReduction", 0.25f,
                 "Fraction of incoming damage removed while the buff is up (0.25 = take 75%). " +
-                "Applied before armour and resistances, like the game's own hit modifiers.");
+                "Applied before armour and resistances, like the game's own hit modifiers.",
+                Opt.N("Fraction of incoming damage removed while the buff is active", 0, 1, 0.05));
             _xpBonus = BindSynced("XpBonus", 0.5f,
-                "Extra skill XP while the buff is up (0.5 = +50%).");
+                "Extra skill XP while the buff is up (0.5 = +50%).",
+                Opt.N("Extra skill XP earned while the buff is active", 0, 3, 0.05));
             _staminaRegen = BindSynced("StaminaRegen", 0.2f,
-                "Extra stamina regeneration while the buff is up (0.2 = +20%). 0 disables it.");
+                "Extra stamina regeneration while the buff is up (0.2 = +20%). 0 disables it.",
+                Opt.N("Extra stamina regeneration while the buff is active", 0, 2, 0.05));
             _requireBehindFrontier = BindSynced("RequireBehindFrontier", false,
                 "Also require the player's own gear tier to be behind the world's frontier " +
                 "([Frontier] WorldTier minus TiersBehind). False = proximity and the tier gap " +
-                "are the only conditions.");
+                "are the only conditions.",
+                Opt.B("Only help players whose gear is behind the world's frontier"));
             _includeUtility = BindSynced("IncludeUtility", false,
-                "Count the utility slot (Megingjord, Wishbone...) towards gear tier.");
+                "Count the utility slot (Megingjord, Wishbone...) towards gear tier.",
+                Opt.B("Count the utility item slot toward gear tier"));
             _nameHeuristic = BindSynced("NameHeuristic", true,
                 "If an item has no crafting recipe, fall back to matching material names inside " +
-                "the item's prefab name (e.g. anything containing 'Iron' is tier 2).");
+                "the item's prefab name (e.g. anything containing 'Iron' is tier 2).",
+                Opt.B("Guess material tier from item name when no recipe exists"));
             _iconFrom = BindSynced("IconFrom", "Rested",
                 "Name of an existing status effect whose icon Vanguard's Shadow reuses. The mod " +
-                "ships no assets of its own.");
+                "ships no assets of its own.",
+                Opt.T("Name of an existing status effect to borrow an icon from").Restart());
             _selfTest = BindLocal("SelfTest", false,
                 "Diagnostic, machine-local. Runs the module on a dedicated server too and logs a " +
-                "registration + gear-tier self test at world load. Leave false in normal use.");
+                "registration + gear-tier self test at world load. Leave false in normal use.",
+                Opt.B("Run gear-tier self tests on a dedicated server").Admin().Restart());
 
             _inst = this;
             PushNumbers();

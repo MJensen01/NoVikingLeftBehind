@@ -50,6 +50,8 @@ namespace NoVikingLeftBehind
     {
         public override string Name => "BuildersLoad";
         public override string Section => "Load";
+        public override string Theme => "Building & gathering";
+        public override string Hint => "Building materials weigh less near a workbench";
 
         /// <summary>Client, except while the local SelfTest flag is on - see the class doc.</summary>
         public override ModuleSide Side =>
@@ -119,32 +121,38 @@ namespace NoVikingLeftBehind
             _weightMultiplier = BindSynced("WeightMultiplier", 0.5f,
                 "What a listed building material weighs while you are in range of a listed " +
                 "station, as a fraction of normal. 0.5 = half. Clamped to 0.01..1: this module " +
-                "never makes anything heavier.");
+                "never makes anything heavier.",
+                Opt.N("How light building materials feel near a station", 0.01, 1, 0.05));
 
             _materialsCfg = BindSynced("Materials", DefaultMaterials,
                 "Comma-separated item PREFAB names this applies to. Building materials only - " +
                 "food, ore that still has to be smelted and everything else stays at full " +
-                "weight. Names that do not exist in this game build are logged once and ignored.");
+                "weight. Names that do not exist in this game build are logged once and ignored.",
+                Opt.T("Which building materials get the weight discount"));
 
             _stationsCfg = BindSynced("Stations", DefaultStations,
                 "Comma-separated crafting-station PREFAB names whose build range counts as " +
                 "\"near a bench\". The range used is the same one the build hammer uses, so it " +
-                "grows with [Workbench] WorkbenchReach when that module is on.");
+                "grows with [Workbench] WorkbenchReach when that module is on.",
+                Opt.T("Which stations count as nearby for the discount"));
 
             _hysteresis = BindSynced("HysteresisSeconds", 3f,
                 "How long you keep the discount after leaving a station's range, so the " +
                 "encumbrance arrow cannot flicker while you stand on the boundary. 0 = snap " +
-                "back instantly.");
+                "back instantly.",
+                Opt.N("How long the discount lingers after leaving range", 0, 20, 0.5));
 
             _checkInterval = BindSynced("CheckIntervalSeconds", 0.5f,
                 "How often the \"am I near a bench?\" test actually runs. The answer is cached " +
-                "in between, because the weight is read every frame. Clamped to 0.05..5.");
+                "in between, because the weight is read every frame. Clamped to 0.05..5.",
+                Opt.N("How often the game checks if you're near a station", 0.05, 5, 0.05));
 
             _selfTest = BindLocal("SelfTest", false,
                 "Diagnostic, local only, never synced. Flips this module's Side to Both so a " +
                 "dedicated server can resolve the material list against ObjectDB and log which " +
                 "names were found and which were not, once per world load. Changes no game " +
-                "state. Leave false in normal use.");
+                "state. Leave false in normal use.",
+                Opt.B("Log resolved material weights once per world load").Admin().Restart());
 
             ParseLists();
         }

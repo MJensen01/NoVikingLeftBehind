@@ -26,7 +26,7 @@ namespace NoVikingLeftBehind
     {
         public const string PluginGuid = "Nosferatu.NoVikingLeftBehind";
         public const string PluginName = "NoVikingLeftBehind";
-        public const string PluginVersion = "0.6.0";
+        public const string PluginVersion = "0.7.0";
 
         internal static ManualLogSource Log;
         internal static ConfigSync ConfigSync;
@@ -62,12 +62,12 @@ namespace NoVikingLeftBehind
             ModeCfg = BindLocal("General", "Mode", RunMode.Auto,
                 "Which half of the mod to run. Auto = dedicated server (-batchmode) runs the " +
                 "server half, everything else runs the client half. Machine-local, never synced.",
-                null);
+                null, Opt.C("Which half of the mod this install runs").Admin().Restart());
 
             HotReloadCfg = BindLocal("General", "HotReload", true,
                 "Watch this plugin's own cfg file on disk and reload it automatically when it " +
                 "changes, so edits take effect without a server restart. Machine-local, never synced.",
-                null);
+                null, Opt.B("Apply config edits without a restart").Admin());
 
             EnforceClientMod = BindSynced("General", "EnforceClientMod", true,
                 "Server: require every connecting client to run NoVikingLeftBehind " + PluginVersion +
@@ -75,7 +75,7 @@ namespace NoVikingLeftBehind
                 "with an explanatory message. Also locks the synced config so only the server " +
                 "(and admins) can change it. Turn off to let vanilla clients join - the server " +
                 "half still works, the client-side features simply do not exist for them.",
-                null);
+                null, Opt.B("Require every player to run this mod").Admin());
             ConfigSync.AddLockingConfigEntry(EnforceClientMod);
             EnforceClientMod.SettingChanged += (s, a) => ApplyEnforcement();
             ApplyEnforcement();
@@ -123,7 +123,35 @@ namespace NoVikingLeftBehind
             // running server take effect without a restart. See ConfigWatcher.cs.
             _configWatcher = new ConfigWatcher(Cfg, Log, "[Config]");
 
+            // Every setting has now declared itself through the two bind helpers, so the catalog
+            // is complete. One line proves the metadata pass headlessly; the server also drops a
+            // machine-readable copy next to the cfg for tooling (cfg.py, the settings tab's docs).
+            Log.LogInfo(ConfigCatalog.SummaryLine());
+            if (IsServerSide) WriteCatalogFile();
+
             Log.LogInfo(PluginName + " " + PluginVersion + " loaded, " + Modules.Count + " modules");
+        }
+
+        /// <summary>
+        /// Dump the catalog beside the cfg file as TSV. Server-side only, best effort: it is a
+        /// tooling convenience (and the headless proof of the metadata pass), never a dependency.
+        /// The name deliberately does not end in .cfg or .bak-* so neither BepInEx nor cfg.py
+        /// picks it up.
+        /// </summary>
+        private static void WriteCatalogFile()
+        {
+            try
+            {
+                var dir = System.IO.Path.GetDirectoryName(Cfg.ConfigFilePath);
+                if (string.IsNullOrEmpty(dir)) return;
+                var path = System.IO.Path.Combine(dir, "nvlb-catalog.tsv");
+                System.IO.File.WriteAllText(path, ConfigCatalog.Tsv());
+                Log.LogInfo("ConfigCatalog: wrote " + path);
+            }
+            catch (Exception e)
+            {
+                Log.LogWarning("ConfigCatalog: could not write the catalog dump: " + e.Message);
+            }
         }
 
         // ---- side resolution -------------------------------------------------------------
@@ -180,21 +208,25 @@ namespace NoVikingLeftBehind
         // ---- config helpers ----------------------------------------------------------------
 
         internal static ConfigEntry<T> BindSynced<T>(string section, string key, T defaultValue,
-                                                     string description, FeatureModule owner)
+                                                     string description, FeatureModule owner,
+                                                     Opt opt = null)
         {
             var entry = Cfg.Bind(section, key, defaultValue, description);
             ConfigSync.AddConfigEntry(entry).SynchronizedConfig = true;
             Wire(entry, owner);
+            ConfigCatalog.Register(entry, opt, owner, false);
             return entry;
         }
 
         internal static ConfigEntry<T> BindLocal<T>(string section, string key, T defaultValue,
-                                                    string description, FeatureModule owner)
+                                                    string description, FeatureModule owner,
+                                                    Opt opt = null)
         {
             // Deliberately NOT registered with ConfigSync: a local entry stays editable on the
             // client even when the synced config is locked.
             var entry = Cfg.Bind(section, key, defaultValue, description);
             Wire(entry, owner);
+            ConfigCatalog.Register(entry, opt, owner, true);
             return entry;
         }
 
@@ -269,6 +301,7 @@ namespace NoVikingLeftBehind
         private void Update()
         {
             if (HotReloadCfg != null && HotReloadCfg.Value) _configWatcher?.Pump();
+            AccessModule.Pump();
         }
 
         private void OnDestroy()

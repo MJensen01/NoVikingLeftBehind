@@ -48,6 +48,8 @@ namespace NoVikingLeftBehind
         public override string Name => "Loadouts";
         public override ModuleSide Side => ModuleSide.Client;
         public override string Section => "Loadouts";
+        public override string Theme => "Inventory";
+        public override string Hint => "Save and equip weapon and shield loadouts with a key press";
 
         public const string KeyPrefix = "nvlb.loadout";
         public const int MaxSlots = 4;
@@ -67,12 +69,16 @@ namespace NoVikingLeftBehind
 
         protected override void Bind()
         {
-            _slots = BindSynced("Slots", 2, "Server: how many weapon loadouts each player gets (0-" + MaxSlots + ").");
-            _key1 = BindLocal("Loadout1Key", "V", "Local: key that equips loadout 1. Unity KeyCode name, or None.");
-            _key2 = BindLocal("Loadout2Key", "B", "Local: key that equips loadout 2. Unity KeyCode name, or None.");
+            _slots = BindSynced("Slots", 2, "Server: how many weapon loadouts each player gets (0-" + MaxSlots + ").",
+                Opt.N("How many weapon loadouts each player gets", 0, MaxSlots, 1));
+            _key1 = BindLocal("Loadout1Key", "V", "Local: key that equips loadout 1. Unity KeyCode name, or None.",
+                Opt.T("Key that equips loadout 1"));
+            _key2 = BindLocal("Loadout2Key", "B", "Local: key that equips loadout 2. Unity KeyCode name, or None.",
+                Opt.T("Key that equips loadout 2"));
             _saveModifier = BindLocal("SaveModifier", "LeftControl",
                 "Local: hold this and press a loadout key to SAVE what you are currently holding " +
-                "into that loadout instead of equipping it.");
+                "into that loadout instead of equipping it.",
+                Opt.T("Key held to save instead of equip a loadout"));
             ParseKeys();
         }
 

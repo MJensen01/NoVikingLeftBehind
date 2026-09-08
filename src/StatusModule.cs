@@ -47,7 +47,13 @@ namespace NoVikingLeftBehind
                 new Terminal.ConsoleCommand("nvlb.status",
                     "NoVikingLeftBehind: world tier, catch-up settings and module state",
                     new Terminal.ConsoleEvent(Run));
-                Log.LogInfo("[Status] console command 'nvlb.status' registered");
+
+                new Terminal.ConsoleCommand("nvlb.catalog",
+                    "nvlb.catalog [text] - every NoVikingLeftBehind setting with its hint, type, " +
+                    "range, permission tier and whether it applies live. Optionally filtered.",
+                    new Terminal.ConsoleEvent(RunCatalog));
+
+                Log.LogInfo("[Status] console commands 'nvlb.status', 'nvlb.catalog' registered");
             }
             catch (Exception e)
             {
@@ -61,6 +67,25 @@ namespace NoVikingLeftBehind
             foreach (var line in NoVikingLeftBehindPlugin.StatusLines())
             {
                 if (args.Context != null) args.Context.AddString(line);
+                Log.LogInfo(line);
+            }
+        }
+
+        /// <summary>
+        /// `nvlb.catalog [text]` - dumps the ConfigCatalog, i.e. the metadata every setting
+        /// declared at bind time. Same data the settings tab and the tweak door read, so if a
+        /// row looks wrong in the menu this is where to check it. A dedicated server writes the
+        /// same content to nvlb-catalog.tsv next to its cfg at boot, since it has no terminal.
+        /// </summary>
+        private static void RunCatalog(Terminal.ConsoleEventArgs args)
+        {
+            string filter = null;
+            if (args != null && args.Args != null && args.Args.Length > 1)
+                filter = string.Join(" ", args.Args, 1, args.Args.Length - 1);
+
+            foreach (var line in ConfigCatalog.DumpLines(filter))
+            {
+                if (args != null && args.Context != null) args.Context.AddString(line);
                 Log.LogInfo(line);
             }
         }

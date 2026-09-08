@@ -155,6 +155,31 @@ all. The mod never makes the leaders' game easier; it only softens the trail beh
   how much skill you lose on death, free build/craft, unlockable recipes without a workbench —
   applied to the world itself, so even a vanilla client feels the effect. `Tune it:` `[ServerKeys] SkillGainRate=1.0`, `SkillReductionRate=1.0`, `NoBuildCost=false`, `NoCraftCost=false`, `AllRecipesUnlocked=false`, `DeathKeepEquip=false`
 
+### In-game settings menu
+
+Open **Settings** — from the pause menu in game, or from the main menu — and there is a
+**NoVikingLeftBehind** tab next to Gameplay, Audio and the rest. Everything below is in it: modules
+down the left, grouped by theme with an on/off switch each; the selected module's settings down the
+right, one row apiece with a plain one-line hint under the name and the full explanation on hover.
+A search box at the top finds any of the 235 settings by name, key, hint or description.
+
+By default **anyone on the server can change most of them**, live, for everybody — that is the
+point: friends can tune the game while they are the ones playing it. Every change is announced in
+chat with the name of the person who made it, the server logs it, and the footer has an **Undo last
+change** button and a **Reset module to defaults** button. Server owners who would rather keep the
+dials to themselves set `[Access] TweakAccess = Admins` and the whole thing becomes admin-only in
+one live edit.
+
+The handful of settings that change the world's rules — the `[ServerKeys]` block, the mod's safety
+switches, the permission settings themselves — are admin-only whatever happens. A setting you may
+not change is still shown, greyed, with the reason ("Only a server admin can change this", "Needs a
+server restart", "Join a server to change this"), so everyone can see what the mod can do. Values
+move under you when somebody else changes something, and per-player settings — hotkeys, HUD offsets
+— are written straight to your own config and never leave your machine.
+
+Nothing new is downloaded for this: the tab is built at runtime out of Valheim's own controls, so it
+matches the game's fonts and colours, and any skin you use skins it too.
+
 ## Customize everything
 
 Every setting above lives in one file on the server: `Nosferatu.NoVikingLeftBehind.cfg`, generated
@@ -184,9 +209,10 @@ FoodSlots = 3
 RestedMinutes = 10
 ```
 
-Two console commands round it out: `nvlb.status` (client) prints the live world tier and every
-module's current settings, and `nvlb.slots.restore` rolls your `ExtraSlots` storage back to one of
-its automatic backups if something ever looks wrong.
+Three console commands round it out: `nvlb.status` (client) prints the live world tier and every
+module's current settings, `nvlb.catalog` lists every setting with its hint, type, range and who is
+allowed to change it, and `nvlb.slots.restore` rolls your `ExtraSlots` storage back to one of its
+automatic backups if something ever looks wrong.
 
 On a private test server the admin can add `[Debug] AllowTestCommands = true` to unlock three
 helper commands for connected players - `nvlb.give`, `nvlb.power` and `nvlb.tier` - which a dedicated

@@ -45,6 +45,8 @@ namespace NoVikingLeftBehind
     {
         public override string Name => "DualPowers";
         public override string Section => "Powers";
+        public override string Theme => "Combat & powers";
+        public override string Hint => "Carry two Forsaken powers, each on its own cooldown";
         public override ModuleSide Side =>
             (_selfTest != null && _selfTest.Value) ? ModuleSide.Both : ModuleSide.Client;
 
@@ -104,50 +106,65 @@ namespace NoVikingLeftBehind
         {
             _slots = BindSynced("Slots", 2,
                 "How many Forsaken powers you can hold at once. 1 = vanilla. 2 = the second slot " +
-                "on SecondSlotKey. 3 works too but you must also set ThirdSlotKey.");
+                "on SecondSlotKey. 3 works too but you must also set ThirdSlotKey.",
+                Opt.N("How many Forsaken powers you can carry at once", 1, 3, 1));
             _independentCooldowns = BindSynced("IndependentCooldowns", true,
                 "True: every slot has its own cooldown. False: one shared vanilla cooldown, so " +
-                "using either power puts both on cooldown.");
+                "using either power puts both on cooldown.",
+                Opt.B("Give each power slot its own separate cooldown"));
             _cooldownMultiplier = BindSynced("CooldownMultiplier", 1f,
                 "Multiplies the cooldown every guardian power starts, in every slot. " +
-                "0.5 = half-length cooldowns, 1 = vanilla.");
+                "0.5 = half-length cooldowns, 1 = vanilla.",
+                Opt.N("Multiplier applied to every power's cooldown length", 0, 5, 0.05));
             _secondSlotKey = BindLocal("SecondSlotKey", "G",
                 "Machine-local. UnityEngine.KeyCode name for the second power slot (vanilla's F " +
-                "always stays slot 1). Examples: G, H, LeftAlt, Mouse3, JoystickButton5.");
+                "always stays slot 1). Examples: G, H, LeftAlt, Mouse3, JoystickButton5.",
+                Opt.T("Key that activates the second power slot"));
             _thirdSlotKey = BindLocal("ThirdSlotKey", "None",
                 "Machine-local. KeyCode for a third slot, only used when Slots = 3. " +
-                "'None' disables it.");
+                "'None' disables it.",
+                Opt.T("Key that activates the third power slot"));
             _slot1Modifier = BindLocal("Slot1Modifier", "LeftShift",
                 "Machine-local. Hold this while interacting with a boss altar to put the power in " +
                 "SLOT 1 (the vanilla F slot). Without it the altar fills the first empty slot and, " +
                 "when both are full, replaces the last one. 'None' disables the modifier. " +
-                "LeftShift/LeftControl/LeftAlt also accept their right-hand twin.");
+                "LeftShift/LeftControl/LeftAlt also accept their right-hand twin.",
+                Opt.T("Modifier key held to put a power in the first slot"));
             _showHud = BindLocal("ShowHud", true,
                 "Machine-local. Clone the vanilla power icon so slot 2 gets its own icon, name " +
-                "and cooldown readout. Turn off if it clashes with another HUD mod.");
+                "and cooldown readout. Turn off if it clashes with another HUD mod.",
+                Opt.B("Show a separate HUD icon for the second power slot"));
             _hudOffsetX = BindLocal("HudOffsetX", 0f,
-                "Machine-local. Pixels to move the second power icon sideways from the vanilla one.");
+                "Machine-local. Pixels to move the second power icon sideways from the vanilla one.",
+                Opt.N("Sideways offset of the second power icon, in pixels", -200, 200, 1));
             _hudOffsetY = BindLocal("HudOffsetY", -56f,
-                "Machine-local. Pixels to move the second power icon vertically (negative = below).");
+                "Machine-local. Pixels to move the second power icon vertically (negative = below).",
+                Opt.N("Vertical offset of the second power icon, in pixels", -200, 200, 1));
             _roundIcons = BindLocal("RoundIcons", true,
                 "Machine-local, cosmetic. Draw every Forsaken power icon (slot 1 and the extra " +
                 "slots) as a circle instead of vanilla's square. The vanilla icon sprite is never " +
-                "replaced - it is masked to a circle, generated at runtime, no shipped assets.");
+                "replaced - it is masked to a circle, generated at runtime, no shipped assets.",
+                Opt.B("Draw power icons as circles instead of squares"));
             _cooldownRing = BindLocal("CooldownRing", true,
                 "Machine-local, cosmetic. Draw a thin charge ring around each power icon that " +
                 "fills as the cooldown recovers - full ring = ready. Every second CombatRecharge " +
-                "shaves off jumps the ring forward, so a fight visibly charges your power.");
+                "shaves off jumps the ring forward, so a fight visibly charges your power.",
+                Opt.B("Show a charging ring around each power icon"));
             _ringThickness = BindLocal("RingThickness", 4f,
                 "Machine-local, cosmetic. Ring thickness in pixels (1-24). ~4 suits 1080p; the " +
-                "ring is drawn on the icon's own edge, so it scales with the HUD.");
+                "ring is drawn on the icon's own edge, so it scales with the HUD.",
+                Opt.N("Thickness of the cooldown ring, in pixels", 1, 24, 1));
             _ringColor = BindLocal("RingColor", "E6C88AD9",
                 "Machine-local, cosmetic. RGBA hex for the filled (recovered) part of the ring. " +
-                "Default E6C88AD9 is Valheim's warm parchment gold at 85% alpha.");
+                "Default E6C88AD9 is Valheim's warm parchment gold at 85% alpha.",
+                Opt.T("Colour of the filled part of the cooldown ring"));
             _ringTrackColor = BindLocal("RingTrackColor", "00000066",
-                "Machine-local, cosmetic. RGBA hex for the un-filled remainder of the ring.");
+                "Machine-local, cosmetic. RGBA hex for the un-filled remainder of the ring.",
+                Opt.T("Colour of the empty part of the cooldown ring"));
             _selfTest = BindLocal("SelfTest", false,
                 "Diagnostic, machine-local. Runs the module on a dedicated server too and logs a " +
-                "storage + recharge self test at world load. Leave false in normal use.");
+                "storage + recharge self test at world load. Leave false in normal use.",
+                Opt.B("Run power-slot self tests on a dedicated server").Admin().Restart());
 
             _inst = this;
             Push();

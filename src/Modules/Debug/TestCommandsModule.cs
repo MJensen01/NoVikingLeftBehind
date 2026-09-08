@@ -39,6 +39,12 @@ namespace NoVikingLeftBehind
         public override ModuleSide Side => ModuleSide.Client;
         public override string Section => "Debug";
 
+        public override string Theme => "Server";
+
+        public override string Hint => "Admin console commands for testing on a private server";
+
+        protected override Opt EnabledOpt => base.EnabledOpt.Admin();
+
         private static TestCommandsModule _inst;
         private static bool _registered;
 
@@ -60,7 +66,8 @@ namespace NoVikingLeftBehind
                 "(nvlb.give, nvlb.power, nvlb.tier) on their own character. These only touch the " +
                 "local player's inventory and guardian powers - no world edits, no RPC - but they " +
                 "are still cheats, so this is OFF by default and only the server can turn it on. " +
-                "Intended for a private test server.");
+                "Intended for a private test server.",
+                Opt.B("Let connected clients use the nvlb test cheat commands").Admin());
         }
 
         protected override void ApplyPatches()

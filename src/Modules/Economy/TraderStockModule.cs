@@ -31,6 +31,10 @@ namespace NoVikingLeftBehind
         public override ModuleSide Side => ModuleSide.Client;
         public override string Section => "Trader";
 
+        public override string Theme => "Catching up";
+
+        public override string Hint => "Traders sell trailing-tier metal bars once you have caught up";
+
         internal const string DefaultItems = "Bronze:5:60,Iron:5:80,Silver:5:120,BlackMetal:5:150";
 
         private static ConfigEntry<string> _items;
@@ -59,12 +63,14 @@ namespace NoVikingLeftBehind
                 "vanilla's own TradeItem.m_requiredGlobalKey, set to the boss key for " +
                 "(material tier + [Frontier] TiersBehind). Unknown prefab names are logged and " +
                 "skipped. Materials at tier 0, or whose gating boss is past the last tier, are " +
-                "skipped too.");
+                "skipped too.",
+                Opt.T("Which trailing-tier items a trader stocks, and at what price"));
 
             _traderNames = BindSynced("TraderNames", "Haldor",
                 "Comma-separated trader prefab names (or Trader.m_name values) that get the extra " +
                 "stock. Default: Haldor only. Add Hildir or BogWitch to include them. '*' means " +
-                "every trader.");
+                "every trader.",
+                Opt.T("Which traders get the extra trailing-tier stock"));
         }
 
         protected override void ApplyPatches()

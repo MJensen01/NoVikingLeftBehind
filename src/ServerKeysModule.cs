@@ -34,6 +34,10 @@ namespace NoVikingLeftBehind
         public override string Name => "ServerKeys";
         public override ModuleSide Side => ModuleSide.Server;
         public override string Section => "ServerKeys";
+        public override string Theme => "World";
+        public override string Hint => "Force world-wide skill rates, build costs, and death penalties";
+
+        protected override Opt EnabledOpt => base.EnabledOpt.Admin();
 
         protected override string EnabledDescription =>
             "Apply the world modifiers below on world load. Config wins over whatever is " +
@@ -56,19 +60,28 @@ namespace NoVikingLeftBehind
             // These drive server-side world state only; a client never acts on them, but they
             // are synced so an admin sees the real values in the in-game config manager.
             _applyOnLoad = BindSynced("ApplyOnLoad", true,
-                "Apply on every world load. Turn off to leave the world's own keys alone.");
+                "Apply on every world load. Turn off to leave the world's own keys alone.",
+                Opt.B("Apply these settings automatically every time the world loads").Admin());
 
             _skillGainRate = BindSynced("SkillGainRate", 1.0f,
-                "Skill gain multiplier. 1.0 = vanilla, 2.5 = 2.5x. Stored in the world as value*100.");
+                "Skill gain multiplier. 1.0 = vanilla, 2.5 = 2.5x. Stored in the world as value*100.",
+                Opt.N("How fast players gain skill levels", 0, 10).Admin());
             _skillReductionRate = BindSynced("SkillReductionRate", 1.0f,
-                "Skill loss on death multiplier. 1.0 = vanilla, 0 = no skill loss.");
+                "Skill loss on death multiplier. 1.0 = vanilla, 0 = no skill loss.",
+                Opt.N("How much skill is lost when a player dies", 0, 5).Admin());
 
-            _noBuildCost = BindSynced("NoBuildCost", false, "Building costs no resources.");
-            _noCraftCost = BindSynced("NoCraftCost", false, "Crafting costs no resources.");
-            _allPiecesUnlocked = BindSynced("AllPiecesUnlocked", false, "All build pieces available.");
-            _noWorkbench = BindSynced("NoWorkbench", false, "No crafting-station requirement for building.");
-            _allRecipesUnlocked = BindSynced("AllRecipesUnlocked", false, "All recipes available.");
-            _deathKeepEquip = BindSynced("DeathKeepEquip", false, "Keep equipped items on death.");
+            _noBuildCost = BindSynced("NoBuildCost", false, "Building costs no resources.",
+                Opt.B("Building structures costs no resources").Admin());
+            _noCraftCost = BindSynced("NoCraftCost", false, "Crafting costs no resources.",
+                Opt.B("Crafting items costs no resources").Admin());
+            _allPiecesUnlocked = BindSynced("AllPiecesUnlocked", false, "All build pieces available.",
+                Opt.B("Every building piece is unlocked from the start").Admin());
+            _noWorkbench = BindSynced("NoWorkbench", false, "No crafting-station requirement for building.",
+                Opt.B("Building doesn't require a nearby crafting station").Admin());
+            _allRecipesUnlocked = BindSynced("AllRecipesUnlocked", false, "All recipes available.",
+                Opt.B("Every crafting recipe is unlocked from the start").Admin());
+            _deathKeepEquip = BindSynced("DeathKeepEquip", false, "Keep equipped items on death.",
+                Opt.B("Players keep their equipped gear when they die").Admin());
         }
 
         protected override void ApplyPatches()

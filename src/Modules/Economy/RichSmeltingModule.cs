@@ -37,6 +37,10 @@ namespace NoVikingLeftBehind
         public override ModuleSide Side => ModuleSide.Client;
         public override string Section => "Smelting";
 
+        public override string Theme => "Catching up";
+
+        public override string Hint => "Smelting and crafting trailing-tier materials yields more";
+
         private static ConfigEntry<int> _outputMultiplier;
         private static ConfigEntry<int> _recipeYieldMultiplier;
         private static RichSmeltingModule _self;
@@ -53,13 +57,15 @@ namespace NoVikingLeftBehind
             _outputMultiplier = BindSynced("OutputMultiplier", 2,
                 "Smelters, blast furnaces and kilns produce this many items per input when the " +
                 "OUTPUT material is behind the frontier (bronze/iron once the group has moved on). " +
-                "1 = vanilla. Clamped to at least 1 and to the item's max stack size.");
+                "1 = vanilla. Clamped to at least 1 and to the item's max stack size.",
+                Opt.N("How many items a smelter produces per input for trailing-tier metal", 1, 10, 1));
 
             _recipeYieldMultiplier = BindSynced("RecipeYieldMultiplier", 2,
                 "Crafting recipes whose OUTPUT is a material behind the frontier (Bronze at the " +
                 "forge, BronzeNails, ...) yield this many times as much. Only raw materials listed " +
                 "in [Tiers] MaterialTiers qualify, so tools and armour are never affected. " +
-                "1 = vanilla.");
+                "1 = vanilla.",
+                Opt.N("How many times as much a trailing-tier crafting recipe yields", 1, 10, 1));
         }
 
         protected override void ApplyPatches()

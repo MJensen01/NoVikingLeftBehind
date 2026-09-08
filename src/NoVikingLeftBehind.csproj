@@ -2,7 +2,7 @@
   <PropertyGroup>
     <AssemblyName>NoVikingLeftBehind</AssemblyName>
     <RootNamespace>NoVikingLeftBehind</RootNamespace>
-    <Version>0.6.0</Version>
+    <Version>0.7.0</Version>
     <OutputPath>bin/</OutputPath>
     <AppendTargetFrameworkToOutputPath>false</AppendTargetFrameworkToOutputPath>
     <!-- Vendor/ServerSync.cs is written with nullable reference annotations.
@@ -22,6 +22,12 @@
     <Reference Include="System.Runtime.Serialization" />
     <!-- ServerSync's version-mismatch popup writes into a TMP_Text. JetBrains' [PublicAPI] /
          [UsedImplicitly] need no reference: Unity ships them inside UnityEngine.CoreModule. -->
+    <!-- PlatformUserID (the id in adminlist.txt, and the speaker id a chat line carries) lives
+         here; the tweak door's chat announce and admin check both touch it. -->
+    <Reference Include="Splatform">
+      <HintPath>$(ValheimManagedDir)/Splatform.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
     <Reference Include="Unity.TextMeshPro">
       <HintPath>$(ValheimManagedDir)/Unity.TextMeshPro.dll</HintPath>
       <Private>false</Private>

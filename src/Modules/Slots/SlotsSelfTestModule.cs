@@ -30,6 +30,10 @@ namespace NoVikingLeftBehind
         public override string Name => "SlotsSelfTest";
         public override ModuleSide Side => ModuleSide.Both;
         public override string Section => "SlotsSelfTest";
+        public override string Theme => "Server";
+        public override string Hint => "Prove the extra-slot storage code works with no players online";
+
+        protected override Opt EnabledOpt => base.EnabledOpt.Admin();
 
         private static ConfigEntry<bool> _selfTest;
         private static bool _ran;
@@ -41,7 +45,8 @@ namespace NoVikingLeftBehind
             _selfTest = BindLocal("Slots", "SelfTest", false,
                 "Diagnostic. Once per world load, prove the extra-slot storage layer headlessly: " +
                 "save lift, blob round trip, migration rescue and loadout encoding. Machine-local, " +
-                "never synced. Leave it false in normal use.");
+                "never synced. Leave it false in normal use.",
+                Opt.B("Prove the extra-slot storage code works with no players online").Admin().Restart());
         }
 
         protected override void ApplyPatches()

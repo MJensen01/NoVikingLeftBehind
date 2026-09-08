@@ -65,6 +65,8 @@ namespace NoVikingLeftBehind
         public override string Name => "PlaytimeRubberBand";
         public override ModuleSide Side => ModuleSide.Both;
         public override string Section => "Playtime";
+        public override string Theme => "Catching up";
+        public override string Hint => "Extra gathering and XP for players who played less";
 
         protected override string EnabledDescription =>
             "Give players with less connected time than the group median a small, capped bonus " +
@@ -123,22 +125,29 @@ namespace NoVikingLeftBehind
         protected override void Bind()
         {
             _recomputeSec = BindSynced("RecomputeSec", 60,
-                "Seconds between playtime accrual + recompute passes on the server.");
+                "Seconds between playtime accrual + recompute passes on the server.",
+                Opt.N("How often the server recalculates playtime bonuses", 5, 600));
             _windowDays = BindSynced("WindowDays", 14,
-                "Only players seen within this many days count towards the group median.");
+                "Only players seen within this many days count towards the group median.",
+                Opt.N("How many recent days count towards the group's playtime", 1, 60));
             _minGroupSize = BindSynced("MinGroupSize", 3,
-                "Below this many players in the window, no bonus is handed out at all.");
+                "Below this many players in the window, no bonus is handed out at all.",
+                Opt.N("Minimum group size before any catch-up bonus applies", 1, 20));
             _maxBonus = BindSynced("MaxBonus", 1.0f,
-                "Maximum bonus. 1.0 = at most double rate for the furthest-behind player.");
+                "Maximum bonus. 1.0 = at most double rate for the furthest-behind player.",
+                Opt.N("Biggest possible gathering and XP bonus", 0, 5, 0.1));
             _gatherBonusEnabled = BindSynced("GatherBonusEnabled", true,
-                "Apply the catch-up factor to item drops the client produces (ore, wood, loot).");
+                "Apply the catch-up factor to item drops the client produces (ore, wood, loot).",
+                Opt.B("Give the furthest-behind players extra item drops"));
             _xpBonusEnabled = BindSynced("XpBonusEnabled", true,
-                "Apply the catch-up factor to skill XP gain.");
+                "Apply the catch-up factor to skill XP gain.",
+                Opt.B("Give the furthest-behind players extra skill XP"));
 
             if (CatchupUtil.SelfTestCfg == null)
                 CatchupUtil.SelfTestCfg = BindLocal("Catchup", "SelfTest", false,
                     "LOCAL diagnostic. Seeds fake playtime and skill data once, logs the computed " +
-                    "median / factors / ceilings, then does nothing more. Never sync this on.");
+                    "median / factors / ceilings, then does nothing more. Never sync this on.",
+                    Opt.B("Run a one-time diagnostic test with fake data").Admin());
         }
 
         protected override void ApplyPatches()

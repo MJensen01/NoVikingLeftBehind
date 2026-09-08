@@ -60,6 +60,8 @@ namespace NoVikingLeftBehind
     {
         public override string Name => "SettlementDiscount";
         public override string Section => "Settlement";
+        public override string Theme => "Building & gathering";
+        public override string Hint => "Build pieces cost less as your world clears more bosses";
 
         /// <summary>Client, except while the local SelfTest flag is on - see the class doc.</summary>
         public override ModuleSide Side =>
@@ -98,30 +100,36 @@ namespace NoVikingLeftBehind
 
             _perTierDiscount = BindSynced("PerTierDiscount", 0.10f,
                 "Fraction knocked off every build piece's cost per boss the world has killed " +
-                "([Frontier] WorldTier). 0.10 = 10% per boss: tier 3 pays 70%. 0 = off.");
+                "([Frontier] WorldTier). 0.10 = 10% per boss: tier 3 pays 70%. 0 = off.",
+                Opt.N("Cost cut per boss the world has killed", 0, 1, 0.05));
 
             _maxDiscount = BindSynced("MaxDiscount", 0.50f,
                 "Ceiling on the total settlement discount, as a fraction. 0.5 = build pieces " +
-                "never drop below half price however many bosses are down. Clamped to 0..0.95.");
+                "never drop below half price however many bosses are down. Clamped to 0..0.95.",
+                Opt.N("Biggest total discount build pieces can ever reach", 0, 0.95, 0.05));
 
             _minAmount = BindSynced("MinAmount", 1,
                 "Floor for a discounted requirement. 1 = a piece never becomes free. A " +
-                "requirement that already costs less than this is left alone.");
+                "requirement that already costs less than this is left alone.",
+                Opt.N("Fewest resources a discounted requirement can cost", 0, 20, 1));
 
             _excludePieces = BindSynced("ExcludePieces", "",
                 "Comma-separated piece PREFAB names that never get the settlement discount " +
                 "(portals, for example, if you would rather they stayed expensive). Empty = " +
-                "nothing is excluded.");
+                "nothing is excluded.",
+                Opt.T("Pieces that never get the settlement discount"));
 
             _onlyCategories = BindSynced("OnlyCategories", "",
                 "Comma-separated build categories to restrict the discount to: Misc, Crafting, " +
                 "BuildingWorkbench, BuildingStonecutter, Furniture, Feasts, Food, Meads. Empty " +
-                "(the default) = every category.");
+                "(the default) = every category.",
+                Opt.T("Which build categories get the settlement discount"));
 
             _selfTest = BindLocal("SelfTest", false,
                 "Diagnostic, local only, never synced. Flips this module's Side to Both so a " +
                 "dedicated server can log the factor and price five real build pieces before and " +
-                "after, once per world load. Changes no game state. Leave false in normal use.");
+                "after, once per world load. Changes no game state. Leave false in normal use.",
+                Opt.B("Log settlement discount pricing for five real pieces").Admin().Restart());
 
             ParseLists();
         }

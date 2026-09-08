@@ -51,6 +51,8 @@ namespace NoVikingLeftBehind
     internal sealed class FastMiningModule : FeatureModule
     {
         public override string Name => "FastMining";
+        public override string Theme => "Building & gathering";
+        public override string Hint => "Ore nodes behind the frontier mine faster and drop more";
 
         /// <summary>
         /// Normally Client. [Mining] SelfTest = true (machine-local) flips this to Both so the
@@ -110,30 +112,35 @@ namespace NoVikingLeftBehind
 
             _speedMult = BindSynced("SpeedMultiplier", 3.0f,
                 "Pickaxe damage multiplier applied to a hit on an ore node whose material tier is " +
-                "behind the frontier (see [Frontier] TiersBehind). 1.0 = vanilla speed.");
+                "behind the frontier (see [Frontier] TiersBehind). 1.0 = vanilla speed.",
+                Opt.N("How much faster pickaxes mine behind-the-frontier ore", 1, 10, 0.5));
 
             _dropMult = BindSynced("DropMultiplier", 1.0f,
                 "Extra-drops multiplier for the same behind-the-frontier ore nodes. 1.0 = vanilla " +
                 "drop count. 2.0 = always double, 1.5 = 50% chance of one extra full copy of the " +
-                "drop list, etc.");
+                "drop list, etc.",
+                Opt.N("Extra ore drops from behind-the-frontier nodes", 1, 5, 0.25));
 
             _ignoreToolTier = BindSynced("IgnoreToolTier", false,
                 "Let a pickaxe below the node's required tool tier mine a behind-the-frontier ore " +
                 "node anyway (raises the hit's tool tier to the node's own requirement before the " +
-                "vanilla tool-tier check runs).");
+                "vanilla tool-tier check runs).",
+                Opt.B("Let any pickaxe mine behind-the-frontier ore nodes"));
 
             _oreNodes = BindSynced("OreNodes", DefaultOreNodes,
                 "Ore node prefabs FastMining applies to, as name:tier,name:tier. The tier is the " +
                 "material tier checked against the frontier (see [Tiers]/[Frontier]) - it does not " +
                 "have to match [Tiers] MaterialTiers, but normally should. Names are resolved " +
-                "against ZNetScene's prefab list at runtime; unknown names are logged and ignored.");
+                "against ZNetScene's prefab list at runtime; unknown names are logged and ignored.",
+                Opt.T("Which ore prefabs get the mining speed boost"));
 
             _selfTest = BindLocal("SelfTest", false,
                 "Diagnostic, local only, never synced. On next ZNetScene load, logs each " +
                 "configured ore prefab's component family (Destructible / MineRock5 / MineRock) " +
                 "and m_minToolTier, then runs the pure speed-multiplier function against " +
                 "rock4_copper and silvervein with a fake 30-damage hit and logs the result. " +
-                "Changes no game state. Leave false in normal use.");
+                "Changes no game state. Leave false in normal use.",
+                Opt.B("Log ore node speed test results once per load").Admin().Restart());
         }
 
         protected override void ApplyPatches()

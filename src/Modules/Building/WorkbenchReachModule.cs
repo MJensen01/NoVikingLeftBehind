@@ -69,6 +69,8 @@ namespace NoVikingLeftBehind
         public override string Name => "WorkbenchReach";
         public override string Section => "Workbench";
         public override ModuleSide Side => ModuleSide.Both;
+        public override string Theme => "Building & gathering";
+        public override string Hint => "How far a workbench reaches, grows with bosses and upgrades";
 
         protected override string EnabledDescription =>
             "Workbench build range grows with the world's boss progress and with the bench's own " +
@@ -109,28 +111,33 @@ namespace NoVikingLeftBehind
             _perTier = BindSynced("PerTierMetres", 2f,
                 "Extra build range, in metres, for every boss the world has killed " +
                 "([Frontier] WorldTier). 2 = +2 m per boss, so a world that has cleared all " +
-                "seven gets +14 m. 0 = no progress bonus.");
+                "seven gets +14 m. 0 = no progress bonus.",
+                Opt.N("Extra workbench range per world boss killed", 0, 15, 0.5));
 
             _perLevel = BindSynced("PerLevelMetres", 6f,
                 "Extra build range, in metres, per level of the bench above 1 - a level is one " +
                 "attached station extension (chopping block, tanning rack, ...). 6 = a level-5 " +
                 "bench gets +24 m. This is on top of vanilla's own m_extraRangePerLevel, which " +
-                "is 0 on the vanilla workbench.");
+                "is 0 on the vanilla workbench.",
+                Opt.N("Extra workbench range per bench upgrade level", 0, 40, 1));
 
             _maxRange = BindSynced("MaxRangeMetres", 60f,
                 "Hard cap on the effective build range in metres, whatever the tier and level add " +
-                "up to. The result is also never below the vanilla range.");
+                "up to. The result is also never below the vanilla range.",
+                Opt.N("Highest possible workbench build range, in metres", 10, 200, 5));
 
             _stationsCfg = BindSynced("Stations", DefaultStations,
                 "Comma-separated crafting-station PREFAB names this applies to. Default: the " +
                 "workbench only. Add piece_stonecutter, forge, piece_artisanstation etc. to " +
-                "extend those too. Unknown names are simply never matched.");
+                "extend those too. Unknown names are simply never matched.",
+                Opt.T("Which crafting stations get the extended build range"));
 
             _selfTest = BindLocal("SelfTest", false,
                 "Diagnostic, local only, never synced. Once per world load, log each configured " +
                 "station's vanilla m_rangeBuild / m_extraRangePerLevel read from the real prefab " +
                 "and the effective range this module computes at levels 1, 3 and 5 for the " +
-                "current world tier. Changes no game state. Leave false in normal use.");
+                "current world tier. Changes no game state. Leave false in normal use.",
+                Opt.B("Log workbench range numbers for every configured station").Admin());
 
             ParseStations();
         }

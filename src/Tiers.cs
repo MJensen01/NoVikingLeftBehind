@@ -41,7 +41,8 @@ namespace NoVikingLeftBehind
                 "Elder, 3 Bonemass, 4 Moder, 5 Yagluth, 6 The Queen, 7 Fader. Anything not " +
                 "listed is tier 0 and is never treated as behind the frontier. Prefab names are " +
                 "checked against ObjectDB once the game has loaded; unknown names are logged as " +
-                "a warning and otherwise ignored.", null);
+                "a warning and otherwise ignored.", null,
+                Opt.T("Which materials are behind the frontier, and by how much"));
 
             NoVikingLeftBehindPlugin.ConfigChanged += OnConfigChanged;
             Parse();

@@ -1,5 +1,63 @@
 # Changelog — NoVikingLeftBehind
 
+## 0.7.0 (2026-09-08)
+**The settings menu** — a NoVikingLeftBehind tab inside Valheim's own Settings screen, usable by everyone on the
+server, that changes any hot-reloadable setting live. Until now only whoever had a shell on the server box could
+change anything, which is not much use to friends playing while the owner is at work. 33 modules -> **35 modules**;
+every one of the **235 settings** now describes itself. Nothing about the config file changes: `cfg.py`, the
+timestamped backups and hand edits all keep working exactly as before.
+
+- **Every setting declares itself** (`src/Config/Opt.cs`, `src/Config/ConfigCatalog.cs`). The two bind helpers
+  every module already goes through, `BindSynced` / `BindLocal`, take an optional `Opt` carrying a **hint**
+  (<= 12 words, plain language, what it affects), a **range** (min/max/step) for numbers, **choices** for pick-one
+  strings, a **tier** (who may change it) and **live** (false where a value is only read once at boot).
+  `FeatureModule` gained `Theme` and `Hint` so each module has a group and a one-liner too. The result is a
+  `ConfigCatalog` that the settings tab, the server's validation and the new `nvlb.catalog` console command all
+  read, so the three can never disagree. Counts on a fresh server: 235 settings, 183 synced / 52 local, 193
+  Everyone / 42 admin-only, 224 live / 11 restart-only.
+  Ranges are deliberately **not** handed to BepInEx as `AcceptableValueRange`: BepInEx clamps to an acceptable
+  range when it loads a file, which would silently rewrite a server's existing cfg the first time a range here
+  turned out to be too tight. They are advisory for the UI and enforced only at the door, where a refusal is
+  visible and reversible.
+- **Access — new module** (`src/Access/AccessModule.cs`, `[Access]`, Side `Both`). One door, on the server, that
+  every change goes through. A client sends `NVLB_Tweak(section, key, value)` over `ZRoutedRpc`; the server checks
+  `[Access] TweakAccess` (`Everyone` by default), the per-setting tier against `adminlist.txt`, that the setting is
+  known and live, parses and validates the value against the catalog, rate-limits the sender
+  (`MaxChangesPer10s=10`), and then **writes the cfg file on disk** with a timestamped `.bak-` backup in exactly
+  the format `cfg.py` uses — so the existing file watcher, `Config.Reload()` and ServerSync push it to everyone
+  through the path that already existed. The cfg file stays the one source of truth; the mod does not grow a
+  second config system. Every change is announced once to the whole server (`Announce=Chat` by default,
+  `Message` / `Both` / `Off` available) and written to the server log, and the server keeps a 20-deep-per-key undo
+  history behind `NVLB_Undo`. `NVLB_ResetModule` puts a whole section back to its defaults under a single backup.
+  Local (per-player) settings never reach the server at all — the tab writes the client's own cfg.
+  `[Access] SelfTest=true` makes a dedicated server drive the entire door once at world load — change a setting,
+  re-read the file from disk to prove it changed, hold for 45 seconds, undo, re-read again — and log every step.
+  Admin-only by default: `[ServerKeys]` (every key), `[General] EnforceClientMod` / `Mode` / `HotReload`,
+  `[Debug] AllowTestCommands`, every `SelfTest` / `DryRun`, and `[Access]` itself. `[Frontier] TierOverride` and
+  `[Tiers] MaterialTiers` are deliberately left open to everyone — players may move their own frontier.
+- **SettingsMenu — new module** (`src/Ui/SettingsMenuModule.cs`, `[SettingsMenu]`, Side `Client`). A
+  **NoVikingLeftBehind** tab in Valheim's Settings screen, from the pause menu in game and from the main menu.
+  Left column: every module grouped by theme, each with its `Enabled` toggle inline. Right column: the selected
+  module's settings, one row each — label, the hint underneath, a control (toggle / slider with a typed number
+  box / pick-one / text field), a reset-to-default button, and the full description on hover. A search box at the
+  top filters label, key, hint and description across all 235 settings. The header says who may change things and
+  shows the last five changes anyone made; the footer has Undo and Reset-module. Values move under you when
+  somebody else changes something, because the row redraws on `SettingChanged` rather than on a click. A row you
+  may not change is greyed with the reason — "Needs a server restart", "Only a server admin can change this",
+  "Join a server to change this" — rather than hidden, so everyone can see what the mod can do
+  (`[SettingsMenu] ShowUnavailable=false` hides them instead).
+  The hook is a **prefix** on `Settings.Awake`, not a postfix: `Awake` calls `InitializeTabs()`, which snapshots
+  the tab list into a private list it later indexes by tab number, so a tab added afterwards would index out of
+  range. Added first, with a component implementing `Valheim.SettingsGui.ISettingsTab` on its page, vanilla drives
+  the tab exactly as it drives Gameplay or Audio.
+  **No art is shipped.** Every control is a runtime clone of a vanilla one found on the other settings pages, so
+  the tab inherits the game's fonts, colours, parchment and UI scale — and keeps inheriting them through a
+  reskin. Clones have their prefab-authored UnityEvents replaced and their page-bound tooltips stripped, because
+  `Instantiate` keeps persistent listeners whose targets live outside the copied subtree.
+- **`nvlb.catalog`** — new console command next to `nvlb.status`: every setting with its hint, type, range,
+  permission tier and whether it applies live, optionally filtered by text. A dedicated server, which has no
+  terminal, writes the same content to `nvlb-catalog.tsv` beside its cfg at boot.
+
 ## 0.6.0 (2026-09-08)
 **Building & gathering** — four new modules for the half of Valheim that is a construction game: tools that tear
 through material they outclass, a workbench whose reach grows with your settlement, cheaper building as the clan

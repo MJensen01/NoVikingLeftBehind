@@ -1,0 +1,1058 @@
+using System;
+using System.Collections.Generic;
+using BepInEx.Configuration;
+using TMPro;
+using UnityEngine;
+using UnityEngine.EventSystems;
+using UnityEngine.UI;
+using Valheim.SettingsGui;
+
+namespace NoVikingLeftBehind
+{
+    /// <summary>
+    /// The **NoVikingLeftBehind** tab inside Valheim's own Settings menu.
+    ///
+    /// How it gets there
+    /// -----------------
+    /// <c>Settings.Awake</c> calls <c>InitializeTabs()</c>, which builds its <c>SettingsTabs</c>
+    /// list by asking every <c>TabHandler.Tab</c>'s page for an <see cref="ISettingsTab"/> - with
+    /// no null check - and later indexes that list by tab number. So the tab must be added
+    /// *before* <c>InitializeTabs</c> runs and its page must carry an <c>ISettingsTab</c>: hence a
+    /// **prefix** on <c>Settings.Awake</c> and this class implementing that interface. Done that
+    /// way, vanilla drives us exactly as it drives its own pages - Initialize, OnTabOpen, OnOk,
+    /// OnBack, Terminate - and nothing needs to be re-implemented.
+    ///
+    /// The whole Settings object is destroyed on close (<c>CloseSettings</c> -> <c>Destroy</c>)
+    /// and re-instantiated from a prefab on every open, from both <c>Menu.OnSettings</c> (pause
+    /// menu) and <c>FejdStartup.OnButtonSettings</c> (main menu), so everything here is rebuilt
+    /// each time and nothing is cached across opens.
+    ///
+    /// Nothing is shipped: every control is a clone of a vanilla one found on the other settings
+    /// pages (see <see cref="UiKit"/>), so the tab inherits the game's font, colours and scaling.
+    ///
+    /// What a row can do
+    /// -----------------
+    /// A **synced** setting is never written here. The row asks the server through
+    /// <see cref="TweakDoor"/>, the server decides, writes its own cfg and pushes the value back
+    /// over ServerSync - so the row updates because the *value changed*, not because it was
+    /// clicked. A **local** setting is written straight to this machine's cfg. Rows the player may
+    /// not change are shown greyed with the reason, rather than hidden, so everyone can see what
+    /// exists.
+    /// </summary>
+    internal sealed class NvlbSettingsTab : MonoBehaviour, ISettingsTab
+    {
+        public const string TabTitle = "NoVikingLeftBehind";
+
+        // ISettingsTab requires this event. Nothing here participates in vanilla's shared
+        // settings (ToggleRun and friends), so it is never raised - but it must exist and be
+        // subscribable, because Settings.InitializeTabs adds a handler to every tab it finds.
+        private Action<string, int> _sharedSettingChanged;
+        public event Action<string, int> SharedSettingChanged
+        {
+            add { _sharedSettingChanged += value; }
+            remove { _sharedSettingChanged -= value; }
+        }
+
+        private Settings _settings;
+        private RectTransform _page;
+
+        private RectTransform _leftContent, _rightContent;
+        private ScrollRect _leftScroll, _rightScroll;
+        private TMP_InputField _search;
+        private TMP_Text _accessText, _auditText, _statusText;
+        private Button _undoButton, _resetButton;
+
+        private readonly List<Row> _rows = new List<Row>();
+        private readonly List<ModuleRow> _moduleRows = new List<ModuleRow>();
+        private FeatureModule _selected;
+        private string _filter = "";
+        private bool _suppress;          // set while we write a control from a value, not vice versa
+        private bool _built;
+        private float _lastWidth;
+        private string _resetGlyph = "Reset";
+
+        private const float RowH = 54f;
+        private const float ModuleRowH = 30f;
+        private const float ThemeRowH = 26f;
+        private const float HeaderH = 104f;
+        private const float FooterH = 44f;
+        private const float LeftW = 300f;
+
+        // ---- installation (called from the Settings.Awake prefix) --------------------------------
+
+        public static void Install(Settings settings)
+        {
+            if (settings == null) return;
+
+            var handler = settings.GetComponentInChildren<TabHandler>(true);
+            if (handler == null || handler.m_tabs == null || handler.m_tabs.Count == 0) return;
+
+            foreach (var t in handler.m_tabs)
+                if (t != null && t.m_page != null && t.m_page.name == "NVLB_Page") return;   // already in
+
+            var donor = handler.m_tabs[handler.m_tabs.Count - 1];
+            if (donor == null || donor.m_button == null || donor.m_page == null) return;
+
+            // ---- the page ---------------------------------------------------------------------
+            var pageGo = new GameObject("NVLB_Page", typeof(RectTransform));
+            var page = (RectTransform)pageGo.transform;
+            page.SetParent(donor.m_page.parent, false);
+            CopyRect(donor.m_page, page);
+            pageGo.SetActive(false);
+
+            var tab = pageGo.AddComponent<NvlbSettingsTab>();
+            tab._settings = settings;
+            tab._page = page;
+
+            // ---- the tab button ----------------------------------------------------------------
+            var buttonGo = UnityEngine.Object.Instantiate(donor.m_button.gameObject,
+                                                          donor.m_button.transform.parent, false);
+            buttonGo.name = "NVLB_Tab";
+            var button = buttonGo.GetComponent<Button>();
+
+            // Instantiate keeps prefab-authored onClick calls, whose target (the TabHandler) is
+            // outside the cloned subtree - the clone would switch to the donor's tab. Assigning a
+            // fresh event is the only way to drop persistent listeners.
+            button.onClick = new Button.ButtonClickedEvent();
+
+            foreach (var txt in buttonGo.GetComponentsInChildren<TMP_Text>(true))
+            {
+                txt.text = TabTitle;
+                txt.enableAutoSizing = true;
+                txt.fontSizeMin = 8f;
+                txt.overflowMode = TextOverflowModes.Ellipsis;
+            }
+
+            // Tab buttons are positioned in the prefab, not by a layout group on every skin, so
+            // step along by the gap between the last two when there is no layout group to do it.
+            var brt = (RectTransform)buttonGo.transform;
+            if (donor.m_button.transform.parent.GetComponent<LayoutGroup>() == null && handler.m_tabs.Count >= 2)
+            {
+                var a = (RectTransform)handler.m_tabs[handler.m_tabs.Count - 1].m_button.transform;
+                var b = (RectTransform)handler.m_tabs[handler.m_tabs.Count - 2].m_button.transform;
+                brt.anchoredPosition = a.anchoredPosition + (a.anchoredPosition - b.anchoredPosition);
+            }
+            buttonGo.SetActive(true);
+
+            int index = handler.m_tabs.Count;
+            handler.m_tabs.Add(new TabHandler.Tab
+            {
+                m_button = button,
+                m_page = page,
+                m_default = false,
+                m_onClick = new UnityEngine.Events.UnityEvent()
+            });
+            button.onClick.AddListener(delegate { handler.SetActiveTab(index); });
+
+            NoVikingLeftBehindPlugin.Log.LogInfo("[SettingsMenu] tab added at index " + index +
+                                                 " of " + handler.m_tabs.Count);
+        }
+
+        private static void CopyRect(RectTransform from, RectTransform to)
+        {
+            to.anchorMin = from.anchorMin;
+            to.anchorMax = from.anchorMax;
+            to.pivot = from.pivot;
+            to.anchoredPosition = from.anchoredPosition;
+            to.sizeDelta = from.sizeDelta;
+            to.offsetMin = from.offsetMin;
+            to.offsetMax = from.offsetMax;
+            to.localScale = Vector3.one;
+        }
+
+        // ---- ISettingsTab ---------------------------------------------------------------------------
+
+        public void Initialize()
+        {
+            try
+            {
+                UiKit.Discover(_settings != null ? _settings.gameObject : gameObject);
+                if (!UiKit.Ready)
+                {
+                    NoVikingLeftBehindPlugin.Log.LogWarning(
+                        "[SettingsMenu] no vanilla controls to clone - the tab will stay empty");
+                    return;
+                }
+                Build();
+                _built = true;
+            }
+            catch (Exception e)
+            {
+                NoVikingLeftBehindPlugin.Log.LogError("[SettingsMenu] could not build the tab: " + e);
+            }
+        }
+
+        public void OnTabOpen(Button backButton, Button okButton)
+        {
+            try
+            {
+                TweakDoor.RequestAudit();
+                RefreshAll();
+            }
+            catch (Exception e) { NoVikingLeftBehindPlugin.Log.LogError("[SettingsMenu] OnTabOpen: " + e); }
+        }
+
+        /// <summary>
+        /// Changes here are applied the moment they are made (the server has already written
+        /// them), so OK has nothing to save. Vanilla waits for the callback before closing.
+        /// </summary>
+        public void OnOkAsync(OkActionCompletedHandler okActionCompletedCallback)
+        {
+            if (okActionCompletedCallback != null) okActionCompletedCallback();
+        }
+
+        /// <summary>Back does NOT revert: a change was already announced to everyone.</summary>
+        public void OnBack() { }
+
+        public void Terminate()
+        {
+            try
+            {
+                if (NoVikingLeftBehindPlugin.Cfg != null)
+                    NoVikingLeftBehindPlugin.Cfg.SettingChanged -= OnAnySettingChanged;
+                TweakDoor.Result -= OnDoorResult;
+                TweakDoor.AuditChanged -= OnAuditChanged;
+                UiKit.Hover.HidePanel();
+                UiKit.Hover.Panel = null;
+            }
+            catch { /* closing down */ }
+        }
+
+        public void OnSharedSettingChanged(string setting, int value) { }
+
+        private void OnDestroy() { Terminate(); }
+
+        private void Update()
+        {
+            if (!_built) return;
+            UiKit.Hover.Tick();
+
+            // The page's width is only real once the canvas has laid out; re-flow once it settles.
+            float w = _page != null ? _page.rect.width : 0f;
+            if (w > 100f && Mathf.Abs(w - _lastWidth) > 1f)
+            {
+                _lastWidth = w;
+                LayoutRebuilder.MarkLayoutForRebuild(_page);
+            }
+        }
+
+        // ---- building ----------------------------------------------------------------------------------
+
+        private void Build()
+        {
+            if (UiKit.Ready)
+            {
+                var fontAsset = ResolveFont();
+                if (fontAsset != null && fontAsset.HasCharacter('↺')) _resetGlyph = "↺";
+            }
+
+            UiKit.Hover.EnsurePanel(_page);
+
+            // ---- header --------------------------------------------------------------------
+            var header = UiKit.Panel("Header", _page);
+            header.anchorMin = new Vector2(0f, 1f);
+            header.anchorMax = new Vector2(1f, 1f);
+            header.pivot = new Vector2(0.5f, 1f);
+            header.offsetMin = new Vector2(0f, -HeaderH);
+            header.offsetMax = new Vector2(0f, 0f);
+            header.anchoredPosition = new Vector2(0f, 0f);
+
+            var searchLabel = UiKit.Label(header, "Search", UiKit.BaseFontSize * 0.9f,
+                                          TextAlignmentOptions.MidlineLeft);
+            UiKit.Place((RectTransform)searchLabel.transform, 8f, 6f, 70f, 26f);
+
+            _search = UiKit.Input(header, 300f, 26f);
+            if (_search != null)
+            {
+                UiKit.Place((RectTransform)_search.transform, 80f, 6f, 300f, 26f);
+                if (_search.placeholder != null)
+                    ((TMP_Text)_search.placeholder).text = "name, key, hint or description";
+                _search.onValueChanged.AddListener(delegate (string s)
+                {
+                    _filter = (s ?? "").Trim();
+                    RebuildRight();
+                });
+            }
+
+            _accessText = UiKit.Label(header, "", UiKit.BaseFontSize * 0.85f,
+                                      TextAlignmentOptions.MidlineLeft, UiKit.HintColor);
+            var art = (RectTransform)_accessText.transform;
+            art.anchorMin = new Vector2(0f, 1f);
+            art.anchorMax = new Vector2(1f, 1f);
+            art.pivot = new Vector2(0f, 1f);
+            art.offsetMin = new Vector2(8f, -60f);
+            art.offsetMax = new Vector2(-420f, -36f);
+
+            _auditText = UiKit.Label(header, "", UiKit.BaseFontSize * 0.72f,
+                                     TextAlignmentOptions.TopRight, UiKit.HintColor);
+            var aurt = (RectTransform)_auditText.transform;
+            aurt.anchorMin = new Vector2(1f, 1f);
+            aurt.anchorMax = new Vector2(1f, 1f);
+            aurt.pivot = new Vector2(1f, 1f);
+            aurt.anchoredPosition = new Vector2(-8f, -4f);
+            aurt.sizeDelta = new Vector2(400f, HeaderH - 8f);
+            _auditText.enableWordWrapping = false;
+
+            var rule = UiKit.Fill(header, new Color(UiKit.TextColor.r, UiKit.TextColor.g,
+                                                    UiKit.TextColor.b, 0.18f));
+            UiKit.Place((RectTransform)rule.transform, 0f, HeaderH - 2f, 4000f, 1f);
+
+            // ---- left: the module list ------------------------------------------------------
+            _leftScroll = UiKit.Scroll(_page, "Modules", out _leftContent);
+            var lrt = (RectTransform)_leftScroll.transform;
+            lrt.anchorMin = new Vector2(0f, 0f);
+            lrt.anchorMax = new Vector2(0f, 1f);
+            lrt.pivot = new Vector2(0f, 0.5f);
+            lrt.offsetMin = new Vector2(4f, FooterH);
+            lrt.offsetMax = new Vector2(LeftW, -HeaderH);
+            lrt.sizeDelta = new Vector2(LeftW - 4f, lrt.sizeDelta.y);
+
+            // ---- right: the selected module's settings --------------------------------------
+            _rightScroll = UiKit.Scroll(_page, "Settings", out _rightContent);
+            var rrt = (RectTransform)_rightScroll.transform;
+            rrt.anchorMin = new Vector2(0f, 0f);
+            rrt.anchorMax = new Vector2(1f, 1f);
+            rrt.pivot = new Vector2(0.5f, 0.5f);
+            rrt.offsetMin = new Vector2(LeftW + 8f, FooterH);
+            rrt.offsetMax = new Vector2(-8f, -HeaderH);
+
+            // ---- footer ----------------------------------------------------------------------
+            var footer = UiKit.Panel("Footer", _page);
+            footer.anchorMin = new Vector2(0f, 0f);
+            footer.anchorMax = new Vector2(1f, 0f);
+            footer.pivot = new Vector2(0.5f, 0f);
+            footer.offsetMin = new Vector2(0f, 0f);
+            footer.offsetMax = new Vector2(0f, FooterH);
+
+            _undoButton = UiKit.Button(footer, "Undo last change");
+            if (_undoButton != null)
+            {
+                UiKit.Place((RectTransform)_undoButton.transform, 8f, FooterH - 6f, 180f, 30f);
+                _undoButton.onClick.AddListener(delegate { TweakDoor.RequestUndo(); });
+                UiKit.Tip(_undoButton.gameObject,
+                    "Put the most recent change on this server back to what it was. " +
+                    "The server keeps the last 20 changes per setting.");
+            }
+
+            _resetButton = UiKit.Button(footer, "Reset module to defaults");
+            if (_resetButton != null)
+            {
+                UiKit.Place((RectTransform)_resetButton.transform, 196f, FooterH - 6f, 220f, 30f);
+                _resetButton.onClick.AddListener(delegate
+                {
+                    if (_selected != null) TweakDoor.RequestResetModule(_selected.Section);
+                });
+                UiKit.Tip(_resetButton.gameObject,
+                    "Put every setting in the selected module back to the value it ships with.");
+            }
+
+            _statusText = UiKit.Label(footer, "", UiKit.BaseFontSize * 0.85f,
+                                      TextAlignmentOptions.MidlineRight, UiKit.HintColor);
+            var srt = (RectTransform)_statusText.transform;
+            srt.anchorMin = new Vector2(1f, 0f);
+            srt.anchorMax = new Vector2(1f, 0f);
+            srt.pivot = new Vector2(1f, 0f);
+            srt.anchoredPosition = new Vector2(-8f, 8f);
+            srt.sizeDelta = new Vector2(520f, 26f);
+
+            // ---- wiring ------------------------------------------------------------------------
+            NoVikingLeftBehindPlugin.Cfg.SettingChanged += OnAnySettingChanged;
+            TweakDoor.Result += OnDoorResult;
+            TweakDoor.AuditChanged += OnAuditChanged;
+
+            BuildModuleList();
+            if (_selected == null && _moduleRows.Count > 0) _selected = _moduleRows[0].Module;
+            RebuildRight();
+            RefreshHeader();
+        }
+
+        private TMP_FontAsset ResolveFont()
+        {
+            var probe = UiKit.Label(_page, "", 10f, TextAlignmentOptions.Left);
+            if (probe == null) return null;
+            var font = probe.font;
+            UnityEngine.Object.Destroy(probe.gameObject);
+            return font;
+        }
+
+        // ---- left column -------------------------------------------------------------------------------
+
+        private sealed class ModuleRow
+        {
+            public FeatureModule Module;
+            public TMP_Text Label;
+            public Toggle Enabled;
+            public SettingInfo EnabledInfo;
+            public GameObject Root;
+        }
+
+        private void BuildModuleList()
+        {
+            float y = 4f;
+            string theme = null;
+
+            foreach (var module in ConfigCatalog.ModulesForUi())
+            {
+                if (module.Theme != theme)
+                {
+                    theme = module.Theme;
+                    var head = UiKit.Label(_leftContent, theme.ToUpperInvariant(),
+                                           UiKit.BaseFontSize * 0.72f, TextAlignmentOptions.BottomLeft,
+                                           UiKit.HintColor);
+                    UiKit.Place((RectTransform)head.transform, 6f, y, LeftW - 20f, ThemeRowH);
+                    y += ThemeRowH;
+                }
+
+                var rowGo = new GameObject("Mod_" + module.Name, typeof(RectTransform));
+                rowGo.transform.SetParent(_leftContent, false);
+                var rowRt = UiKit.Place((RectTransform)rowGo.transform, 0f, y, LeftW - 12f, ModuleRowH);
+
+                var name = UiKit.Label(rowRt, module.Name, UiKit.BaseFontSize * 0.92f,
+                                       TextAlignmentOptions.MidlineLeft);
+                UiKit.Place((RectTransform)name.transform, 14f, 2f, LeftW - 70f, ModuleRowH - 4f);
+
+                var picker = new GameObject("Pick", typeof(RectTransform));
+                picker.transform.SetParent(rowRt, false);
+                UiKit.Stretch((RectTransform)picker.transform);
+                var mod = module;
+                UiKit.Tip(picker, ModuleTooltip(mod));
+                var pickBtn = picker.AddComponent<Button>();
+                pickBtn.transition = Selectable.Transition.None;
+                pickBtn.onClick.AddListener(delegate { Select(mod); });
+
+                var mr = new ModuleRow { Module = module, Label = name, Root = rowGo };
+
+                mr.EnabledInfo = ConfigCatalog.Find(module.Section, "Enabled");
+                var toggle = UiKit.Toggle(rowRt);
+                if (toggle != null)
+                {
+                    var trt = (RectTransform)toggle.transform;
+                    trt.anchorMin = new Vector2(1f, 1f);
+                    trt.anchorMax = new Vector2(1f, 1f);
+                    trt.pivot = new Vector2(1f, 1f);
+                    trt.anchoredPosition = new Vector2(-6f, -3f);
+                    var info = mr.EnabledInfo;
+                    toggle.onValueChanged.AddListener(delegate (bool on)
+                    {
+                        if (_suppress || info == null) return;
+                        Apply(info, on ? "true" : "false");
+                    });
+                    mr.Enabled = toggle;
+                }
+
+                _moduleRows.Add(mr);
+                y += ModuleRowH + 2f;
+            }
+
+            // Plugin-level settings that belong to no module: [General], [Frontier], [Tiers].
+            var orphans = ConfigCatalog.Orphans();
+            if (orphans.Count > 0)
+            {
+                var head = UiKit.Label(_leftContent, "THE WHOLE MOD", UiKit.BaseFontSize * 0.72f,
+                                       TextAlignmentOptions.BottomLeft, UiKit.HintColor);
+                UiKit.Place((RectTransform)head.transform, 6f, y, LeftW - 20f, ThemeRowH);
+                y += ThemeRowH;
+
+                foreach (var section in OrphanSections(orphans))
+                {
+                    var rowGo = new GameObject("Sec_" + section, typeof(RectTransform));
+                    rowGo.transform.SetParent(_leftContent, false);
+                    var rowRt = UiKit.Place((RectTransform)rowGo.transform, 0f, y, LeftW - 12f, ModuleRowH);
+                    var name = UiKit.Label(rowRt, section, UiKit.BaseFontSize * 0.92f,
+                                           TextAlignmentOptions.MidlineLeft);
+                    UiKit.Place((RectTransform)name.transform, 14f, 2f, LeftW - 30f, ModuleRowH - 4f);
+
+                    var picker = new GameObject("Pick", typeof(RectTransform));
+                    picker.transform.SetParent(rowRt, false);
+                    UiKit.Stretch((RectTransform)picker.transform);
+                    string sec = section;
+                    UiKit.Tip(picker, "Settings that apply to the whole mod rather than one feature.");
+                    var pickBtn = picker.AddComponent<Button>();
+                    pickBtn.transition = Selectable.Transition.None;
+                    pickBtn.onClick.AddListener(delegate { SelectSection(sec); });
+
+                    _moduleRows.Add(new ModuleRow { Module = null, Label = name, Root = rowGo });
+                    _orphanSectionOf[rowGo] = section;
+                    y += ModuleRowH + 2f;
+                }
+            }
+
+            UiKit.FitContent(_leftContent, y + 8f);
+        }
+
+        private readonly Dictionary<GameObject, string> _orphanSectionOf = new Dictionary<GameObject, string>();
+        private string _selectedSection;
+
+        private static List<string> OrphanSections(List<SettingInfo> orphans)
+        {
+            var seen = new List<string>();
+            foreach (var s in orphans) if (!seen.Contains(s.Section)) seen.Add(s.Section);
+            seen.Sort(StringComparer.Ordinal);
+            return seen;
+        }
+
+        private static string ModuleTooltip(FeatureModule m)
+        {
+            string hint = string.IsNullOrEmpty(m.Hint) ? "" : m.Hint + "\n\n";
+            return hint + "Section [" + m.Section + "]   runs on: " + m.Side + "\n" +
+                   "State on this machine: " + m.Status;
+        }
+
+        private void Select(FeatureModule module)
+        {
+            _selected = module;
+            _selectedSection = module != null ? module.Section : null;
+            RebuildRight();
+        }
+
+        private void SelectSection(string section)
+        {
+            _selected = null;
+            _selectedSection = section;
+            RebuildRight();
+        }
+
+        // ---- right column ----------------------------------------------------------------------------------
+
+        private sealed class Row
+        {
+            public SettingInfo Info;
+            public GameObject Root;
+            public TMP_Text Label, Hint, Note;
+            public Toggle Toggle;
+            public Slider Slider;
+            public TMP_InputField Input;
+            public TMP_Text CycleText;
+            public Button Left, Right, Reset;
+            public bool Editable;
+        }
+
+        private void RebuildRight()
+        {
+            foreach (var r in _rows) if (r.Root != null) UnityEngine.Object.Destroy(r.Root);
+            _rows.Clear();
+            for (int i = _rightContent.childCount - 1; i >= 0; i--)
+                UnityEngine.Object.Destroy(_rightContent.GetChild(i).gameObject);
+
+            var wanted = Wanted();
+            float y = 4f;
+            string section = null;
+
+            foreach (var info in wanted)
+            {
+                if (info.Section != section)
+                {
+                    section = info.Section;
+                    var head = UiKit.Label(_rightContent, "[" + section + "]",
+                                           UiKit.BaseFontSize * 0.8f, TextAlignmentOptions.BottomLeft,
+                                           UiKit.HintColor);
+                    var hrt = (RectTransform)head.transform;
+                    hrt.anchorMin = new Vector2(0f, 1f);
+                    hrt.anchorMax = new Vector2(1f, 1f);
+                    hrt.pivot = new Vector2(0f, 1f);
+                    hrt.offsetMin = new Vector2(8f, -(y + ThemeRowH));
+                    hrt.offsetMax = new Vector2(-8f, -y);
+                    y += ThemeRowH;
+                }
+
+                _rows.Add(BuildRow(info, y));
+                y += RowH;
+            }
+
+            if (wanted.Count == 0)
+            {
+                var none = UiKit.Label(_rightContent,
+                    string.IsNullOrEmpty(_filter) ? "Nothing to show." : "Nothing matches \"" + _filter + "\".",
+                    UiKit.BaseFontSize, TextAlignmentOptions.TopLeft, UiKit.HintColor);
+                UiKit.Place((RectTransform)none.transform, 12f, 12f, 600f, 30f);
+                y += 40f;
+            }
+
+            UiKit.FitContent(_rightContent, y + 12f);
+            _rightScroll.verticalNormalizedPosition = 1f;
+            RefreshAll();
+        }
+
+        /// <summary>Which settings the right column should show right now.</summary>
+        private List<SettingInfo> Wanted()
+        {
+            var list = new List<SettingInfo>();
+            string needle = _filter.ToLowerInvariant();
+
+            if (needle.Length > 0)
+            {
+                foreach (var s in ConfigCatalog.All)
+                {
+                    if (!ConfigCatalog.Matches(s, needle)) continue;
+                    if (!Visible(s)) continue;
+                    list.Add(s);
+                    if (list.Count >= 80) break;      // a search is for finding, not for browsing
+                }
+                list.Sort(delegate (SettingInfo a, SettingInfo b)
+                {
+                    int c = string.CompareOrdinal(a.Section, b.Section);
+                    return c != 0 ? c : string.CompareOrdinal(a.Key, b.Key);
+                });
+                return list;
+            }
+
+            foreach (var s in ConfigCatalog.All)
+            {
+                if (!Visible(s)) continue;
+                if (_selected != null) { if (s.Owner == _selected) list.Add(s); }
+                else if (_selectedSection != null && s.Owner == null && s.Section == _selectedSection) list.Add(s);
+            }
+            return list;
+        }
+
+        /// <summary>
+        /// [SettingsMenu] ShowUnavailable, on by default: a row you cannot change is still listed
+        /// (greyed, with the reason) so everyone can see what the mod can do. Turn it off and the
+        /// menu only shows what you personally can act on.
+        /// </summary>
+        private static bool Visible(SettingInfo s)
+        {
+            if (SettingsMenuModule.ShowUnavailable) return true;
+            return WhyNot(s, null) == null;
+        }
+
+        private Row BuildRow(SettingInfo info, float y)
+        {
+            var row = new Row { Info = info };
+
+            var go = new GameObject("Row_" + info.Key, typeof(RectTransform));
+            go.transform.SetParent(_rightContent, false);
+            row.Root = go;
+            var rt = (RectTransform)go.transform;
+            rt.anchorMin = new Vector2(0f, 1f);
+            rt.anchorMax = new Vector2(1f, 1f);
+            rt.pivot = new Vector2(0f, 1f);
+            rt.offsetMin = new Vector2(0f, -(y + RowH));
+            rt.offsetMax = new Vector2(0f, -y);
+
+            row.Label = UiKit.Label(rt, info.Label, UiKit.BaseFontSize * 0.95f,
+                                    TextAlignmentOptions.MidlineLeft);
+            Span((RectTransform)row.Label.transform, 12f, 344f, 4f, 26f);
+
+            row.Hint = UiKit.Label(rt, info.Hint ?? "", UiKit.BaseFontSize * 0.78f,
+                                   TextAlignmentOptions.MidlineLeft, UiKit.HintColor);
+            Span((RectTransform)row.Hint.transform, 12f, 344f, 26f, 22f);
+
+            // The full description is the hover tooltip; the hint is the one-liner under the label.
+            var hot = new GameObject("Hot", typeof(RectTransform));
+            hot.transform.SetParent(rt, false);
+            Span((RectTransform)hot.transform, 8f, 344f, 2f, RowH - 4f);
+            UiKit.Tip(hot, Tooltip(info));
+
+            // ---- the control ------------------------------------------------------------------
+            var control = new GameObject("Control", typeof(RectTransform));
+            control.transform.SetParent(rt, false);
+            var crt = (RectTransform)control.transform;
+            crt.anchorMin = new Vector2(1f, 1f);
+            crt.anchorMax = new Vector2(1f, 1f);
+            crt.pivot = new Vector2(1f, 1f);
+            crt.anchoredPosition = new Vector2(-52f, -8f);
+            crt.sizeDelta = new Vector2(280f, 28f);
+
+            switch (info.TypeName)
+            {
+                case "bool": BuildBool(row, crt); break;
+                case "enum": BuildCycle(row, crt, info.Choices); break;
+                case "string":
+                    if (info.Choices != null && info.Choices.Length > 0) BuildCycle(row, crt, info.Choices);
+                    else BuildText(row, crt);
+                    break;
+                default: BuildNumber(row, crt); break;
+            }
+
+            // ---- reset to default -----------------------------------------------------------
+            row.Reset = UiKit.Button(rt, _resetGlyph);
+            if (row.Reset != null)
+            {
+                var brt = (RectTransform)row.Reset.transform;
+                brt.anchorMin = new Vector2(1f, 1f);
+                brt.anchorMax = new Vector2(1f, 1f);
+                brt.pivot = new Vector2(1f, 1f);
+                brt.anchoredPosition = new Vector2(-8f, -8f);
+                brt.sizeDelta = new Vector2(40f, 28f);
+                var captured = info;
+                row.Reset.onClick.AddListener(delegate { Apply(captured, captured.DefaultString); });
+                UiKit.Tip(row.Reset.gameObject, "Put this back to its default, " + info.DefaultString + ".");
+            }
+
+            // ---- the "you cannot change this" note --------------------------------------------
+            row.Note = UiKit.Label(rt, "", UiKit.BaseFontSize * 0.78f,
+                                   TextAlignmentOptions.MidlineRight, UiKit.DimColor);
+            var nrt = (RectTransform)row.Note.transform;
+            nrt.anchorMin = new Vector2(1f, 1f);
+            nrt.anchorMax = new Vector2(1f, 1f);
+            nrt.pivot = new Vector2(1f, 1f);
+            nrt.anchoredPosition = new Vector2(-52f, -8f);
+            nrt.sizeDelta = new Vector2(280f, 28f);
+            row.Note.gameObject.SetActive(false);
+
+            return row;
+        }
+
+        /// <summary>Stretch horizontally between a left inset and a right inset, at a fixed y/height.</summary>
+        private static void Span(RectTransform rt, float left, float right, float top, float height)
+        {
+            rt.anchorMin = new Vector2(0f, 1f);
+            rt.anchorMax = new Vector2(1f, 1f);
+            rt.pivot = new Vector2(0f, 1f);
+            rt.offsetMin = new Vector2(left, -(top + height));
+            rt.offsetMax = new Vector2(-right, -top);
+        }
+
+        private static string Tooltip(SettingInfo info)
+        {
+            var sb = new System.Text.StringBuilder();
+            sb.Append(info.Section).Append('.').Append(info.Key).Append('\n');
+            if (!string.IsNullOrEmpty(info.Description)) sb.Append('\n').Append(info.Description).Append('\n');
+            sb.Append('\n').Append("Default: ").Append(info.DefaultString);
+            sb.Append("   Type: ").Append(info.TypeName);
+            if (info.HasRange) sb.Append("   Range: ").Append(info.Min).Append(" to ").Append(info.Max);
+            sb.Append('\n').Append(info.IsLocal
+                ? "Saved on your own machine; nobody else is affected."
+                : "Shared with everyone on the server.");
+            if (info.Tier == SettingTier.Admin) sb.Append("   Admins only.");
+            if (!info.Live) sb.Append("   Needs a server restart.");
+            return sb.ToString();
+        }
+
+        // ---- the four control kinds ------------------------------------------------------------------
+
+        private void BuildBool(Row row, RectTransform control)
+        {
+            row.Toggle = UiKit.Toggle(control);
+            if (row.Toggle == null) return;
+            var trt = (RectTransform)row.Toggle.transform;
+            trt.anchorMin = new Vector2(0f, 0.5f);
+            trt.anchorMax = new Vector2(0f, 0.5f);
+            trt.pivot = new Vector2(0f, 0.5f);
+            trt.anchoredPosition = new Vector2(0f, 0f);
+            var info = row.Info;
+            row.Toggle.onValueChanged.AddListener(delegate (bool on)
+            {
+                if (_suppress) return;
+                Apply(info, on ? "true" : "false");
+            });
+        }
+
+        private void BuildNumber(Row row, RectTransform control)
+        {
+            var info = row.Info;
+
+            row.Input = UiKit.Input(control, 84f, 26f);
+            if (row.Input != null)
+            {
+                var irt = (RectTransform)row.Input.transform;
+                irt.anchorMin = new Vector2(1f, 0.5f);
+                irt.anchorMax = new Vector2(1f, 0.5f);
+                irt.pivot = new Vector2(1f, 0.5f);
+                irt.anchoredPosition = new Vector2(0f, 0f);
+                row.Input.contentType = info.TypeName == "int"
+                    ? TMP_InputField.ContentType.IntegerNumber
+                    : TMP_InputField.ContentType.DecimalNumber;
+                row.Input.onEndEdit.AddListener(delegate (string s)
+                {
+                    if (_suppress) return;
+                    Apply(info, s);
+                });
+            }
+
+            if (!info.HasRange) return;
+
+            row.Slider = UiKit.Slider(control);
+            if (row.Slider == null) return;
+            var srt = (RectTransform)row.Slider.transform;
+            srt.anchorMin = new Vector2(0f, 0.5f);
+            srt.anchorMax = new Vector2(1f, 0.5f);
+            srt.pivot = new Vector2(0.5f, 0.5f);
+            srt.offsetMin = new Vector2(0f, -10f);
+            srt.offsetMax = new Vector2(-92f, 10f);
+
+            row.Slider.minValue = (float)info.Min;
+            row.Slider.maxValue = (float)info.Max;
+            row.Slider.wholeNumbers = info.TypeName == "int";
+
+            // Show the number as it is dragged, but only ask the server when the drag ends -
+            // otherwise one sweep of the slider would eat the whole rate limit.
+            row.Slider.onValueChanged.AddListener(delegate (float v)
+            {
+                if (_suppress || row.Input == null) return;
+                row.Input.SetTextWithoutNotify(Quantise(info, v));
+            });
+            var commit = row.Slider.gameObject.AddComponent<SliderCommit>();
+            commit.OnCommit = delegate
+            {
+                if (_suppress) return;
+                Apply(info, Quantise(info, row.Slider.value));
+            };
+        }
+
+        private static string Quantise(SettingInfo info, float v)
+        {
+            if (info.TypeName == "int")
+                return ((long)Mathf.Round(v)).ToString(System.Globalization.CultureInfo.InvariantCulture);
+            double step = info.Step > 0 ? info.Step : 0.01;
+            double snapped = Math.Round(v / step) * step;
+            return ((float)snapped).ToString("0.####", System.Globalization.CultureInfo.InvariantCulture);
+        }
+
+        private void BuildText(Row row, RectTransform control)
+        {
+            var info = row.Info;
+            row.Input = UiKit.Input(control, 280f, 26f);
+            if (row.Input == null) return;
+            UiKit.Stretch((RectTransform)row.Input.transform);
+            row.Input.onEndEdit.AddListener(delegate (string s)
+            {
+                if (_suppress) return;
+                Apply(info, s);
+            });
+        }
+
+        /// <summary>
+        /// A pick-one. There is no plain Dropdown on any vanilla settings page (the graphics page
+        /// uses GUIFramework's GuiDropdown, from an assembly the mod does not reference), so this
+        /// mirrors what vanilla itself does for Language and the graphics preset: a value with a
+        /// left and right arrow.
+        /// </summary>
+        private void BuildCycle(Row row, RectTransform control, string[] choices)
+        {
+            var info = row.Info;
+            if (choices == null || choices.Length == 0) { BuildText(row, control); return; }
+
+            row.Left = UiKit.Button(control, "<");
+            row.Right = UiKit.Button(control, ">");
+            row.CycleText = UiKit.Label(control, "", UiKit.BaseFontSize * 0.9f, TextAlignmentOptions.Midline);
+
+            if (row.Left != null)
+            {
+                var lrt = (RectTransform)row.Left.transform;
+                lrt.anchorMin = new Vector2(0f, 0.5f); lrt.anchorMax = new Vector2(0f, 0.5f);
+                lrt.pivot = new Vector2(0f, 0.5f);
+                lrt.anchoredPosition = Vector2.zero; lrt.sizeDelta = new Vector2(30f, 26f);
+                row.Left.onClick.AddListener(delegate { Cycle(info, choices, -1); });
+            }
+            if (row.Right != null)
+            {
+                var rrt = (RectTransform)row.Right.transform;
+                rrt.anchorMin = new Vector2(1f, 0.5f); rrt.anchorMax = new Vector2(1f, 0.5f);
+                rrt.pivot = new Vector2(1f, 0.5f);
+                rrt.anchoredPosition = Vector2.zero; rrt.sizeDelta = new Vector2(30f, 26f);
+                row.Right.onClick.AddListener(delegate { Cycle(info, choices, 1); });
+            }
+            var trt = (RectTransform)row.CycleText.transform;
+            trt.anchorMin = new Vector2(0f, 0.5f); trt.anchorMax = new Vector2(1f, 0.5f);
+            trt.pivot = new Vector2(0.5f, 0.5f);
+            trt.offsetMin = new Vector2(34f, -13f);
+            trt.offsetMax = new Vector2(-34f, 13f);
+        }
+
+        private void Cycle(SettingInfo info, string[] choices, int delta)
+        {
+            string current = info.CurrentString;
+            int at = 0;
+            for (int i = 0; i < choices.Length; i++)
+                if (string.Equals(choices[i], current, StringComparison.OrdinalIgnoreCase)) { at = i; break; }
+            int next = ((at + delta) % choices.Length + choices.Length) % choices.Length;
+            Apply(info, choices[next]);
+        }
+
+        /// <summary>Fires the callback when a drag on the slider ends, not on every frame of it.</summary>
+        internal sealed class SliderCommit : MonoBehaviour, IPointerUpHandler, IDeselectHandler
+        {
+            public Action OnCommit;
+            public void OnPointerUp(PointerEventData eventData) { if (OnCommit != null) OnCommit(); }
+            public void OnDeselect(BaseEventData eventData) { if (OnCommit != null) OnCommit(); }
+        }
+
+        // ---- applying and refreshing ---------------------------------------------------------------------
+
+        private void Apply(SettingInfo info, string value)
+        {
+            if (info == null) return;
+            var why = WhyNot(info, value);
+            if (why != null) { SetStatus(false, why); RefreshRow(FindRow(info)); return; }
+            TweakDoor.Request(info, value);
+        }
+
+        /// <summary>The client-side half of the permission check: enough to grey a row honestly.
+        /// The server checks again and has the last word.</summary>
+        private static string WhyNot(SettingInfo info, string proposed)
+        {
+            bool connected = ZNet.instance != null;
+            bool admin = !connected || LocalIsAdmin();
+
+            if (!info.Live) return "Needs a server restart";
+            if (info.IsLocal)
+            {
+                if (connected && info.Tier == SettingTier.Admin && !admin)
+                    return "Only a server admin can change this";
+                return null;
+            }
+
+            if (!connected) return "Join a server to change this";
+            if (info.Tier == SettingTier.Admin && !admin) return "Only a server admin can change this";
+            if (AccessModule.AdminsOnly && !admin) return "Only server admins can change settings here";
+            if (!AccessModule.DoorOpen) return "Switched off on this server";
+
+            if (info.IsEnabledToggle && info.Owner != null && !info.Owner.BootEnabled)
+            {
+                bool wantOn;
+                if (proposed == null) { if (!info.Owner.Enabled) return "Needs a server restart"; }
+                else if (SettingValue.TryParseBool(proposed, out wantOn) && wantOn) return "Needs a server restart";
+            }
+            return null;
+        }
+
+        private static bool LocalIsAdmin()
+        {
+            try { return ZNet.instance != null && ZNet.instance.LocalPlayerIsAdminOrHost(); }
+            catch { return false; }
+        }
+
+        private Row FindRow(SettingInfo info)
+        {
+            foreach (var r in _rows) if (r.Info == info) return r;
+            return null;
+        }
+
+        private void OnAnySettingChanged(object sender, SettingChangedEventArgs e)
+        {
+            try
+            {
+                var info = ConfigCatalog.Find(e.ChangedSetting.Definition.Section,
+                                              e.ChangedSetting.Definition.Key);
+                if (info == null) return;
+                RefreshRow(FindRow(info));
+                RefreshModuleRow(info);
+                RefreshHeader();
+            }
+            catch (Exception ex)
+            {
+                NoVikingLeftBehindPlugin.Log.LogWarning("[SettingsMenu] live refresh: " + ex.Message);
+            }
+        }
+
+        private void OnDoorResult(bool ok, string message) { SetStatus(ok, message); }
+
+        private void OnAuditChanged() { RefreshHeader(); }
+
+        private void SetStatus(bool ok, string message)
+        {
+            if (_statusText == null) return;
+            _statusText.text = message ?? "";
+            _statusText.color = ok ? UiKit.HintColor : new Color(0.95f, 0.55f, 0.4f, 0.95f);
+        }
+
+        private void RefreshAll()
+        {
+            foreach (var r in _rows) RefreshRow(r);
+            foreach (var mr in _moduleRows) RefreshModuleRowDirect(mr);
+            RefreshHeader();
+        }
+
+        private void RefreshHeader()
+        {
+            if (_accessText != null)
+            {
+                string who = ZNet.instance == null
+                    ? "Not on a server: only your own per-player settings can be changed here."
+                    : AccessModule.WhoMayTweakText() + "  Changes apply live to everyone.";
+                _accessText.text = who;
+            }
+            if (_auditText != null)
+            {
+                var lines = TweakDoor.AuditLines;
+                if (lines == null || lines.Count == 0) _auditText.text = "";
+                else
+                {
+                    var sb = new System.Text.StringBuilder("Recent changes\n");
+                    for (int i = 0; i < lines.Count; i++) sb.Append(lines[i]).Append('\n');
+                    _auditText.text = sb.ToString();
+                }
+            }
+            if (_resetButton != null) _resetButton.interactable = _selected != null;
+        }
+
+        private void RefreshModuleRow(SettingInfo info)
+        {
+            if (info == null || !info.IsEnabledToggle) return;
+            foreach (var mr in _moduleRows)
+                if (mr.EnabledInfo == info) { RefreshModuleRowDirect(mr); return; }
+        }
+
+        private void RefreshModuleRowDirect(ModuleRow mr)
+        {
+            if (mr == null || mr.Module == null || mr.Enabled == null || mr.EnabledInfo == null) return;
+            _suppress = true;
+            try
+            {
+                bool on = mr.Module.Enabled;
+                mr.Enabled.isOn = on;
+                string why = WhyNot(mr.EnabledInfo, on ? "false" : "true");
+                mr.Enabled.interactable = why == null;
+                mr.Label.color = on ? UiKit.TextColor : UiKit.DimColor;
+            }
+            finally { _suppress = false; }
+        }
+
+        private void RefreshRow(Row row)
+        {
+            if (row == null || row.Info == null) return;
+            var info = row.Info;
+            string why = WhyNot(info, null);
+            bool editable = why == null;
+            row.Editable = editable;
+
+            _suppress = true;
+            try
+            {
+                string current = info.CurrentString;
+
+                if (row.Toggle != null) { row.Toggle.isOn = info.Entry.BoxedValue is bool && (bool)info.Entry.BoxedValue; }
+                if (row.Input != null) row.Input.SetTextWithoutNotify(current);
+                if (row.Slider != null)
+                {
+                    float v;
+                    if (float.TryParse(current, System.Globalization.NumberStyles.Float,
+                                       System.Globalization.CultureInfo.InvariantCulture, out v))
+                        row.Slider.SetValueWithoutNotify(Mathf.Clamp(v, row.Slider.minValue, row.Slider.maxValue));
+                }
+                if (row.CycleText != null) row.CycleText.text = current;
+
+                if (row.Toggle != null) row.Toggle.interactable = editable;
+                if (row.Input != null) row.Input.interactable = editable;
+                if (row.Slider != null) row.Slider.interactable = editable;
+                if (row.Left != null) row.Left.interactable = editable;
+                if (row.Right != null) row.Right.interactable = editable;
+                if (row.Reset != null) row.Reset.interactable = editable && current != info.DefaultString;
+
+                var tone = editable ? UiKit.TextColor : UiKit.DimColor;
+                if (row.Label != null) row.Label.color = tone;
+                if (row.Hint != null)
+                    row.Hint.color = editable ? UiKit.HintColor
+                                             : new Color(UiKit.HintColor.r, UiKit.HintColor.g,
+                                                         UiKit.HintColor.b, 0.35f);
+
+                // A row that cannot be changed shows the reason in place of its control.
+                if (row.Note != null)
+                {
+                    bool showNote = !editable && why != null;
+                    row.Note.text = why ?? "";
+                    row.Note.gameObject.SetActive(showNote);
+                    if (row.Toggle != null) row.Toggle.gameObject.SetActive(!showNote);
+                    if (row.Slider != null) row.Slider.gameObject.SetActive(!showNote);
+                    if (row.Input != null) row.Input.gameObject.SetActive(!showNote);
+                    if (row.Left != null) row.Left.gameObject.SetActive(!showNote);
+                    if (row.Right != null) row.Right.gameObject.SetActive(!showNote);
+                    if (row.CycleText != null) row.CycleText.gameObject.SetActive(!showNote);
+                }
+            }
+            finally { _suppress = false; }
+        }
+    }
+}

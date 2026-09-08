@@ -75,6 +75,10 @@ namespace NoVikingLeftBehind
         public override ModuleSide Side => ModuleSide.Client;
         public override string Section => "Discount";
 
+        public override string Theme => "Catching up";
+
+        public override string Hint => "Trailing-tier recipes and build pieces cost less";
+
         private static ConfigEntry<float> _costMultiplier;
         private static ConfigEntry<float> _extraPerTierBehind;
         private static ConfigEntry<int> _minAmount;
@@ -157,17 +161,21 @@ namespace NoVikingLeftBehind
             _costMultiplier = BindSynced("CostMultiplier", 0.5f,
                 "Cost of a recipe or build piece whose tier is behind the frontier, as a fraction " +
                 "of vanilla. 0.5 = half price. 1 = no discount. Values above 1 are clamped to 1: " +
-                "this module never makes anything more expensive.");
+                "this module never makes anything more expensive.",
+                Opt.N("Cost of a trailing-tier recipe or build piece, as a fraction of vanilla",
+                    0.01, 1, 0.05));
 
             _extraPerTierBehind = BindSynced("ExtraPerTierBehind", 0.0f,
                 "Extra discount per FURTHER tier behind the frontier. 0 = the same discount " +
                 "whether the recipe is 1 or 3 tiers behind. 0.1 with CostMultiplier 0.5 means " +
                 "0.5 at the threshold, 0.4 one tier further back, 0.3 two tiers further back. " +
-                "The multiplier is clamped to a minimum of 0.01.");
+                "The multiplier is clamped to a minimum of 0.01.",
+                Opt.N("Extra discount per further tier behind the frontier", 0, 0.5, 0.05));
 
             _minAmount = BindSynced("MinAmount", 1,
                 "Floor for a discounted requirement. 1 = a cost never drops to zero. A " +
-                "requirement that already costs less than this is left alone.");
+                "requirement that already costs less than this is left alone.",
+                Opt.N("Lowest a discounted requirement can drop to", 0, 10, 1));
 
             _stationMultipliers = BindSynced("StationMultipliers", DefaultStationMultipliers,
                 "Comma-separated StationPrefabName:multiplier pairs. Every recipe crafted at a " +
@@ -179,7 +187,8 @@ namespace NoVikingLeftBehind
                 "name. Recipes with no crafting station, and build pieces, are never matched. " +
                 "Multipliers are clamped to 0.01..1: this module never makes anything more " +
                 "expensive. Composes with the tier discount above by multiplication, and the " +
-                "result still respects MinAmount. Empty = off.");
+                "result still respects MinAmount. Empty = off.",
+                Opt.T("Extra per-station cost discounts, e.g. for another mod's recipes"));
 
             ParseStations();
         }

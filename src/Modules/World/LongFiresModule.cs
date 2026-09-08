@@ -55,6 +55,10 @@ namespace NoVikingLeftBehind
         public override ModuleSide Side => ModuleSide.Client;
         public override string Section => "Fires";
 
+        public override string Theme => "Food & survival";
+
+        public override string Hint => "Fires and hand torches burn fuel and durability far slower";
+
         private ConfigEntry<float> _fuelMult;
         private ConfigEntry<bool> _infiniteFuel;
         private ConfigEntry<float> _torchMult;
@@ -83,16 +87,19 @@ namespace NoVikingLeftBehind
                 "Campfires, hearths, standing/wall torches, braziers and sconces (anything with a " +
                 "Fireplace component) consume fuel this many times slower. Fireplace.m_secPerFuel " +
                 "is multiplied on Awake for every fire already standing and every new one placed. " +
-                "1 = vanilla.");
+                "1 = vanilla.",
+                Opt.N("How many times slower fires and hearths burn through fuel", 1, 20));
 
             _infiniteFuel = BindSynced("InfiniteFuel", false,
                 "Every Fireplace (campfires, hearths, torches, braziers, sconces) never runs out " +
                 "of fuel, on top of whatever FuelDurationMultiplier is set to. False restores each " +
-                "prefab's own vanilla m_infiniteFuel value.");
+                "prefab's own vanilla m_infiniteFuel value.",
+                Opt.B("Fires and hearths never run out of fuel"));
 
             _torchMult = BindSynced("HandTorchDurabilityMultiplier", 5f,
                 "Hand-held torch items (named in HandTorchItems) lose durability this many times " +
-                "slower while equipped (Humanoid.DrainEquipedItemDurability). 1 = vanilla.");
+                "slower while equipped (Humanoid.DrainEquipedItemDurability). 1 = vanilla.",
+                Opt.N("How many times slower hand-held torches lose durability", 1, 20));
 
             _torchItems = BindSynced("HandTorchItems", "Torch,TorchMist",
                 "Comma-separated ItemDrop prefab names treated as hand torches for " +
@@ -101,7 +108,8 @@ namespace NoVikingLeftBehind
                 "does too but is a firework, not a light source, so it is deliberately left out " +
                 "of the default. [World] SelfTest logs every item in ObjectDB with " +
                 "m_useDurability and a positive m_durabilityDrain as a candidate, so this list can " +
-                "be extended to cover any other mod's torch-like items.");
+                "be extended to cover any other mod's torch-like items.",
+                Opt.T("Which items count as hand torches for the durability bonus"));
 
             ParseTorchItems();
         }

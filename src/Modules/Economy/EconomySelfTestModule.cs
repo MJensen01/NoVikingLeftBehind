@@ -25,6 +25,12 @@ namespace NoVikingLeftBehind
         public override ModuleSide Side => ModuleSide.Both;
         public override string Section => "Economy";
 
+        public override string Theme => "Server";
+
+        public override string Hint => "Diagnostic log of what the Economy modules would do";
+
+        protected override Opt EnabledOpt => base.EnabledOpt.Admin();
+
         private static ConfigEntry<bool> _selfTest;
         private static bool _ran;
 
@@ -34,7 +40,8 @@ namespace NoVikingLeftBehind
                 "Diagnostic. Log what the Economy modules (TrailingTierDiscount, RichSmelting, " +
                 "TraderStock) WOULD do with the current world tier, ObjectDB and config, once " +
                 "per world load. Machine-local and never synced, so turning it on for a server " +
-                "boot does not affect any client. Leave it false in normal use.");
+                "boot does not affect any client. Leave it false in normal use.",
+                Opt.B("Log what the Economy modules would do at world load").Admin());
         }
 
         protected override void ApplyPatches()

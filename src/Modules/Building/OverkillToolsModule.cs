@@ -76,6 +76,8 @@ namespace NoVikingLeftBehind
         public override string Name => "OverkillTools";
         public override string Section => "Tools";
         public override ModuleSide Side => ModuleSide.Both;
+        public override string Theme => "Building & gathering";
+        public override string Hint => "Late-game tools chew through early-game trees and rocks faster";
 
         protected override string EnabledDescription =>
             "A tool whose tier is above the target's required tool tier does more damage per " +
@@ -127,29 +129,35 @@ namespace NoVikingLeftBehind
             _perTierBonus = BindSynced("PerTierBonus", 0.5f,
                 "Extra damage per tool tier ABOVE the target's own required tier. 0.5 = +50% per " +
                 "tier of overkill: one tier above is x1.5, two x2.0, four x3.0 (capped by " +
-                "MaxMultiplier). 0 turns the module off without unpatching it.");
+                "MaxMultiplier). 0 turns the module off without unpatching it.",
+                Opt.N("Extra damage per tool tier above the target's required tier", 0, 3.0, 0.05));
 
             _maxMultiplier = BindSynced("MaxMultiplier", 3.0f,
                 "Hard cap on the damage multiplier, however large the tier gap. Clamped to a " +
-                "minimum of 1.0 - this module can never make a hit weaker than vanilla.");
+                "minimum of 1.0 - this module can never make a hit weaker than vanilla.",
+                Opt.N("Highest damage multiplier overkill tools can reach", 1, 10, 0.5));
 
             _affectTrees = BindSynced("AffectTrees", true,
-                "Apply to standing trees (TreeBase) and to felled logs and stumps (TreeLog).");
+                "Apply to standing trees (TreeBase) and to felled logs and stumps (TreeLog).",
+                Opt.B("Apply the overkill bonus to trees and logs"));
 
             _affectRocks = BindSynced("AffectRocks", true,
                 "Apply to mineable rock (MineRock5 boulders and rock walls, and the older " +
                 "MineRock). Ore nodes listed in [Mining] OreNodes are always excluded - they " +
-                "belong to FastMining.");
+                "belong to FastMining.",
+                Opt.B("Apply the overkill bonus to mineable rocks"));
 
             _affectDestructibles = BindSynced("AffectDestructibles", true,
                 "Apply to plain Destructible objects: bushes, small surface rocks and similar " +
-                "scenery. Ore nodes listed in [Mining] OreNodes are always excluded.");
+                "scenery. Ore nodes listed in [Mining] OreNodes are always excluded.",
+                Opt.B("Apply the overkill bonus to bushes and small rocks"));
 
             _selfTest = BindLocal("SelfTest", false,
                 "Diagnostic, local only, never synced. Once per world load, log a table of " +
                 "sample targets (tree / log / rock / destructible) with the component family and " +
                 "m_minToolTier read from the real prefabs, and the resulting damage multiplier " +
-                "for tool tiers 0-4. Changes no game state. Leave false in normal use.");
+                "for tool tiers 0-4. Changes no game state. Leave false in normal use.",
+                Opt.B("Log a one-time table proving the tool tier maths").Admin());
         }
 
         public override void OnConfigChanged(ConfigEntryBase entry)

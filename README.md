@@ -3,7 +3,7 @@
 A BepInEx 5 mod for Valheim 0.221.12, built and maintained for a small dedicated-server group
 and released here for anyone to use. MIT licensed.
 
-All-in-one, server-enforced quality-of-life and catch-up mechanics: 33 modules covering inventory,
+All-in-one, server-enforced quality-of-life and catch-up mechanics: 35 modules covering inventory,
 loadouts, combat (fists + shield), crafting from chests, building and gathering, food, corpse
 runs, guardian powers, ore regrowth, portals and a frontier-based catch-up system. One DLL, installed on the server and by
 every player. The server enforces every setting (via [ServerSync](https://github.com/blaxxun-boop/ServerSync)),
@@ -33,8 +33,8 @@ Pre-release (see version plan below), built and tested against Valheim `0.221.12
 
 ## Config overview
 
-33 modules, each with its own `[Section] Enabled` toggle, plus `Tiers` (shared config, always on,
-no toggle of its own) — 34 rows in `docs/MODULES.md`, the full per-module table (side, section,
+35 modules, each with its own `[Section] Enabled` toggle, plus `Tiers` (shared config, always on,
+no toggle of its own) — 36 rows in `docs/MODULES.md`, the full per-module table (side, section,
 settings, defaults, hot-reload). Every gameplay number is server-synced and hot-reloads (edit the
 cfg, it applies within a second — `Enabled` toggles need a restart to turn *on*, off is instant);
 hotkeys and HUD offsets (`ExtraSlots`, `Loadouts`, `CorpseRunPlus`) are per-player, local settings.
@@ -146,6 +146,27 @@ easier — the newest tier is never touched.
   `NoCraftCost=false`).
 - **EnforceClientMod** `[General]` — require every connecting client to run a matching version.
 - **HotReload** `[General]` — cfg edits on a running server are picked up live, no restart.
+- **Access** `[Access]` — who may change settings from the in-game menu (`TweakAccess=Everyone`),
+  how changes are announced (`Announce=Chat`) and the per-player rate limit
+  (`MaxChangesPer10s=10`). See below.
+
+### In-game settings menu
+
+`SettingsMenu` `[SettingsMenu]` adds a **NoVikingLeftBehind** tab to Valheim's own Settings screen —
+from the pause menu in game and from the main menu — listing all 235 settings: modules by theme down
+the left with their `Enabled` toggles, the selected module's rows down the right with a one-line
+hint under each name, the full description on hover, a reset-to-default button, and a search box
+across name, key, hint and description.
+
+Nothing is written by the client. A row asks the server over `ZRoutedRpc`; the server checks
+`[Access] TweakAccess` and the setting's own tier against `adminlist.txt`, validates the value
+against its declared range or choices, rate-limits the caller, then writes its own cfg file with a
+timestamped backup — so the existing watcher and ServerSync push it to everyone through the path
+that already existed, and `cfg.py`, hand edits and the backups keep working unchanged. Every change
+is announced in chat and logged; the footer has Undo and Reset-module. Per-player settings are
+written to your own cfg and never leave your machine. Rows you may not change are greyed with the
+reason rather than hidden. The tab is built at runtime from clones of Valheim's own controls — the
+mod ships no UI assets.
 
 ## Mods this replaces
 
@@ -159,8 +180,10 @@ Uninstall these before installing NoVikingLeftBehind — same ground, one DLL in
 by ExtraSlots) — all replaced by `ExtraSlots`. `SlotsRescue` migrates items shudnal's ExtraSlots
 left behind.
 
-In-game (console, client-side): `nvlb.status` prints the live config; `nvlb.slots.restore` rolls
-`ExtraSlots`' storage back to one of its 3 automatic backups.
+In-game (console, client-side): `nvlb.status` prints the live config; `nvlb.catalog [text]` lists
+every setting with its hint, type, range, permission tier and whether it applies live (a dedicated
+server writes the same table to `nvlb-catalog.tsv` beside its cfg at boot); `nvlb.slots.restore`
+rolls `ExtraSlots`' storage back to one of its 3 automatic backups.
 
 ## Credits
 

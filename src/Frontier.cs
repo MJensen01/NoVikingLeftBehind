@@ -59,12 +59,14 @@ namespace NoVikingLeftBehind
             TierOverride = NoVikingLeftBehindPlugin.BindSynced(Section, "TierOverride", -1,
                 "Force the world tier instead of reading the boss keys. -1 = auto. " +
                 "0 = no boss killed, 1 Eikthyr, 2 The Elder, 3 Bonemass, 4 Moder, 5 Yagluth, " +
-                "6 The Queen, 7 Fader. For testing.", null);
+                "6 The Queen, 7 Fader. For testing.", null,
+                Opt.N("Force the world's progress tier instead of reading boss kills", -1, 7, 1));
 
             TiersBehind = NoVikingLeftBehindPlugin.BindSynced(Section, "TiersBehind", 1,
                 "How many tiers below the world tier a material has to be before the catch-up " +
                 "rules apply to it. 1 = everything up to WorldTier-1 is 'behind the frontier' " +
-                "(the group killed the Elder -> WorldTier 2 -> bronze, tier 1, qualifies).", null);
+                "(the group killed the Elder -> WorldTier 2 -> bronze, tier 1, qualifies).", null,
+                Opt.N("How far behind the frontier a material must be to get catch-up help", 0, 7, 1));
 
             NoVikingLeftBehindPlugin.ConfigChanged += OnConfigChanged;
         }
