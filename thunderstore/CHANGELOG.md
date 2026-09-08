@@ -1,5 +1,28 @@
 # Changelog — NoVikingLeftBehind
 
+## 0.8.4 (2026-09-08)
+- **One place decides what a hotkey is.** A key had two owners — the mod's config and the binding Valheim saves
+  for you — and the saved one silently won, so rebinding in the settings tab did nothing at all and a rebind on
+  vanilla's own Keyboard & Mouse page did not take effect until a relaunch. The **saved binding is now the only
+  thing consulted**, the config value is the default it starts from, and a rebind applies immediately from either
+  screen. A default that moves in an update moves a saved binding that was still sitting on the old default with
+  it — which is what left one tester being told to hold Alt while Ctrl was what actually worked.
+- **Clicking a setting's name stopped dragging its slider.** The click was never landing on the name: a cloned
+  vanilla slider brings the whole width of the settings row it came from, so a piece of the slider was stretched
+  out underneath the label, and a slider answers a press anywhere on itself by jumping to wherever that press
+  maps — off the left end of the track, that means the minimum. The slider now catches clicks on its track and
+  nowhere else.
+- **The module checkboxes work again.** 0.8.3 shrank their clickable area to the box itself, which was right, and
+  then hung the row's tooltip on that very patch — and a tooltip answers a click before anything underneath it
+  can. The tooltip moved one level up, where it shares an object with the checkbox instead of covering it, so the
+  box ticks and the rest of the row still selects the module.
+- **Quick slots stop eating keys they were never given.** With `[Slots] QuickSlots = 0` the quick-slot keys were
+  still being swallowed, and the default list was `Z,X,C` — `X` is vanilla's Sit. Nothing is consumed at zero,
+  only the first *N* keys are ever honoured, and the default list is now **empty**: give quick slots keys of your
+  own before they do anything.
+- **One loadout out of the box.** `[Loadouts] Slots` now defaults to **1** and `Loadout2Key` to none; set `Slots`
+  to 2 and give the second one a key when you want it. Anyone still on the old defaults is moved across.
+
 ## 0.8.3 (2026-09-08)
 - **Closes the last way a typed value could vanish.** 0.8.2 picks up anything typed once the caret leaves the
   field — but the right-hand pane is torn down and rebuilt from scratch on *every keystroke in the search box*

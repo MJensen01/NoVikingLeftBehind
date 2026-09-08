@@ -727,6 +727,8 @@ namespace NoVikingLeftBehind
             }
 
             UiKit.Hover.EnsurePanel(_page);
+            _loggedHitRects = false;
+            _loggedSliderRects = false;
 
             // ---- header --------------------------------------------------------------------
             var header = UiKit.Panel("Header", _page);
@@ -1025,10 +1027,12 @@ namespace NoVikingLeftBehind
                         Apply(info, on ? "true" : "false");
                     });
                     mr.Enabled = toggle;
-                    // On the toggle's hit patch, not the toggle itself: Tip switches the raycast
-                    // on for whatever it is given, and given the whole widget it would undo the
-                    // shrunken hit area and make the row one big checkbox again.
-                    UiKit.Tip(UiKit.HitAreaOf(toggle), ModuleTooltip(mod));
+                    // On the toggle itself, with TipOnly - which attaches the hover without
+                    // switching any raycast on. 0.8.3 put a full Tip on the hit patch instead,
+                    // and the Hover that came with it answered the click before the Toggle ever
+                    // saw it, which is why these boxes stopped responding entirely.
+                    UiKit.TipOnly(toggle.gameObject, ModuleTooltip(mod));
+                    LogHitRects("module '" + mod.Name + "'", toggle, name);
                 }
 
                 _moduleRows.Add(mr);
@@ -1203,6 +1207,62 @@ namespace NoVikingLeftBehind
             public void OnPointerEnter(PointerEventData e) { if (Target != null) Target.color = Lit; }
             public void OnPointerExit(PointerEventData e) { if (Target != null) Target.color = Normal; }
             private void OnDisable() { if (Target != null) Target.color = Normal; }
+        }
+
+        /// <summary>
+        /// Once per page build, print where the things you are supposed to be able to click
+        /// actually ARE, on screen, in pixels. Two rounds were spent guessing at this from
+        /// screenshots; a line in the log settles it.
+        /// </summary>
+        private static bool _loggedHitRects;
+
+        private static void LogHitRects(string what, Toggle toggle, TMP_Text label)
+        {
+            if (_loggedHitRects || toggle == null) return;
+            _loggedHitRects = true;
+            try
+            {
+                var hit = UiKit.HitAreaOf(toggle);
+                NoVikingLeftBehindPlugin.Log.LogInfo(
+                    "[SettingsMenu] hit rects for " + what +
+                    ": toggle " + UiKit.ScreenRect((RectTransform)toggle.transform) +
+                    " | box " + (toggle.targetGraphic == null ? "<none>"
+                                 : UiKit.ScreenRect(toggle.targetGraphic.rectTransform)) +
+                    " | clickable patch " + (hit == null || hit == toggle.gameObject
+                                 ? "<none - the whole toggle>"
+                                 : UiKit.ScreenRect((RectTransform)hit.transform)) +
+                    " | name " + (label == null ? "<none>" : UiKit.ScreenRect((RectTransform)label.transform)));
+            }
+            catch (Exception e) { NoVikingLeftBehindPlugin.Log.LogWarning("[SettingsMenu] hit-rect log: " + e.Message); }
+        }
+
+        private static bool _loggedSliderRects;
+
+        private static void LogSliderRects(Row row)
+        {
+            if (_loggedSliderRects || row == null || row.Slider == null) return;
+            _loggedSliderRects = true;
+            try
+            {
+                var srt = (RectTransform)row.Slider.transform;
+                string widest = "";
+                float minX = float.MaxValue, maxX = float.MinValue;
+                var corners = new Vector3[4];
+                foreach (var g in row.Slider.GetComponentsInChildren<Graphic>(true))
+                {
+                    if (g == null) continue;
+                    g.rectTransform.GetWorldCorners(corners);
+                    if (corners[0].x < minX) { minX = corners[0].x; widest = g.gameObject.name; }
+                    if (corners[2].x > maxX) maxX = corners[2].x;
+                }
+                NoVikingLeftBehindPlugin.Log.LogInfo(
+                    "[SettingsMenu] slider rects for [" + row.Info.Section + "] " + row.Info.Key +
+                    ": slider " + UiKit.ScreenRect(srt) +
+                    " | its graphics span x " + minX.ToString("0") + ".." + maxX.ToString("0") +
+                    " (leftmost '" + widest + "')" +
+                    " | label " + (row.Label == null ? "<none>" : UiKit.ScreenRect((RectTransform)row.Label.transform)));
+            }
+            catch (Exception e) { NoVikingLeftBehindPlugin.Log.LogWarning("[SettingsMenu] slider-rect log: " + e.Message); }
         }
 
         /// <summary>Put a y offset from the top of the module list at the top of the visible pane.</summary>
@@ -1485,8 +1545,16 @@ namespace NoVikingLeftBehind
             // or the two screens look like they disagree.
             string hint = info.Hint ?? "";
             if (KeyRecorder.IsKeySetting(info))
+            {
+                var id = NvlbKeys.IdForSetting(info.Section, info.Key);
                 hint = (hint.Length > 0 ? hint + "  " : "") +
-                       "Default only - a rebind on the Keyboard & Mouse page wins.";
+                       (string.IsNullOrEmpty(id)
+                            ? "A rebind on the Keyboard & Mouse page wins over this."
+                            : "Sets the binding itself - the same one the Keyboard & Mouse page shows" +
+                              (NvlbKeys.HasSavedBinding(id)
+                                   ? ", currently " + NvlbKeys.Label(id) + "."
+                                   : "."));
+            }
 
             row.Hint = UiKit.Label(rt, hint, UiKit.BaseFontSize * 0.78f,
                                    TextAlignmentOptions.MidlineLeft, UiKit.HintColor);
@@ -1640,6 +1708,7 @@ namespace NoVikingLeftBehind
                 if (_suppress || row.Input == null) return;
                 row.Input.SetTextWithoutNotify(Quantise(info, v));
             });
+            LogSliderRects(row);
             var commit = row.Slider.gameObject.AddComponent<SliderCommit>();
             commit.OnCommit = delegate
             {
@@ -1803,7 +1872,7 @@ namespace NoVikingLeftBehind
             int sent = 0;
             for (int i = 0; i < order.Count; i++)
             {
-                try { TweakDoor.Request(order[i], values[i]); sent++; }
+                try { PushBinding(order[i], values[i]); TweakDoor.Request(order[i], values[i]); sent++; }
                 catch (Exception e)
                 {
                     NoVikingLeftBehindPlugin.Log.LogError("[SettingsMenu] could not send [" + order[i].Section +
@@ -1814,6 +1883,41 @@ namespace NoVikingLeftBehind
             RefreshAll();
             RefreshFooter();
             SetStatus(true, "Sent " + sent + " of " + n + (n == 1 ? " change." : " changes."));
+        }
+
+        /// <summary>
+        /// A hotkey row sets the BINDING, not just the config value. Since 0.8.4 the binding is
+        /// the only thing consulted when a key is pressed - the config value is the default it
+        /// starts from - so writing only the config would leave the row looking like it had done
+        /// something while the key carried on doing what it did before. Both are written: the
+        /// binding so the key changes now, the config so the default follows it.
+        /// </summary>
+        private static void PushBinding(SettingInfo info, string value)
+        {
+            if (info == null) return;
+            try
+            {
+                var id = NvlbKeys.IdForSetting(info.Section, info.Key);
+                if (string.IsNullOrEmpty(id)) return;
+
+                var cleaned = ConfigCatalog.Unquote(value ?? "").Trim().Replace(" ", "");
+                if (cleaned.Length == 0) { NvlbKeys.ClearBinding(id); return; }
+
+                KeyCode key;
+                if (!Enum.TryParse(cleaned, true, out key))
+                {
+                    NoVikingLeftBehindPlugin.Log.LogWarning("[SettingsMenu] '" + value +
+                        "' is not a key name - the binding for " + id + " is unchanged");
+                    return;
+                }
+                if (key == KeyCode.None) NvlbKeys.ClearBinding(id);
+                else NvlbKeys.SetBinding(id, key);
+            }
+            catch (Exception e)
+            {
+                NoVikingLeftBehindPlugin.Log.LogError("[SettingsMenu] could not set the binding for [" +
+                                                      info.Section + "] " + info.Key + ": " + e);
+            }
         }
 
         /// <summary>Drop the queue and put every control back to what is actually live.</summary>

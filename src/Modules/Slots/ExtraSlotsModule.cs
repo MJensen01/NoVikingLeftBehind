@@ -90,11 +90,14 @@ namespace NoVikingLeftBehind
                 "eat it automatically.",
                 Opt.B("Automatically eat from a food slot when a buff runs out"));
 
-            _quickKeys = BindLocal("QuickSlotKeys", "Z,X,C",
+            _quickKeys = BindLocal("QuickSlotKeys", "",
                 "Local: comma-separated keys for the quick slots, in order. Unity KeyCode names " +
-                "(Z, X, C, F1, Keypad1 ...). Use None to leave a quick slot without a hotkey. " +
-                "Never synced, so each player picks their own.",
-                Opt.T("Which keys trigger each quick slot, in order"));
+                "(Z, X, C, F1, Keypad1 ...). Empty by default - quick slots are unset and do " +
+                "nothing until you list a key here for each one you want to use. Use None to " +
+                "leave a single quick slot without a hotkey. Pick keys the game is not already " +
+                "using for something else, or you will fight vanilla for that key. Never synced, " +
+                "so each player picks their own.",
+                Opt.T("Keys for the quick slots, in order - unset by default; avoid keys vanilla already uses"));
             _showUi = BindLocal("ShowUI", true,
                 "Local: draw the extra slots in their own panel beside the inventory window. " +
                 "Turn off if a game update breaks the layout - the items stay exactly where they " +
@@ -284,6 +287,23 @@ namespace NoVikingLeftBehind
                                    : new Vector2(Inst._panelOffsetX.Value, Inst._panelOffsetY.Value),
                 () => Inst == null ? 1f : Inst._panelScale.Value,
                 QuickKeyLabel);
+
+            // So a swallowed or missing hotkey shows up in the log instead of just being a
+            // silent no-op in play - see the QuickSlots=0 bail in PlayerUpdatePostfix.
+            Log.LogInfo("[Slots] quick slots: " + SlotLayout.QuickCount + " active, keys=" + QuickKeysSummary());
+        }
+
+        /// <summary>The keys actually live right now: the first QuickCount entries of _keys, in order.</summary>
+        private static string QuickKeysSummary()
+        {
+            if (SlotLayout.QuickCount <= 0) return "(none, QuickSlots=0)";
+            var s = "";
+            for (int i = 0; i < SlotLayout.QuickCount; i++)
+            {
+                if (s.Length > 0) s += ",";
+                s += i < _keys.Length && _keys[i] != KeyCode.None ? _keys[i].ToString() : "(unset)";
+            }
+            return s;
         }
 
         /// <summary>
@@ -633,8 +653,13 @@ namespace NoVikingLeftBehind
                 var inv = __instance.GetInventory();
                 if (!IsManaged(inv)) return;
 
-                if (InputAllowed(__instance))
+                // QuickSlots = 0 means there is no quick-slot row at all, so bail before touching
+                // any key - otherwise a key a player has bound elsewhere (a loadout, say) would
+                // still be read here and never reach the module that is actually listening for it.
+                if (InputAllowed(__instance) && SlotLayout.QuickCount > 0)
                 {
+                    // Only ever the FIRST QuickCount entries of QuickSlotKeys are live - a key
+                    // beyond that is left completely untouched, same reasoning as above.
                     for (int i = 0; i < SlotLayout.QuickCount && i < _keys.Length; i++)
                     {
                         var key = _keys[i];

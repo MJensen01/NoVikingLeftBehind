@@ -96,12 +96,13 @@ all. The mod never makes the leaders' game easier; it only softens the trail beh
   kept on the server after every save, and if you ever come back to an empty set of slots the game
   tells you they're there and how to get them back. `Tune it:` `[SafeSlots] VaultVersions=5`,
   `MinUploadIntervalSec=30`, local `CharacterBackup=true`, `KeepBackups=3`
-- **Loadouts** — hold Ctrl and tap Z to save your current weapon+shield, then just tap Z later to
+- **Loadouts** — hold Alt and tap Z to save your current weapon+shield, then just tap Z later to
   snap both back into your hands mid-fight without opening the inventory. Or point a loadout at
-  two hotbar slots (`Loadout1Slots="1,2"`) and the key just equips whatever is sitting in them
-  right now — nothing to save, rearrange the hotbar and the loadout follows. Both keys are
+  two hotbar slots (`Loadout1Slots=1,2`) and the key just equips whatever is sitting in them
+  right now — nothing to save, rearrange the hotbar and the loadout follows. One loadout is on out
+  of the box; set `Slots=2` and give the second one a key when you want it. The keys are
   rebindable on Valheim's own **Keyboard & Mouse** settings page, along with the rest of this
-  mod's hotkeys. `Tune it:` `[Loadouts] Slots=2`, local `Loadout1Key="Z"`, `Loadout2Key="B"`, `SaveModifier="LeftControl"`, `Loadout1Slots=""`, `Loadout2Slots=""`
+  mod's hotkeys, and a rebind there takes effect straight away. `Tune it:` `[Loadouts] Slots=1`, local `Loadout1Key="Z"`, `Loadout2Key="None"`, `SaveModifier="LeftAlt"`, `Loadout1Slots=""`, `Loadout2Slots=""`
 - **CraftFromChests** — stand at the forge near your storage wall and craft straight through it —
   no more running back and forth for one more bar. The stone oven bakes straight out of the chests
   too, while meat racks never pull, so the raw meat you stashed for a recipe is still there when

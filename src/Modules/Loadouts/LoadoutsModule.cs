@@ -90,8 +90,14 @@ namespace NoVikingLeftBehind
         /// <summary>Loadout1Key's default up to 0.8.0 - the one value that gets migrated to Z.</summary>
         private const string OldLoadout1Default = "V";
 
+        /// <summary>Loadout2Key's default before this release - the one value that gets migrated to None.</summary>
+        private const string OldLoadout2Default = "B";
+
         /// <summary>SaveModifier's default before this release - the one value that gets migrated to LeftAlt.</summary>
         private const string OldSaveModifierDefault = "LeftControl";
+
+        /// <summary>Slots' default before this release - the one value that gets migrated to 1.</summary>
+        private const int OldSlotsDefault = 2;
 
         private static KeyCode[] _keys = new KeyCode[0];
         private static KeyCode _modifier = KeyCode.LeftAlt;
@@ -101,24 +107,32 @@ namespace NoVikingLeftBehind
 
         private static int _tickErrors;
         private static bool _migrationLogged;
+        private static bool _loadout2MigrationLogged;
         private static bool _saveModifierMigrationLogged;
+        private static bool _slotsMigrationLogged;
 
         // ---- config ---------------------------------------------------------------------------
 
         protected override void Bind()
         {
-            _slots = BindSynced("Slots", 2, "Server: how many weapon loadouts each player gets (0-" + MaxSlots + ").",
-                Opt.N("How many weapon loadouts each player gets", 0, MaxSlots, 1));
+            _slots = BindSynced("Slots", 1,
+                "Server: how many weapon loadouts each player gets (0-" + MaxSlots + "). 1 by " +
+                "default - only loadout 1 is on out of the box. Set it to 2 to bring back a " +
+                "second loadout (and give Loadout2Key a key, since it has none by default).",
+                Opt.N("How many weapon loadouts each player gets - 1 by default, 2 for a second", 0, MaxSlots, 1));
             _key1 = BindLocal("Loadout1Key", "Z",
-                "Local: DEFAULT key that equips loadout 1. Since 0.8.1 this is a real Valheim " +
-                "keybinding, so it can be rebound on the game's own Keyboard & Mouse settings page - " +
-                "and a rebind there wins over this value. Changed from V to Z in 0.8.1 because V is " +
-                "vanilla's own auto-pickup toggle. Unity KeyCode name, or None.",
-                Opt.T("Default key that equips loadout 1"));
-            _key2 = BindLocal("Loadout2Key", "B",
-                "Local: DEFAULT key that equips loadout 2, rebindable on Valheim's own Keyboard & " +
-                "Mouse page. Unity KeyCode name, or None.",
-                Opt.T("Default key that equips loadout 2"));
+                "Local: DEFAULT key that equips loadout 1 - the loadout that is on out of the box " +
+                "(see [Loadouts] Slots). Since 0.8.1 this is a real Valheim keybinding, so it can " +
+                "be rebound on the game's own Keyboard & Mouse settings page - and a rebind there " +
+                "wins over this value. Changed from V to Z in 0.8.1 because V is vanilla's own " +
+                "auto-pickup toggle. Unity KeyCode name, or None.",
+                Opt.T("Default key that equips loadout 1 - on by default"));
+            _key2 = BindLocal("Loadout2Key", "None",
+                "Local: DEFAULT key that equips loadout 2. None by default because loadout 2 " +
+                "itself is off by default (see [Loadouts] Slots) - set Slots to 2 and give this " +
+                "a key yourself if you want a second loadout. Rebindable on Valheim's own " +
+                "Keyboard & Mouse page once it has a key.",
+                Opt.T("Default key that equips loadout 2 - unset until Slots is 2"));
             _saveModifier = BindLocal("SaveModifier", "LeftAlt",
                 "Local: hold this and press a loadout key to SAVE what you are currently holding " +
                 "into that loadout instead of equipping it. Ignored for a loadout that is set to " +
@@ -139,7 +153,9 @@ namespace NoVikingLeftBehind
                 Opt.T("Hotbar slots this loadout equips, e.g. 1,2 - empty = use the saved pair"));
 
             MigrateLoadout1Key();
+            MigrateLoadout2Key();
             MigrateSaveModifier();
+            MigrateSlotsDefault();
             ParseKeys();
 
             // The hotkeys become real, rebindable Valheim keybindings. The lambdas are re-read on
@@ -156,16 +172,60 @@ namespace NoVikingLeftBehind
         /// themselves - including a deliberate "V" typed after this release - is left alone, because
         /// the only thing we can tell apart is "identical to the old default".
         /// </summary>
+        /// <summary>
+        /// Moving a DEFAULT is only half a migration. Since 0.8.4 the key actually consulted is
+        /// the binding Valheim saved for you, and a saved binding survives a config change - so a
+        /// player who had never rebound anything was left on the old key while the config, the
+        /// menu and the in-game message all told them it was the new one. If the saved binding is
+        /// still sitting on exactly the old default, it moves with it; a binding the player chose
+        /// is theirs and is left alone.
+        /// </summary>
+        private static void MigrateBinding(string id, string oldDefault, string newDefault)
+        {
+            try
+            {
+                KeyCode oldKey, newKey;
+                if (!Enum.TryParse(ConfigCatalog.Unquote(oldDefault ?? "").Trim(), true, out oldKey)) return;
+                if (!Enum.TryParse(ConfigCatalog.Unquote(newDefault ?? "").Trim(), true, out newKey)) return;
+                NvlbKeys.MigrateSavedBinding(id, oldKey, newKey);
+            }
+            catch (Exception e)
+            {
+                Log.LogWarning("[Loadouts] could not migrate the saved binding for " + id + ": " + e.Message);
+            }
+        }
+
         private void MigrateLoadout1Key()
         {
             if (_key1 == null || _key1.Value != OldLoadout1Default) return;
             _key1.Value = (string)_key1.DefaultValue;
+            MigrateBinding(KeyId(1), OldLoadout1Default, _key1.Value);
             if (_migrationLogged) return;
             _migrationLogged = true;
             Log.LogWarning("[Loadouts] Loadout1Key was still the old default '" + OldLoadout1Default +
                            "', which is vanilla's own auto-pickup toggle - moved to '" + _key1.Value +
                            "'. Rebind it on Valheim's Keyboard & Mouse settings page if you want " +
                            "something else.");
+        }
+
+        /// <summary>
+        /// Loadout2Key defaulted to B before this release. A cfg still holding exactly that old
+        /// default is moved to the new one (None - loadout 2 itself is off by default now, see
+        /// MigrateSlotsDefault); anything a player chose themselves - including a deliberate "B"
+        /// typed after this release - is left alone, because the only thing we can tell apart is
+        /// "identical to the old default".
+        /// </summary>
+        private void MigrateLoadout2Key()
+        {
+            if (_key2 == null || _key2.Value != OldLoadout2Default) return;
+            _key2.Value = (string)_key2.DefaultValue;
+            MigrateBinding(KeyId(2), OldLoadout2Default, _key2.Value);
+            if (_loadout2MigrationLogged) return;
+            _loadout2MigrationLogged = true;
+            Log.LogWarning("[Loadouts] Loadout2Key was still the old default '" + OldLoadout2Default +
+                           "' - moved to '" + (string.IsNullOrEmpty(_key2.Value) ? "None" : _key2.Value) +
+                           "'. Set [Loadouts] Slots = 2 and give this a key yourself if you want a " +
+                           "second loadout.");
         }
 
         /// <summary>
@@ -178,12 +238,31 @@ namespace NoVikingLeftBehind
         {
             if (_saveModifier == null || _saveModifier.Value != OldSaveModifierDefault) return;
             _saveModifier.Value = (string)_saveModifier.DefaultValue;
+            MigrateBinding(SaveModifierId, OldSaveModifierDefault, _saveModifier.Value);
             if (_saveModifierMigrationLogged) return;
             _saveModifierMigrationLogged = true;
             Log.LogWarning("[Loadouts] SaveModifier was still the old default '" + OldSaveModifierDefault +
                            "', which is vanilla's own crouch key - moved to '" + _saveModifier.Value +
                            "'. Rebind it on Valheim's Keyboard & Mouse settings page if you want " +
                            "something else.");
+        }
+
+        /// <summary>
+        /// Slots defaulted to 2 before this release, giving every player a second loadout whether
+        /// they wanted one or not. A cfg still holding exactly that old default is moved to the new
+        /// one; anything a server admin chose themselves - including a deliberate 2 set after this
+        /// release - is left alone, because the only thing we can tell apart is "identical to the
+        /// old default".
+        /// </summary>
+        private void MigrateSlotsDefault()
+        {
+            if (_slots == null || _slots.Value != OldSlotsDefault) return;
+            _slots.Value = (int)_slots.DefaultValue;
+            if (_slotsMigrationLogged) return;
+            _slotsMigrationLogged = true;
+            Log.LogWarning("[Loadouts] Slots was still the old default " + OldSlotsDefault +
+                           " - moved to " + _slots.Value + ". Set [Loadouts] Slots = 2 yourself " +
+                           "(and give Loadout2Key a key) if you want the second loadout back.");
         }
 
         public override void OnConfigChanged(ConfigEntryBase entry) { ParseKeys(); }

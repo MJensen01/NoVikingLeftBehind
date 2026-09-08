@@ -229,6 +229,35 @@ namespace NoVikingLeftBehind
             s.wholeNumbers = false;
             foreach (var txt in clone.GetComponentsInChildren<TMP_Text>(true)) txt.text = "";
             ((RectTransform)clone.transform).localScale = Vector3.one;
+
+            // Same treatment as the toggle, for the same reason. The donor is a whole vanilla
+            // settings row, so its children reach left of the track - and a Slider answers a
+            // press ANYWHERE on its own graphics by jumping the value to wherever that press
+            // maps to, which off the left end of the track means the minimum. That is why
+            // clicking a setting's NAME kept dragging its slider to the far left: the click was
+            // never on the label at all, it was on a piece of the slider stretched out underneath
+            // it. Take the raycast off every one of them and give the slider exactly one patch,
+            // over the handle's own container - which is the track, and is what Slider maps a
+            // press against, so clicking and dragging still land on the right value.
+            foreach (var g in clone.GetComponentsInChildren<Graphic>(true)) g.raycastTarget = false;
+
+            var track = (s.handleRect != null && s.handleRect.parent is RectTransform)
+                            ? (RectTransform)s.handleRect.parent
+                            : (s.fillRect != null && s.fillRect.parent is RectTransform)
+                                ? (RectTransform)s.fillRect.parent
+                                : (RectTransform)clone.transform;
+
+            var hit = new GameObject("NVLB_SliderHit", typeof(RectTransform), typeof(Image));
+            var hrt = (RectTransform)hit.transform;
+            hrt.SetParent(track, false);
+            Stretch(hrt);
+            hrt.offsetMin = new Vector2(0f, -9f);          // a little taller than the track itself,
+            hrt.offsetMax = new Vector2(0f, 9f);           // so it is not fiddly to grab
+            hrt.localScale = Vector3.one;
+            var hitImg = hit.GetComponent<Image>();
+            hitImg.color = new Color(0f, 0f, 0f, 0f);
+            hitImg.raycastTarget = true;
+
             return s;
         }
 
@@ -712,6 +741,38 @@ namespace NoVikingLeftBehind
             if (h == null) return;
             h.Text = string.IsNullOrEmpty(text) ? null : text;
             h.OnClick = onClick;
+        }
+
+        /// <summary>
+        /// A tooltip on something a CHILD already makes hit-testable - a toggle, whose one small
+        /// patch does the hitting for it. It deliberately switches no raycast target on: doing
+        /// that to a cloned toggle is what made its whole donor-sized widget catch clicks again.
+        ///
+        /// Putting it on the toggle rather than on the patch matters for more than tidiness.
+        /// Unity chooses a click's handler by walking UP from whatever was hit and stopping at
+        /// the first object that implements the interface at all - so a Hover sitting on the
+        /// patch answered the click itself and the Toggle underneath never heard it, which is
+        /// exactly why the module checkboxes went dead in 0.8.3. On the toggle's own object the
+        /// two components share a GameObject, Unity runs both, and the box still ticks.
+        /// </summary>
+        public static void TipOnly(GameObject go, string text)
+        {
+            if (go == null) return;
+            var h = go.GetComponent<Hover>();
+            if (h == null) h = go.AddComponent<Hover>();
+            if (h == null) return;
+            h.Text = string.IsNullOrEmpty(text) ? null : text;
+        }
+
+        /// <summary>Screen-space corners of a rect, for the "why can I not click this" log lines.</summary>
+        public static string ScreenRect(RectTransform rt)
+        {
+            if (rt == null) return "<null>";
+            var c = new Vector3[4];
+            rt.GetWorldCorners(c);
+            return "x " + c[0].x.ToString("0") + ".." + c[2].x.ToString("0") +
+                   "  y " + c[0].y.ToString("0") + ".." + c[2].y.ToString("0") +
+                   "  (" + (c[2].x - c[0].x).ToString("0") + "x" + (c[2].y - c[0].y).ToString("0") + ")";
         }
     }
 }
