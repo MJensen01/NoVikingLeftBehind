@@ -1,5 +1,27 @@
 # Changelog — NoVikingLeftBehind
 
+## 0.7.5 (2026-09-08)
+- **The mouse wheel works.** Both panes took about twenty notches to move two pixels. Unity's ScrollRect scrolls
+  by whatever the game's input module hands it, and Valheim scales the wheel by 0.15 before anyone sees it, so a
+  notch was worth almost nothing. The tab now reads the wheel itself and uses only its **sign**: one notch, one
+  row, in whichever pane the pointer is over, however the value arrives. No inertia, clamped at both ends, and
+  each pane has a **slim indicator** down its right edge that sizes itself to how much is off-screen and hides
+  when everything fits — 39 modules do not fit, and nothing said so.
+- **Clicking a setting's name no longer moves its slider.** Clicking the "Window days" label sent the slider to
+  its minimum: the label's hover area had no click handler of its own, so the press went looking for one and
+  found the control. The hover areas now swallow presses outright — a click on a name or a hint is a dead click —
+  and a label can never be widened into the control column, however narrow the page.
+- **The footer buttons are back inside the page, with their captions.** "Undo last change" and "Reset module to
+  defaults" were being placed 24px *below* the page, on top of vanilla's own Back row, and were blank: the
+  explicit caption size introduced in 0.7.4 was being pinned into the donor's own caption rect, which is barely
+  taller than its auto-sized text, and TMP draws nothing when the text does not fit. The caption is now given the
+  whole button to sit in, and the text is set last.
+- **The module list has tooltips again**, on the name, the row and the checkbox alike — the checkbox sits on top
+  of its corner of the row, so hovering it used to reach nothing — and they say more: the module's one-liner, the
+  full description of its on/off switch, whether turning it **on** needs a restart (turning it off never does),
+  its theme, its section, which side it runs on and its state on this machine. Theme headings also get some air
+  above them, so a heading reads as starting a group rather than trailing the row above.
+
 ## 0.7.4 (2026-09-08)
 - **The settings tab is readable.** 0.7.3 put the tab on screen and the door worked, but half the text on it was
   missing: no setting names, no hints, no module names, no search placeholder — a column of bare toggles and

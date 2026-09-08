@@ -213,11 +213,19 @@ namespace NoVikingLeftBehind
             b.interactable = true;
             foreach (var txt in clone.GetComponentsInChildren<TMP_Text>(true))
             {
-                txt.text = caption;
                 if (fontSize > 0f)
                 {
+                    // The donor's caption rect can be barely taller than its own auto-sized text.
+                    // Pinning a real font size into a rect that short makes TMP draw nothing at
+                    // all, which is exactly how the footer buttons came out blank - so give the
+                    // caption the whole button to sit in before setting the size.
+                    var crt = (RectTransform)txt.transform;
+                    Stretch(crt);
+                    crt.offsetMin = new Vector2(8f, 3f);
+                    crt.offsetMax = new Vector2(-8f, -3f);
                     txt.enableAutoSizing = false;
                     txt.fontSize = fontSize;
+                    txt.alignment = TextAlignmentOptions.Center;
                 }
                 else
                 {
@@ -226,6 +234,7 @@ namespace NoVikingLeftBehind
                 }
                 txt.overflowMode = TextOverflowModes.Ellipsis;
                 txt.enableWordWrapping = false;
+                txt.text = caption;          // last, so nothing above can clear it
             }
             ((RectTransform)clone.transform).localScale = Vector3.one;
             return b;
@@ -313,9 +322,15 @@ namespace NoVikingLeftBehind
         /// <summary>A vertical scroll area. Returns the content rect to fill with rows.</summary>
         public static ScrollRect Scroll(Transform parent, string name, out RectTransform content)
         {
-            var root = new GameObject(name, typeof(RectTransform), typeof(ScrollRect), typeof(RectMask2D));
+            var root = new GameObject(name, typeof(RectTransform), typeof(Image), typeof(ScrollRect), typeof(RectMask2D));
             root.transform.SetParent(parent, false);
             ((RectTransform)root.transform).localScale = Vector3.one;
+
+            // An invisible but hit-testable backing, so the pane is something the pointer can be
+            // "over" even in the gaps between rows.
+            var bg = root.GetComponent<Image>();
+            bg.color = new Color(0f, 0f, 0f, 0f);
+            bg.raycastTarget = true;
 
             var viewport = new GameObject("Viewport", typeof(RectTransform));
             viewport.transform.SetParent(root.transform, false);
@@ -336,8 +351,93 @@ namespace NoVikingLeftBehind
             sr.horizontal = false;
             sr.vertical = true;
             sr.movementType = ScrollRect.MovementType.Clamped;
-            sr.scrollSensitivity = 30f;
+            sr.inertia = false;                 // vanilla's settings pages do not glide either
+            // Unity's own OnScroll is switched off deliberately: it only fires when the pointer
+            // lands on a raycast target that bubbles up to here, and the amount it moves depends
+            // on whatever the game's input module puts in scrollDelta - which Valheim scales by
+            // 0.15 (ZInput's "MouseScrollDelta" action), so a notch moved the page by a couple of
+            // pixels. TickScroll below reads the wheel itself and moves by a whole row.
+            sr.scrollSensitivity = 0f;
             return sr;
+        }
+
+        /// <summary>
+        /// A slim "there is more below" indicator down the right edge of a pane. Not draggable -
+        /// it is there so nobody has to guess that 39 modules do not fit - and it hides itself
+        /// when everything already fits. Returns the knob, to hand back to <see cref="TickScroll"/>.
+        /// </summary>
+        public static RectTransform ScrollBar(ScrollRect sr)
+        {
+            if (sr == null) return null;
+
+            var track = Fill(sr.transform, new Color(TextColor.r, TextColor.g, TextColor.b, 0.10f));
+            track.gameObject.name = "NVLB_ScrollTrack";
+            var trt = (RectTransform)track.transform;
+            trt.anchorMin = new Vector2(1f, 0f);
+            trt.anchorMax = new Vector2(1f, 1f);
+            trt.pivot = new Vector2(1f, 0.5f);
+            trt.offsetMin = new Vector2(-5f, 2f);
+            trt.offsetMax = new Vector2(-1f, -2f);
+
+            var knob = Fill(track.transform, new Color(TextColor.r, TextColor.g, TextColor.b, 0.45f));
+            knob.gameObject.name = "NVLB_ScrollKnob";
+            var krt = (RectTransform)knob.transform;
+            krt.anchorMin = new Vector2(0f, 1f);
+            krt.anchorMax = new Vector2(1f, 1f);
+            krt.pivot = new Vector2(0.5f, 1f);
+            krt.offsetMin = new Vector2(0f, 0f);
+            krt.offsetMax = new Vector2(0f, 0f);
+            return krt;
+        }
+
+        /// <summary>
+        /// One wheel notch, one row - and keep the indicator in step. Only the SIGN of the wheel
+        /// is used, so it does not matter whether the value arrives as Unity's 1.0, Windows' 120
+        /// or ZInput's 0.15: the pane always moves by exactly <paramref name="step"/> pixels.
+        /// </summary>
+        public static void TickScroll(ScrollRect sr, RectTransform knob, float step)
+        {
+            if (sr == null || sr.content == null || sr.viewport == null) return;
+
+            float viewH = sr.viewport.rect.height;
+            float contentH = sr.content.rect.height;
+            float max = Mathf.Max(0f, contentH - viewH);
+
+            if (max > 0f)
+            {
+                float wheel = UnityEngine.Input.mouseScrollDelta.y;
+                if (Mathf.Abs(wheel) < 0.001f) wheel = ZInput.GetMouseScrollWheel();
+                if (Mathf.Abs(wheel) > 0.001f &&
+                    RectTransformUtility.RectangleContainsScreenPoint(
+                        sr.viewport, UnityEngine.Input.mousePosition, CamFor(sr.viewport)))
+                {
+                    // Content is pivoted top-left, so scrolling DOWN moves it up: y increases.
+                    var p = sr.content.anchoredPosition;
+                    p.y = Mathf.Clamp(p.y - Mathf.Sign(wheel) * step, 0f, max);
+                    sr.content.anchoredPosition = p;
+                }
+            }
+
+            if (knob == null) return;
+            var track = knob.parent as RectTransform;
+            if (track == null) return;
+
+            bool needed = max > 0.5f;
+            if (track.gameObject.activeSelf != needed) track.gameObject.SetActive(needed);
+            if (!needed) return;
+
+            float trackH = track.rect.height;
+            float knobH = Mathf.Clamp(trackH * (viewH / Mathf.Max(1f, contentH)), 20f, trackH);
+            float t = Mathf.Clamp01(sr.content.anchoredPosition.y / max);
+            knob.sizeDelta = new Vector2(0f, knobH);
+            knob.anchoredPosition = new Vector2(0f, -t * (trackH - knobH));
+        }
+
+        private static Camera CamFor(RectTransform rt)
+        {
+            var canvas = rt.GetComponentInParent<Canvas>();
+            if (canvas == null) return null;
+            return canvas.renderMode == RenderMode.ScreenSpaceOverlay ? null : canvas.worldCamera;
         }
 
         /// <summary>Total height of a content rect's children, so we can size it for scrolling.</summary>
@@ -368,8 +468,19 @@ namespace NoVikingLeftBehind
         /// does not reliably have one - so the tab carries its own panel, built from the same
         /// cloned label and backdrop as everything else, and shows it under the cursor.
         /// </summary>
-        internal sealed class Hover : MonoBehaviour, IPointerEnterHandler, IPointerExitHandler
+        /// <summary>
+        /// The hover hit-area. It also implements the pointer-press interfaces and does nothing
+        /// in them, on purpose: a click on a row's label or hint must be a dead click. Without
+        /// that, the press has no handler here and the event system keeps looking, and a click on
+        /// the "Window days" label was landing on the slider and slamming it to its minimum.
+        /// </summary>
+        internal sealed class Hover : MonoBehaviour, IPointerEnterHandler, IPointerExitHandler,
+                                      IPointerDownHandler, IPointerUpHandler, IPointerClickHandler
         {
+            public void OnPointerDown(PointerEventData eventData) { }
+            public void OnPointerUp(PointerEventData eventData) { }
+            public void OnPointerClick(PointerEventData eventData) { }
+
             public string Text;
             public static RectTransform Panel;
 

@@ -1,7 +1,7 @@
 {
   "name": "NoVikingLeftBehind",
   "author": "Nosferatu",
-  "version_number": "0.7.4",
+  "version_number": "0.7.5",
   "website_url": "https://github.com/MJensen01/NoVikingLeftBehind",
   "description": "The ultimate Valheim quality-of-life mod! 33 modules, one install: overkill tools, workbench reach, cheaper building, lighter loads, repair-all, catch-up mechanics, extra slots, loadouts, chest crafting & more. Every setting is live on the server.",
   "dependencies": [

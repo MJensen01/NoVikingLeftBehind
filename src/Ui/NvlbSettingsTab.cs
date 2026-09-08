@@ -58,6 +58,7 @@ namespace NoVikingLeftBehind
 
         private RectTransform _leftContent, _rightContent;
         private ScrollRect _leftScroll, _rightScroll;
+        private RectTransform _leftKnob, _rightKnob;
         private TMP_InputField _search;
         private TMP_Text _accessText, _auditText, _statusText;
         private Button _undoButton, _resetButton;
@@ -89,6 +90,9 @@ namespace NoVikingLeftBehind
 
         /// <summary>How much of a row's right-hand side belongs to the control and the reset button.</summary>
         private const float RightInset = 344f;
+
+        /// <summary>The control column proper: nothing that only shows text may reach into it.</summary>
+        private const float ControlColumnW = 340f;
 
         /// <summary>The live tab, for <c>nvlb.uidump</c>. There is only ever one Settings object.</summary>
         internal static NvlbSettingsTab Current;
@@ -491,6 +495,10 @@ namespace NoVikingLeftBehind
             if (!_built) return;
             UiKit.Hover.Tick();
 
+            // One notch of the wheel moves one row in whichever pane the pointer is over.
+            UiKit.TickScroll(_leftScroll, _leftKnob, ModuleRowH + 2f);
+            UiKit.TickScroll(_rightScroll, _rightKnob, RowH);
+
             // The "reset the network" confirmation lapses on its own, so a stray first click
             // never leaves a loaded button behind.
             if (_netConfirmUntil > 0f && Time.unscaledTime > _netConfirmUntil)
@@ -519,7 +527,10 @@ namespace NoVikingLeftBehind
         {
             float rw = _rightContent != null ? _rightContent.rect.width : 0f;
             if (rw <= 0f) return;
-            float right = Mathf.Clamp(RightInset, 0f, Mathf.Max(0f, rw - 12f - 120f));
+            // Give ground on the right inset so the label keeps 120px, but never below the width
+            // of the control column itself: a label that reached under the slider would overlap
+            // the one thing on the row that must own its own clicks.
+            float right = Mathf.Clamp(RightInset, ControlColumnW, Mathf.Max(ControlColumnW, rw - 12f - 120f));
 
             foreach (var r in _rows)
             {
@@ -607,6 +618,7 @@ namespace NoVikingLeftBehind
             lrt.offsetMin = new Vector2(4f, FooterH);
             lrt.offsetMax = new Vector2(LeftW, -HeaderH);
             lrt.sizeDelta = new Vector2(LeftW - 4f, lrt.sizeDelta.y);
+            _leftKnob = UiKit.ScrollBar(_leftScroll);
 
             // ---- right: the selected module's settings --------------------------------------
             _rightScroll = UiKit.Scroll(_page, "Settings", out _rightContent);
@@ -616,6 +628,7 @@ namespace NoVikingLeftBehind
             rrt.pivot = new Vector2(0.5f, 0.5f);
             rrt.offsetMin = new Vector2(LeftW + 8f, FooterH);
             rrt.offsetMax = new Vector2(-8f, -HeaderH);
+            _rightKnob = UiKit.ScrollBar(_rightScroll);
 
             // ---- footer ----------------------------------------------------------------------
             var footer = UiKit.Panel("Footer", _page);
@@ -628,7 +641,10 @@ namespace NoVikingLeftBehind
             _undoButton = UiKit.Button(footer, "Undo last change", UiKit.BaseFontSize * 0.9f);
             if (_undoButton != null)
             {
-                UiKit.Place((RectTransform)_undoButton.transform, 8f, FooterH - 6f, 180f, 30f);
+                // Place() measures DOWN from the top of the footer band, which is the bottom
+                // FooterH pixels of the page. Passing FooterH-6 put the buttons 24px BELOW the
+                // page, on top of vanilla's own Back/OK row.
+                UiKit.Place((RectTransform)_undoButton.transform, 8f, 2f, 200f, 34f);
                 _undoButton.onClick.AddListener(delegate { TweakDoor.RequestUndo(); });
                 UiKit.Tip(_undoButton.gameObject,
                     "Put the most recent change on this server back to what it was. " +
@@ -638,7 +654,7 @@ namespace NoVikingLeftBehind
             _resetButton = UiKit.Button(footer, "Reset module to defaults", UiKit.BaseFontSize * 0.9f);
             if (_resetButton != null)
             {
-                UiKit.Place((RectTransform)_resetButton.transform, 196f, FooterH - 6f, 220f, 30f);
+                UiKit.Place((RectTransform)_resetButton.transform, 216f, 2f, 240f, 34f);
                 _resetButton.onClick.AddListener(delegate
                 {
                     if (_selected != null) TweakDoor.RequestResetModule(_selected.Section);
@@ -700,6 +716,9 @@ namespace NoVikingLeftBehind
             {
                 if (module.Theme != theme)
                 {
+                    // Air above every heading but the first, so a theme reads as starting a new
+                    // group rather than belonging to the row above it.
+                    if (theme != null) y += 8f;
                     theme = module.Theme;
                     var head = UiKit.Label(_leftContent, theme.ToUpperInvariant(),
                                            UiKit.BaseFontSize * 0.72f, TextAlignmentOptions.BottomLeft,
@@ -720,10 +739,13 @@ namespace NoVikingLeftBehind
                 picker.transform.SetParent(rowRt, false);
                 UiKit.Stretch((RectTransform)picker.transform);
                 var mod = module;
-                UiKit.Tip(picker, ModuleTooltip(mod));
                 var pickBtn = picker.AddComponent<Button>();
                 pickBtn.transition = Selectable.Transition.None;
                 pickBtn.onClick.AddListener(delegate { Select(mod); });
+                // Attached after the Button, and to the name as well: the toggle sits on top of
+                // the right-hand end of this row, so hovering there used to reach nothing at all.
+                UiKit.Tip(picker, ModuleTooltip(mod));
+                UiKit.Tip(name.gameObject, ModuleTooltip(mod));
 
                 var mr = new ModuleRow { Module = module, Label = name, Root = rowGo };
 
@@ -743,6 +765,9 @@ namespace NoVikingLeftBehind
                         Apply(info, on ? "true" : "false");
                     });
                     mr.Enabled = toggle;
+                    // The toggle is the topmost thing over its corner of the row, so it has to
+                    // carry the tooltip itself or hovering the checkbox says nothing.
+                    UiKit.Tip(toggle.gameObject, ModuleTooltip(mod));
                 }
 
                 _moduleRows.Add(mr);
@@ -831,9 +856,21 @@ namespace NoVikingLeftBehind
 
         private static string ModuleTooltip(FeatureModule m)
         {
-            string hint = string.IsNullOrEmpty(m.Hint) ? "" : m.Hint + "\n\n";
-            return hint + "Section [" + m.Section + "]   runs on: " + m.Side + "\n" +
-                   "State on this machine: " + m.Status;
+            var sb = new System.Text.StringBuilder();
+            sb.Append(m.Name);
+            if (!string.IsNullOrEmpty(m.Theme)) sb.Append("   -   ").Append(m.Theme);
+            sb.Append('\n');
+            if (!string.IsNullOrEmpty(m.Hint)) sb.Append('\n').Append(m.Hint).Append('\n');
+
+            var enabled = ConfigCatalog.Find(m.Section, "Enabled");
+            if (enabled != null && !string.IsNullOrEmpty(enabled.Description))
+                sb.Append('\n').Append(enabled.Description).Append('\n');
+
+            sb.Append("\nOn: ").Append(m.BootEnabled ? "live" : "needs a restart")
+              .Append("   Off: live");
+            sb.Append("\nSection [").Append(m.Section).Append("]   runs on: ").Append(m.Side)
+              .Append("\nState on this machine: ").Append(m.Status);
+            return sb.ToString();
         }
 
         private void Select(FeatureModule module)
