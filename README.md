@@ -3,9 +3,9 @@
 A BepInEx 5 mod for Valheim 0.221.12, built and maintained for a small dedicated-server group
 and released here for anyone to use. MIT licensed.
 
-All-in-one, server-enforced quality-of-life and catch-up mechanics: 29 modules covering inventory,
-loadouts, combat (fists + shield), crafting from chests, food, corpse runs, guardian powers, ore
-regrowth, portals and a frontier-based catch-up system. One DLL, installed on the server and by
+All-in-one, server-enforced quality-of-life and catch-up mechanics: 33 modules covering inventory,
+loadouts, combat (fists + shield), crafting from chests, building and gathering, food, corpse
+runs, guardian powers, ore regrowth, portals and a frontier-based catch-up system. One DLL, installed on the server and by
 every player. The server enforces every setting (via [ServerSync](https://github.com/blaxxun-boop/ServerSync)),
 so nobody has to agree on config by hand.
 
@@ -33,8 +33,8 @@ Pre-release (see version plan below), built and tested against Valheim `0.221.12
 
 ## Config overview
 
-29 modules, each with its own `[Section] Enabled` toggle, plus `Tiers` (shared config, always on,
-no toggle of its own) — 30 rows in `docs/MODULES.md`, the full per-module table (side, section,
+33 modules, each with its own `[Section] Enabled` toggle, plus `Tiers` (shared config, always on,
+no toggle of its own) — 34 rows in `docs/MODULES.md`, the full per-module table (side, section,
 settings, defaults, hot-reload). Every gameplay number is server-synced and hot-reloads (edit the
 cfg, it applies within a second — `Enabled` toggles need a restart to turn *on*, off is instant);
 hotkeys and HUD offsets (`ExtraSlots`, `Loadouts`, `CorpseRunPlus`) are per-player, local settings.
@@ -96,6 +96,24 @@ easier — the newest tier is never touched.
   can't repair workbench gear and a too-low station level still refuses; one repair effect and
   one top-left message per batch (`ShowMessage=true`). ExtraSlots items included; building
   pieces are deliberately out of scope.
+
+### Building
+
+- **OverkillTools** `[Tools]` — a tool whose tier outclasses the target does more damage per swing:
+  `1 + PerTierBonus x (toolTier - minToolTier)`, capped (`PerTierBonus=0.5`, `MaxMultiplier=3.0`,
+  `AffectTrees/Rocks/Destructibles=true`). Gap 0 = vanilla, so day-one Meadows is untouched. Ore
+  nodes stay FastMining's (`[Mining] OreNodes`), never both.
+- **WorkbenchReach** `[Workbench]` — build range = vanilla + `PerTierMetres` x world tier +
+  `PerLevelMetres` x (level-1), hard-capped (`PerTierMetres=2`, `PerLevelMetres=6`,
+  `MaxRangeMetres=60`, `Stations="piece_workbench"`). Placement, deconstruct, repair, the build
+  HUD and the visible circle all move together; the spawn-suppression area does not.
+- **SettlementDiscount** `[Settlement]` — build pieces cost
+  `max(1 - PerTierDiscount x worldTier, 1 - MaxDiscount)` (`0.10`/`0.50`, `MinAmount=1`), composed
+  with the tier discount. Build pieces only; deconstruct refunds are scaled by the same factor so
+  a refund never exceeds the price.
+- **BuildersLoad** `[Load]` — within a bench's build range, listed building materials weigh
+  `WeightMultiplier` (`0.5`), with a 3 s hysteresis on the way out (`Stations="piece_workbench,piece_stonecutter"`).
+  Local player's own inventory only; the carry-weight cap is never touched.
 
 ### Survival & world
 

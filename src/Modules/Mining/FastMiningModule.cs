@@ -274,6 +274,26 @@ namespace NoVikingLeftBehind
                                string.Join(", ", missing.ToArray()));
         }
 
+        /// <summary>
+        /// Is this prefab one of the ore nodes THIS module owns? Asked by [Tools] OverkillTools,
+        /// which prefixes three of the same owner-side damage handlers and must never double-apply
+        /// on top of FastMining's SpeedMultiplier.
+        ///
+        /// Deliberately independent of whether FastMining is enabled or which side is running:
+        /// the [Mining] OreNodes list defines the boundary between the two modules' domains, so an
+        /// ore node stays FastMining's business even when FastMining is switched off (in which case
+        /// it simply mines at vanilla speed, exactly as it did before this module existed).
+        /// Plugin.Configure() binds every module's config regardless of side, so _self and the
+        /// OreNodes entry exist on a dedicated server too.
+        /// </summary>
+        internal static bool IsOreNodePrefab(int prefabHash)
+        {
+            var self = _self;
+            if (self == null || prefabHash == 0) return false;
+            self.EnsureAllowlist();
+            return self._allow.ContainsKey(prefabHash);
+        }
+
         /// <summary>Component family + m_minToolTier, for logging (PROOF step 1 in NOTES).</summary>
         private static string FamilyOf(GameObject go)
         {

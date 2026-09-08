@@ -1,10 +1,11 @@
 # NoVikingLeftBehind — the ultimate Valheim quality-of-life mod!
 
-**One install. Twenty-nine modules. Zero arguments about config.** NoVikingLeftBehind is the
+**One install. Thirty-three modules. Zero arguments about config.** NoVikingLeftBehind is the
 all-in-one quality-of-life mod for co-op Valheim: extra inventory slots, one-key loadouts, fist
 weapons with a shield, crafting straight from your chests, food that never decays, a compass back
 to your corpse, dual guardian powers, ore that grows back, portals that carry your metal, a
-longship that points closer into the wind when your crew is aboard — and a
+longship that points closer into the wind when your crew is aboard, tools that tear through
+material they outclass, a workbench whose reach grows with your settlement — and a
 catch-up system that keeps the whole crew playing together even when half of them only get online
 on weekends. It replaces six other mods and plays nicely with the content mods you already run.
 
@@ -99,6 +100,27 @@ all. The mod never makes the leaders' game easier; it only softens the trail beh
   own rules applied to the whole bag at once: repairs stay free, a forge still won't touch
   workbench gear, and a level-1 bench still won't repair your best axe. Items sitting in ExtraSlots
   get repaired too. Prefer to press a key instead? Set `Trigger="Hotkey"`. `Tune it:` `[Repair] Trigger="OnOpen"` (or `Hotkey`/`Both`), `ShowMessage=true`, local `Hotkey="R"`
+
+### Building
+
+- **OverkillTools** — a black metal axe drops a beech in two swings and an iron pickaxe bites a
+  boulder like it's chalk. The bonus is the *gap* between your tool's tier and what the target
+  actually needs, so day-one Meadows with a stone axe is exactly as slow as it always was — this
+  only ever rewards going back to old material with better gear. Ore veins are left alone: those
+  are FastMining's job. `Tune it:` `[Tools] PerTierBonus=0.5`, `MaxMultiplier=3.0`, `AffectTrees=true`, `AffectRocks=true`, `AffectDestructibles=true`
+- **WorkbenchReach** — every boss your world kills pushes the workbench's build radius out a
+  little; every level of extensions pushes it out a lot. A level-5 bench in a five-boss world
+  covers nearly the whole base, and the circle you see when you hover with the hammer grows to
+  match, so there's no guessing. Monster-spawn suppression is *not* enlarged — that stays exactly
+  vanilla. `Tune it:` `[Workbench] PerTierMetres=2`, `PerLevelMetres=6`, `MaxRangeMetres=60`, `Stations="piece_workbench"`
+- **SettlementDiscount** — the clan gets better at building: every boss down knocks 10% off every
+  build piece, to a floor of half price. Build pieces only — crafting recipes cost what they
+  always cost — and deconstructing refunds exactly what the piece costs now, never more.
+  `Tune it:` `[Settlement] PerTierDiscount=0.10`, `MaxDiscount=0.50`, `MinAmount=1`, `ExcludePieces=""`, `OnlyCategories=""`
+- **BuildersLoad** — stand near your bench and the wood, stone and metal in your pack weigh half
+  as much, so a big wall is a couple of trips instead of ten. Walk away and it comes straight
+  back (with a three-second grace so the encumbrance arrow doesn't strobe at the edge). Building
+  materials only, your own inventory only, and your carry limit is untouched. `Tune it:` `[Load] WeightMultiplier=0.5`, `Materials="Wood,FineWood,RoundLog,Stone,..."`, `Stations="piece_workbench,piece_stonecutter"`, `HysteresisSeconds=3`
 
 ### Survival & world
 

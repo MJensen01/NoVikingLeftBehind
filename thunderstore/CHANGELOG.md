@@ -1,5 +1,71 @@
 # Changelog — NoVikingLeftBehind
 
+## 0.6.0 (2026-09-08)
+**Building & gathering** — four new modules for the half of Valheim that is a construction game: tools that tear
+through material they outclass, a workbench whose reach grows with your settlement, cheaper building as the clan
+grows, and half-weight materials next to the bench. 29 modules -> **33 modules**.
+
+- **OverkillTools — new module** (`src/Modules/Building/OverkillToolsModule.cs`, `[Tools]`, Side `Both`).
+  A hit on a tree, log, stump, rock or plain destructible is scaled by
+  `min(1 + PerTierBonus x (hit.m_toolTier - target.m_minToolTier), MaxMultiplier)` — a black metal axe fells a birch in
+  a couple of swings, an iron pickaxe bites a boulder harder than an antler one, and **day-one Meadows is untouched**,
+  because a stone axe on a beech has a tier gap of 0 and gets exactly vanilla numbers. Defaults `PerTierBonus=0.5`,
+  `MaxMultiplier=3.0`, `AffectTrees/AffectRocks/AffectDestructibles=true`.
+  Hooks are the five owner-side handlers that already gate on tool tier — `TreeBase.RPC_Damage`, `TreeLog.RPC_Damage`,
+  `MineRock.RPC_Hit`, `MineRock5.RPC_Damage`, `Destructible.RPC_Damage` — and the whole hit is scaled with
+  `HitData.DamageTypes.Modify(float)`, so a chop hit scales its chop and a pickaxe hit its pickaxe with no per-damage-
+  type special cases. **Deterministic by construction:** the formula reads only the target prefab's own
+  `m_minToolTier` and the hit's serialised `m_toolTier`, so it is identical whichever machine owns the object — which
+  is why the module is `Both` and its patch bodies deliberately do *not* gate on the running side.
+  A bonus needs a player's tool: `HitType.Structural` is rejected outright (`MineRock5.CheckSupport` manufactures a
+  `m_toolTier=100` hit to collapse unsupported areas), a `Player` attacker always qualifies, any other `Character`
+  never does, and an attacker whose object is not instantiated on this machine qualifies only when `m_toolTier > 0`.
+  **No double-dipping with FastMining:** every prefab in `[Mining] OreNodes` — fractured stages included — is skipped,
+  whether or not FastMining is enabled, so copper, tin, silver, obsidian and meteorite behave exactly as they did in
+  0.5.1. Creatures, players and `WearNTear` build pieces are never patched at all.
+  `[Tools] SelfTest=true` logs a table of 26 real prefabs with their component family and `m_minToolTier` and the
+  multiplier at tool tiers 0–4.
+- **WorkbenchReach — new module** (`src/Modules/Building/WorkbenchReachModule.cs`, `[Workbench]`, Side `Both`).
+  `effective range = vanilla + PerTierMetres x world tier + PerLevelMetres x (level-1)`, hard-capped and never below
+  vanilla. Defaults `PerTierMetres=2`, `PerLevelMetres=6`, `MaxRangeMetres=60`, `Stations="piece_workbench"`. On the
+  test world (tier 3) that is **26 m at level 1, 46 m at level 3 and 60 m (capped) at level 5**, against vanilla's 20 m.
+  One postfix on `CraftingStation.GetStationBuildRange()` moves every range check together — placement
+  (`Player.HaveRequirements(Piece, RequirementMode)`), deconstruct **and** hammer repair (`Player.CheckCanRemovePiece`),
+  the build HUD's workbench row (`Hud.SetupPieceInfo`) and CraftFromChests' own build check all go through the same
+  static — so the HUD, the validation and the consume path cannot disagree. `m_rangeBuild` lives on the shared prefab
+  and is **never mutated**: only the return value is rewritten, per instance, per call. A postfix on
+  `CraftingStation.ShowAreaMarker()` grows the hover circle to match, so you can see the reach you have.
+  **The monster-spawn suppression area is deliberately NOT enlarged** — vanilla sizes that `EffectArea.PlayerBase`
+  collider from the same field this module never writes, so it stays exactly vanilla.
+- **SettlementDiscount — new module** (`src/Modules/Building/SettlementDiscountModule.cs`, `[Settlement]`, Side
+  `Client`). Build pieces cost `max(1 - PerTierDiscount x world tier, 1 - MaxDiscount)` — 10% per boss down to a floor
+  of half price, so a three-boss world pays x0.70 and a wood door costs 3 wood instead of 4. Defaults
+  `PerTierDiscount=0.10`, `MaxDiscount=0.50`, `MinAmount=1`, plus optional `ExcludePieces` and `OnlyCategories`.
+  **Build pieces only** — crafting recipes cost exactly what they always cost. The factor is composed into
+  TrailingTierDiscount's existing requirement-scaling context (`tierMult x stationMult x settlementFactor`, rounded
+  once), rather than added as a second `GetAmount` postfix that would round twice; it keeps its own section and its own
+  `Enabled` so it can be toggled live and independently, but the shared machinery is installed by `[Discount]`, which
+  must therefore be enabled at startup.
+- **Deconstruct refunds can no longer exceed the price** (`Piece.DropResources(HitData)`, new prefix + finalizer in
+  `TrailingTierDiscountModule`). Vanilla's refund path reads `requirement.m_amount` **directly**, never `GetAmount()`,
+  so any build-piece discount used to let you build a wall cheap and break it for full price, over and over. Both the
+  cost and the refund now go through one function — `ScaledAmount(amount, PieceCostFactor(piece))` — so they are equal
+  by construction. This also closes the same hole for the tier discount, which has been open since 0.3.0. One
+  documented consequence: a piece built before a discount applied refunds today's cheaper price, deliberately erring
+  against the player.
+- **BuildersLoad — new module** (`src/Modules/Building/BuildersLoadModule.cs`, `[Load]`, Side `Client`). Inside a
+  bench's build range, listed building materials weigh `WeightMultiplier` (0.5) — 60 wood drops from 120 to 60, 60 iron
+  from 720 to 360 — so a big wall is a couple of trips instead of ten. Defaults `Stations="piece_workbench,piece_stonecutter"`,
+  `HysteresisSeconds=3`, `CheckIntervalSeconds=0.5`, and 19 materials, every one of them resolved against 0.221.13's
+  ObjectDB before shipping. One postfix on `Inventory.GetTotalWeight()`, the single accessor every encumbrance and
+  weight readout goes through, and it returns immediately unless the inventory *is* the local player's own — chests,
+  carts, ships and other players are structurally out of reach. Range comes from WorkbenchReach's shared helper, so
+  "near a bench" means exactly what the build hammer means by it. **Hysteresis** keeps you "in range" for 3 s after
+  walking out, so the encumbrance arrow cannot flicker on the boundary. The carry-weight **cap** is never touched and
+  nothing is stored: walk away and the weight comes straight back.
+- **Docs.** New "Building" theme section in both READMEs with four `Tune it:` lines, four new rows in
+  `docs/MODULES.md` (33 modules + `Tiers` = 34 rows), and the module count updated everywhere it is stated.
+
 ## 0.5.1 (2026-09-08)
 **Per-station recipe costs** — TrailingTierDiscount can now re-price every recipe made at a named crafting station,
 whatever its tier. Still 29 modules; no new module.

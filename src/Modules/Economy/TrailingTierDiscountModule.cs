@@ -44,6 +44,16 @@ namespace NoVikingLeftBehind
     ///     Hud.SetupPieceInfo(Piece)                         - the build hammer's cost row
     ///     Player.ConsumeResources(...)                      - shared with crafting (called with
     ///                                                         piece.m_resources, qualityLevel 0)
+    ///     Piece.DropResources(HitData)                      - the deconstruct REFUND (0.6.0; see
+    ///                                                         DropResourcesPre - it reads
+    ///                                                         m_amount directly, so without this
+    ///                                                         a discounted piece refunded MORE
+    ///                                                         than it cost)
+    ///
+    /// Since 0.6.0 this module also hosts [Settlement] SettlementDiscount's factor: that module
+    /// owns its own config and Enabled but contributes a multiplier into the single composition
+    /// below (tier x station x settlement, rounded once), so the two discounts cannot round twice
+    /// or race each other's in-place m_amount save/restore. See SettlementDiscountModule.
     ///
     /// Player.HaveRequirements(Piece, RequirementMode) is the one hole: its CanBuild branch reads
     /// requirement.m_amount DIRECTLY instead of calling GetAmount, so a GetAmount postfix cannot
@@ -81,11 +91,18 @@ namespace NoVikingLeftBehind
 
         /// <summary>What the requirement currently being priced belongs to. Tier 0 = none,
         /// Station 0 = not set (treated as 1 = no station discount). Game logic is
-        /// single-threaded, but ThreadStatic costs nothing and makes the invariant explicit.</summary>
+        /// single-threaded, but ThreadStatic costs nothing and makes the invariant explicit.
+        ///
+        /// IsPiece/PieceRef were added in 0.6.0 for [Settlement] SettlementDiscount, which applies
+        /// to BUILD PIECES ONLY and needs the piece itself to honour its ExcludePieces /
+        /// OnlyCategories lists. A crafting context leaves both at their defaults, which is what
+        /// makes "never a crafting recipe" structural rather than a rule someone has to remember.</summary>
         internal struct Ctx
         {
             public int Tier;
             public float Station;
+            public bool IsPiece;
+            public Piece PieceRef;
         }
 
         [ThreadStatic] private static Ctx _ctx;
@@ -99,6 +116,38 @@ namespace NoVikingLeftBehind
         private static bool Live()
         {
             return _self != null && _self.Active && ClientActive();
+        }
+
+        /// <summary>
+        /// True when EITHER this module or [Settlement] SettlementDiscount wants build-piece costs
+        /// scaled. The build-piece context setters and the two in-place m_amount patches
+        /// (HaveRequirements(Piece,...) and DropResources) gate on this rather than on Live(), so
+        /// switching [Discount] Enabled off at runtime leaves SettlementDiscount working. The
+        /// patches themselves are still installed by THIS module, so [Discount] Enabled must have
+        /// been on at startup for either to reach the game - the usual "on: restart / off: live"
+        /// rule, documented in [Settlement] Enabled and docs/MODULES.md.
+        /// </summary>
+        private static bool PieceLive()
+        {
+            return Live() || SettlementDiscountModule.Live();
+        }
+
+        /// <summary>
+        /// The single combined build-piece cost factor: tier discount x settlement discount.
+        /// Every build-piece path - the HUD row, the CanBuild check, the consume, and the
+        /// deconstruct refund - goes through this one function, which is what makes the refund
+        /// provably equal to the price.
+        /// </summary>
+        internal static float PieceCostFactor(Piece piece)
+        {
+            float mult = 1f;
+            if (Live())
+            {
+                int tier = Tiers.OfPiece(piece);
+                if (tier > 0 && Tiers.IsBehind(tier)) mult = MultiplierFor(tier);
+            }
+            mult *= SettlementDiscountModule.FactorFor(piece);
+            return mult;
         }
 
         protected override void Bind()
@@ -198,6 +247,14 @@ namespace NoVikingLeftBehind
                           prefix: Post(nameof(HavePiecePre)),
                           finalizer: Post(nameof(HavePieceFin)));
 
+            // The deconstruct refund reads m_amount directly too - same treatment, same factor,
+            // so a refund can never exceed what the piece costs. See DropResourcesPre.
+            var dropResources = AccessTools.Method(typeof(Piece), "DropResources", new[] { typeof(HitData) });
+            if (dropResources == null) throw new Exception("Piece.DropResources(HitData) not found");
+            Harmony.Patch(dropResources,
+                          prefix: Post(nameof(DropResourcesPre)),
+                          finalizer: Post(nameof(DropResourcesFin)));
+
             Log.LogInfo("[" + Name + "] " + Numbers());
         }
 
@@ -220,11 +277,15 @@ namespace NoVikingLeftBehind
             var ctx = _ctx;
 
             float mult = 1f;
-            if (ctx.Tier > 0 && Tiers.IsBehind(ctx.Tier)) mult = MultiplierFor(ctx.Tier);
-            if (ctx.Station > 0f && ctx.Station < 1f) mult *= ctx.Station;
+            if (Live())
+            {
+                if (ctx.Tier > 0 && Tiers.IsBehind(ctx.Tier)) mult = MultiplierFor(ctx.Tier);
+                if (ctx.Station > 0f && ctx.Station < 1f) mult *= ctx.Station;
+            }
+            // Build pieces only, and only inside a context that knows it is one.
+            if (ctx.IsPiece) mult *= SettlementDiscountModule.FactorFor(ctx.PieceRef);
             if (mult >= 1f) return;
 
-            if (!Live()) return;
             __result = ScaledAmount(__result, mult);
         }
 
@@ -244,12 +305,35 @@ namespace NoVikingLeftBehind
         private static void ConsumeCtxPre(Piece.Requirement[] requirements, out Ctx __state)
         {
             __state = _ctx;
+            if (!PieceLive()) { _ctx = default(Ctx); return; }
+
             // The tier is derivable from the requirements alone; the station is not, so it is
             // inherited from whatever context wraps this call - DoCrafting for a recipe, nothing
-            // (= no station discount) for Player.PlacePiece.
-            _ctx = Live()
-                       ? new Ctx { Tier = Tiers.OfRequirements(requirements), Station = __state.Station }
-                       : default(Ctx);
+            // (= no station discount) for the build path.
+            //
+            // Whether this is a BUILD PIECE is inherited the same way when a piece context already
+            // wraps the call; otherwise it is decided by identity. Vanilla's only piece-consuming
+            // call site is Player.UpdatePlacement, which passes `selectedPiece.m_resources` - the
+            // very array object hanging off the currently selected piece - so a reference compare
+            // is exact, costs nothing, and cannot mistake a recipe for a piece.
+            var pieceRef = __state.IsPiece ? __state.PieceRef : SelectedPieceFor(requirements);
+            _ctx = new Ctx
+            {
+                Tier = Tiers.OfRequirements(requirements),
+                Station = __state.Station,
+                IsPiece = pieceRef != null,
+                PieceRef = pieceRef
+            };
+        }
+
+        /// <summary>The build piece whose own requirement array this is, or null.</summary>
+        private static Piece SelectedPieceFor(Piece.Requirement[] requirements)
+        {
+            if (requirements == null) return null;
+            var player = Player.m_localPlayer;
+            if (player == null || player.m_buildPieces == null) return null;
+            var selected = player.m_buildPieces.GetSelectedPiece();
+            return selected != null && ReferenceEquals(selected.m_resources, requirements) ? selected : null;
         }
 
         private static void PieceCtxPre(Piece piece, out Ctx __state)
@@ -257,7 +341,9 @@ namespace NoVikingLeftBehind
             __state = _ctx;
             // Station multipliers are a crafting-recipe feature; a build piece's m_craftingStation
             // is a proximity requirement, not where its cost comes from, so it never matches.
-            _ctx = Live() ? new Ctx { Tier = Tiers.OfPiece(piece), Station = 1f } : default(Ctx);
+            _ctx = PieceLive()
+                       ? new Ctx { Tier = Tiers.OfPiece(piece), Station = 1f, IsPiece = true, PieceRef = piece }
+                       : default(Ctx);
         }
 
         private static void GuiCtxPre(InventoryGui __instance, out Ctx __state)
@@ -305,10 +391,42 @@ namespace NoVikingLeftBehind
         {
             __state = null;
             if (mode != Player.RequirementMode.CanBuild) return;
-            if (!Live() || piece == null || piece.m_resources == null) return;
+            __state = ScaleInPlace(piece);
+        }
 
-            int tier = Tiers.OfPiece(piece);
-            if (tier <= 0 || !Tiers.IsBehind(tier)) return;
+        private static void HavePieceFin(Piece piece, int[] __state)
+        {
+            RestoreInPlace(piece, __state);
+        }
+
+        // ---- the deconstruct refund, which never calls GetAmount either -------------------------
+
+        /// <summary>
+        /// Piece.DropResources reads requirement.m_amount DIRECTLY, so without this a discounted
+        /// piece would refund the full vanilla amount - build a wall for 3 wood, break it for 4,
+        /// repeat. The same scale-and-restore used for the CanBuild check, with the SAME combined
+        /// factor, makes the refund exactly the current price and never more. (Vanilla's own
+        /// modifiers - the Feast stack percentage and the /3 for pieces not placed by a player -
+        /// then apply on top, unchanged.)
+        /// </summary>
+        private static void DropResourcesPre(Piece __instance, out int[] __state)
+        {
+            __state = ScaleInPlace(__instance);
+        }
+
+        private static void DropResourcesFin(Piece __instance, int[] __state)
+        {
+            RestoreInPlace(__instance, __state);
+        }
+
+        /// <summary>Scale a piece's m_amount fields for the duration of one call. Returns the
+        /// saved originals, or null when nothing was touched.</summary>
+        private static int[] ScaleInPlace(Piece piece)
+        {
+            if (!PieceLive() || piece == null || piece.m_resources == null) return null;
+
+            float mult = PieceCostFactor(piece);
+            if (mult >= 1f) return null;
 
             var reqs = piece.m_resources;
             var saved = new int[reqs.Length];
@@ -316,18 +434,20 @@ namespace NoVikingLeftBehind
             {
                 var r = reqs[i];
                 saved[i] = r == null ? 0 : r.m_amount;
-                if (r != null && r.m_amount > 0) r.m_amount = DiscountedAmount(r.m_amount, tier);
+                if (r != null && r.m_amount > 0) r.m_amount = ScaledAmount(r.m_amount, mult);
             }
-            __state = saved;
+            return saved;
         }
 
-        private static void HavePieceFin(Piece piece, int[] __state)
+        /// <summary>Put them back. A finalizer, so vanilla throwing cannot leave a piece cheap
+        /// (or expensive) for the rest of the session.</summary>
+        private static void RestoreInPlace(Piece piece, int[] saved)
         {
-            if (__state == null || piece == null || piece.m_resources == null) return;
+            if (saved == null || piece == null || piece.m_resources == null) return;
             var reqs = piece.m_resources;
-            int n = Math.Min(reqs.Length, __state.Length);
+            int n = Math.Min(reqs.Length, saved.Length);
             for (int i = 0; i < n; i++)
-                if (reqs[i] != null) reqs[i].m_amount = __state[i];
+                if (reqs[i] != null) reqs[i].m_amount = saved[i];
         }
 
         // ---- maths -----------------------------------------------------------------------------
@@ -356,7 +476,11 @@ namespace NoVikingLeftBehind
             if (amount <= 0 || mult >= 1f) return amount;
 
             int v = Mathf.RoundToInt(amount * mult);
-            int floor = Mathf.Min(amount, Mathf.Max(0, _minAmount != null ? _minAmount.Value : 1));
+            // Whichever discounts are in play, take the STRICTEST floor of the ones that are:
+            // [Settlement] MinAmountFloor() returns 0 when that module is not contributing.
+            int floor = Mathf.Max(_minAmount != null ? _minAmount.Value : 1,
+                                  SettlementDiscountModule.MinAmountFloor());
+            floor = Mathf.Min(amount, Mathf.Max(0, floor));
             if (v < floor) v = floor;
             if (v > amount) v = amount;
             return v;
