@@ -119,6 +119,23 @@ namespace NoVikingLeftBehind
 
             PatchQuietly(AccessTools.Method(typeof(Terminal), "InitTerminal"),
                          nameof(RegisterUiDump), false, "Terminal.InitTerminal");
+
+            // Back and Escape both land in Settings.OnBack. Since 0.8.2 this tab holds its edits
+            // until Save, so leaving with a queue must ask first - and this is the only place
+            // that can still stop the screen closing.
+            PatchQuietly(AccessTools.Method(typeof(Settings), "OnBack"),
+                         nameof(SettingsOnBackPrefix), true, "Settings.OnBack");
+        }
+
+        private static bool SettingsOnBackPrefix()
+        {
+            try { return NvlbSettingsTab.AllowVanillaBack(); }
+            catch (Exception e)
+            {
+                // Never trap anyone in the settings menu over a bug of ours.
+                Log.LogError("[SettingsMenu] Settings.OnBack prefix: " + e);
+                return true;
+            }
         }
 
         /// <summary>

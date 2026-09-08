@@ -82,6 +82,11 @@ namespace NoVikingLeftBehind
 
                 case "string":
                     {
+                        // Take the quoting off before anything looks at it. A player who copies
+                        // the example out of a hint types the quotes too, and an older build
+                        // escaped what it stored - so "1,2", '1,2' and \"1,2\" all mean 1,2.
+                        raw = ConfigCatalog.Unquote(raw);
+
                         if (raw.Length > 4000) return "that value is too long";
                         if (raw.IndexOf('\n') >= 0 || raw.IndexOf('\r') >= 0)
                             return "a value cannot span more than one line";

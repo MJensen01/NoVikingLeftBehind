@@ -90,14 +90,18 @@ namespace NoVikingLeftBehind
         /// <summary>Loadout1Key's default up to 0.8.0 - the one value that gets migrated to Z.</summary>
         private const string OldLoadout1Default = "V";
 
+        /// <summary>SaveModifier's default before this release - the one value that gets migrated to LeftAlt.</summary>
+        private const string OldSaveModifierDefault = "LeftControl";
+
         private static KeyCode[] _keys = new KeyCode[0];
-        private static KeyCode _modifier = KeyCode.LeftControl;
+        private static KeyCode _modifier = KeyCode.LeftAlt;
 
         /// <summary>Per loadout: the hotbar slot numbers it equips, or null for saved-pair mode.</summary>
         private static int[][] _hotbar = new int[MaxSlots][];
 
         private static int _tickErrors;
         private static bool _migrationLogged;
+        private static bool _saveModifierMigrationLogged;
 
         // ---- config ---------------------------------------------------------------------------
 
@@ -115,25 +119,27 @@ namespace NoVikingLeftBehind
                 "Local: DEFAULT key that equips loadout 2, rebindable on Valheim's own Keyboard & " +
                 "Mouse page. Unity KeyCode name, or None.",
                 Opt.T("Default key that equips loadout 2"));
-            _saveModifier = BindLocal("SaveModifier", "LeftControl",
+            _saveModifier = BindLocal("SaveModifier", "LeftAlt",
                 "Local: hold this and press a loadout key to SAVE what you are currently holding " +
                 "into that loadout instead of equipping it. Ignored for a loadout that is set to " +
-                "hotbar-slot mode (Loadout1Slots / Loadout2Slots), which stores nothing. Also " +
+                "hotbar-slot mode (Loadout1Slots / Loadout2Slots), which stores nothing. Changed " +
+                "from LeftControl to LeftAlt because LeftControl is vanilla's own crouch key. Also " +
                 "rebindable on Valheim's own Keyboard & Mouse page.",
                 Opt.T("Default key held to save instead of equip a loadout"));
 
             _slots1 = BindLocal("Loadout1Slots", "",
                 "Local: make loadout 1 a pair of HOTBAR SLOTS instead of a saved weapon pair. " +
-                "\"1,2\" means 'equip whatever is in hotbar slot 1 (main hand) and slot 2 " +
+                "1,2 means 'equip whatever is in hotbar slot 1 (main hand) and slot 2 " +
                 "(off-hand)' at the moment you press the key - so rearranging your hotbar " +
-                "rearranges the loadout and there is nothing to save. \"1\" is main hand only. " +
+                "rearranges the loadout and there is nothing to save. 1 is main hand only. " +
                 "Slot numbers are 1-8, left to right. Empty = the original saved-pair mode.",
-                Opt.T("Hotbar slots loadout 1 equips (e.g. \"1,2\"), empty for the saved pair"));
+                Opt.T("Hotbar slots this loadout equips, e.g. 1,2 - empty = use the saved pair"));
             _slots2 = BindLocal("Loadout2Slots", "",
                 "Local: the same for loadout 2. Empty = the original saved-pair mode.",
-                Opt.T("Hotbar slots loadout 2 equips (e.g. \"3,4\"), empty for the saved pair"));
+                Opt.T("Hotbar slots this loadout equips, e.g. 1,2 - empty = use the saved pair"));
 
             MigrateLoadout1Key();
+            MigrateSaveModifier();
             ParseKeys();
 
             // The hotkeys become real, rebindable Valheim keybindings. The lambdas are re-read on
@@ -162,15 +168,33 @@ namespace NoVikingLeftBehind
                            "something else.");
         }
 
+        /// <summary>
+        /// SaveModifier defaulted to LeftControl before this release, which is vanilla's own crouch
+        /// key. A cfg still holding exactly that old default is moved to the new one; anything a
+        /// player chose themselves - including a deliberate "LeftControl" typed after this release -
+        /// is left alone, because the only thing we can tell apart is "identical to the old default".
+        /// </summary>
+        private void MigrateSaveModifier()
+        {
+            if (_saveModifier == null || _saveModifier.Value != OldSaveModifierDefault) return;
+            _saveModifier.Value = (string)_saveModifier.DefaultValue;
+            if (_saveModifierMigrationLogged) return;
+            _saveModifierMigrationLogged = true;
+            Log.LogWarning("[Loadouts] SaveModifier was still the old default '" + OldSaveModifierDefault +
+                           "', which is vanilla's own crouch key - moved to '" + _saveModifier.Value +
+                           "'. Rebind it on Valheim's Keyboard & Mouse settings page if you want " +
+                           "something else.");
+        }
+
         public override void OnConfigChanged(ConfigEntryBase entry) { ParseKeys(); }
 
         private void ParseKeys()
         {
-            var names = new List<string> { _key1.Value, _key2.Value, "None", "None" };
             var keys = new KeyCode[MaxSlots];
-            for (int i = 0; i < MaxSlots; i++) keys[i] = ParseKey(names[i]);
+            keys[0] = ParseKey(_key1.Value, "Loadout1Key");
+            keys[1] = ParseKey(_key2.Value, "Loadout2Key");
             _keys = keys;
-            _modifier = ParseKey(_saveModifier.Value);
+            _modifier = ParseKey(_saveModifier.Value, "SaveModifier");
 
             var pairs = new int[MaxSlots][];
             pairs[0] = ParseSlots(_slots1.Value, "Loadout1Slots");
@@ -179,12 +203,15 @@ namespace NoVikingLeftBehind
         }
 
         /// <summary>
-        /// "1,2" -> {1,2}. Null when empty (saved-pair mode) or unusable, which is the safe answer:
-        /// a typo leaves the loadout in the mode it has always had rather than doing nothing.
+        /// "1,2" -> {1,2}. Also tolerates " 1, 2 " and a value an earlier build wrote with quotes
+        /// (or nested backslash-quotes) around it - <see cref="ConfigCatalog.Unquote"/> peels those
+        /// off first and is a no-op on a value that never had any. Empty (saved-pair mode) is a
+        /// real, expected state and never warns. Null on anything else unusable, which is the safe
+        /// answer: a typo leaves the loadout in the mode it has always had rather than doing nothing.
         /// </summary>
         internal static int[] ParseSlots(string raw, string what)
         {
-            raw = (raw ?? "").Trim();
+            raw = ConfigCatalog.Unquote(raw ?? "").Trim();
             if (raw.Length == 0) return null;
 
             var parts = raw.Split(',');
@@ -215,16 +242,28 @@ namespace NoVikingLeftBehind
             return slot >= 1 && slot <= _hotbar.Length ? _hotbar[slot - 1] : null;
         }
 
-        private static KeyCode ParseKey(string s)
+        /// <summary>
+        /// Unity KeyCode name, case-insensitive and tolerant of internal spaces - "p", "P", "f1",
+        /// "F1", "left alt", "LeftAlt" and "LEFTALT" all resolve the same way, because a player
+        /// typing a key name has no reason to know or care about KeyCode's exact casing.
+        /// <see cref="ConfigCatalog.Unquote"/> peels off any quotes an earlier build left around
+        /// the value (a no-op on a value that never had any), then internal spaces are stripped
+        /// before matching, since no KeyCode name contains one. Empty - and "None" itself,
+        /// any casing - is the quiet "unbound" case; anything else that still will not parse logs
+        /// one warning naming the setting and the value, rather than silently ending up unset.
+        /// </summary>
+        private static KeyCode ParseKey(string s, string what)
         {
-            s = (s ?? "").Trim();
-            if (s.Length == 0) return KeyCode.None;
-            try { return (KeyCode)Enum.Parse(typeof(KeyCode), s, true); }
-            catch
-            {
-                Log.LogWarning("[Loadouts] '" + s + "' is not a Unity KeyCode - that binding is off");
-                return KeyCode.None;
-            }
+            string original = ConfigCatalog.Unquote(s ?? "").Trim();
+            string compact = original.Replace(" ", "");
+            if (compact.Length == 0) return KeyCode.None;
+
+            KeyCode result;
+            if (Enum.TryParse(compact, true, out result)) return result;
+
+            Log.LogWarning("[Loadouts] " + what + ": '" + original + "' is not a Unity KeyCode - " +
+                           "the key is unset");
+            return KeyCode.None;
         }
 
         private int SlotCount { get { return Mathf.Clamp(_slots.Value, 0, MaxSlots); } }
@@ -319,8 +358,15 @@ namespace NoVikingLeftBehind
             string blob;
             if (!p.m_customData.TryGetValue(KeyPrefix + slot, out blob) || string.IsNullOrEmpty(blob))
             {
+                // Name the keys as they are actually bound right now (NvlbKeys.Label reflects a
+                // rebind on the vanilla Keyboard & Mouse page), not the raw cfg string.
+                string modLabel = _inst != null ? Bound(SaveModifierId, _inst._saveModifier.Value) : "the save key";
+                string keyLabel = _inst != null
+                    ? Bound(KeyId(slot), slot == 1 ? _inst._key1.Value : _inst._key2.Value)
+                    : KeyId(slot);
                 p.Message(MessageHud.MessageType.Center,
-                    "Loadout " + slot + " is empty - hold the save key and press it again to store what you hold");
+                    "Loadout " + slot + " is empty - hold " + modLabel + " and press " + keyLabel +
+                    " to store what you hold, or set Loadout" + slot + " slots in Settings");
                 return;
             }
             var spec = Decode(blob);

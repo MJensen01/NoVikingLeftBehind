@@ -1,5 +1,35 @@
 # Changelog — NoVikingLeftBehind
 
+## 0.8.2 (2026-09-08)
+**Nothing in the settings tab happens until you say so.** Until now every click, every nudge of a slider and
+every mis-click went straight to the server. The tab now **queues**: an edit marks its row — tinted, with a
+bullet — and waits. The footer counts them (**Save changes (3)**) and there is a **Discard** beside it that puts
+every control back to what is actually in force. Save sends them through the same door, one at a time, in the
+order you made them, so the audit and Undo still read change by change. Vanilla's own **OK** saves the queue and
+closes; **Back** and **Escape** stop and ask — Save, Discard or Cancel — instead of quietly throwing your work
+away. The module checkboxes down the left queue too, and so do your own machine-local settings.
+
+- **Keys are recorded, not typed.** Every key setting is now a button showing its binding: click it, it says
+  *Press a key…*, and it takes the next key or combination you press. Escape cancels, a small **×** clears it.
+  This replaces a text field that was a trap — one tester typed `p`, which is a perfectly reasonable thing to
+  type, and the config ended up holding the lowercase `p` that Unity's key parser refuses, so the loadout key
+  was simply dead with nothing said about it. Key parsing is now case- and space-insensitive as well
+  (`p`, `F1`, `left alt` all work), and an unparseable key says so in the log instead of vanishing.
+- **A typed value can no longer go missing.** A text field only reported itself on Enter or on losing focus, and
+  on this page focus can move to another row without either ever happening — so a value typed and left was never
+  saved at all. Anything typed is now picked up when the caret leaves, when Save is pressed, and on OK.
+- **Quotes stopped multiplying.** `1,2` typed with quotes was stored as `"1,2"`, then `\"1,2\"`, then
+  `\\"1,2\\"` — the config writer escaped the value again on every save, until nothing could parse it. Strings
+  are stored raw now, and one layer of stray quotes is peeled off whatever is read, so an already-mangled config
+  repairs itself. Slot lists accept `1,2`, `1, 2`, `"1,2"` and `'1,2'` alike.
+- **Clicking a module stopped toggling it.** A cloned checkbox answered clicks across the whole row; it now has
+  one small hit patch over the box itself, on both the module list and the settings rows. And the section
+  headings — **CATCHING UP**, **INVENTORY** — are buttons now: they light up under the pointer, and clicking one
+  jumps the list to that section and opens its first module.
+- **`[Loadouts] SaveModifier` now defaults to LeftAlt.** It was LeftControl, which is vanilla's crouch, so
+  storing a loadout meant crouching. Anyone still on the old default is moved across automatically; anything you
+  set yourself is left alone. The "loadout is empty" message names the keys you actually have bound, too.
+
 ## 0.8.1 (2026-09-08)
 - **The loadout key no longer fights the game.** `Loadout1Key` was **V**, which is vanilla's own
   auto-pickup toggle — so one press did both. It is **Z** now (unbound in vanilla, as is `B` for

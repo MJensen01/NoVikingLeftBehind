@@ -174,7 +174,13 @@ Open **Settings** — from the pause menu in game, or from the main menu — and
 **NoVikingLeftBehind** tab next to Gameplay, Audio and the rest. Everything below is in it: modules
 down the left, grouped by theme with an on/off switch each; the selected module's settings down the
 right, one row apiece with a plain one-line hint under the name and the full explanation on hover.
-A search box at the top finds any of the 235 settings by name, key, hint or description.
+A search box at the top finds any of the 235 settings by name, key, hint or description. Section headings
+are buttons — click one to jump the list to it.
+
+**Nothing is sent until you press Save.** Changing a control marks its row and adds it to a queue the footer
+counts (**Save changes (3)**); **Discard** puts everything back. Vanilla's OK saves the queue and closes, and
+Back or Escape stops to ask first, so a mis-click costs nothing. Key settings are recorded rather than typed:
+click the binding, press the key you want.
 
 By default **anyone on the server can change most of them**, live, for everybody — that is the
 point: friends can tune the game while they are the ones playing it. Every change is announced in

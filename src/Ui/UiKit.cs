@@ -180,6 +180,41 @@ namespace NoVikingLeftBehind
             // blank it - our own label sits to the left of the control.
             foreach (var txt in clone.GetComponentsInChildren<TMP_Text>(true)) txt.text = "";
             ((RectTransform)clone.transform).localScale = Vector3.one;
+
+            // A cloned vanilla toggle answers a click anywhere on any of its graphics, and the
+            // donor's are as wide as the row it came from - so picking a module by name kept
+            // flipping its checkbox instead. Take the raycast off all of them and give the toggle
+            // exactly one hit patch, over the box itself with a few pixels of grace. The graphics
+            // still tint and still show the tick; they simply stop catching clicks meant for the row.
+            foreach (var g in clone.GetComponentsInChildren<Graphic>(true)) g.raycastTarget = false;
+
+            var hit = new GameObject("NVLB_ToggleHit", typeof(RectTransform), typeof(Image));
+            var hrt = (RectTransform)hit.transform;
+            // targetGraphic first: that is the box itself, always on screen. The checkmark is
+            // only faded in and out, but it is the one a skin is most likely to switch off
+            // outright - and a hit patch parented to something switched off is not clickable.
+            var box = (t.targetGraphic != null ? t.targetGraphic : t.graphic);
+            if (box != null)
+            {
+                hrt.SetParent(box.transform, false);       // exactly where the box is drawn
+                Stretch(hrt);
+                hrt.offsetMin = new Vector2(-4f, -4f);
+                hrt.offsetMax = new Vector2(4f, 4f);
+            }
+            else
+            {
+                hrt.SetParent(clone.transform, false);     // no box to find: a 28px patch, centred
+                hrt.anchorMin = new Vector2(0.5f, 0.5f);
+                hrt.anchorMax = new Vector2(0.5f, 0.5f);
+                hrt.pivot = new Vector2(0.5f, 0.5f);
+                hrt.anchoredPosition = Vector2.zero;
+                hrt.sizeDelta = new Vector2(28f, 28f);
+            }
+            hrt.localScale = Vector3.one;
+            var hitImg = hit.GetComponent<Image>();
+            hitImg.color = new Color(0f, 0f, 0f, 0f);
+            hitImg.raycastTarget = true;
+
             return t;
         }
 
@@ -238,6 +273,22 @@ namespace NoVikingLeftBehind
             }
             ((RectTransform)clone.transform).localScale = Vector3.one;
             return b;
+        }
+
+        /// <summary>
+        /// The small patch that actually takes a toggle's clicks. Anything hung on a toggle -
+        /// a tooltip, most of all - must go here rather than on the toggle's own object, or it
+        /// switches the raycast back on across the whole widget and the row becomes one big
+        /// checkbox again.
+        /// </summary>
+        public static GameObject HitAreaOf(Toggle t)
+        {
+            if (t == null) return null;
+            var found = t.transform.Find("NVLB_ToggleHit");
+            if (found == null)
+                foreach (var rt in t.GetComponentsInChildren<RectTransform>(true))
+                    if (rt != null && rt.name == "NVLB_ToggleHit") { found = rt; break; }
+            return found != null ? found.gameObject : t.gameObject;
         }
 
         /// <summary>A plain tinted rectangle - separators, row stripes, the tooltip backdrop.</summary>

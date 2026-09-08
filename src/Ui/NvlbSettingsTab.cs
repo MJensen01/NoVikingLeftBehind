@@ -59,6 +59,18 @@ namespace NoVikingLeftBehind
         private RectTransform _leftContent, _rightContent;
         private ScrollRect _leftScroll, _rightScroll;
         private RectTransform _leftKnob, _rightKnob;
+
+        // ---- the pending-changes queue (0.8.2) -------------------------------------------------
+        // Nothing a control does reaches the server until Save. The dictionary holds the queued
+        // value per setting; the list keeps the order they were made in, so the audit reads the
+        // way the player worked.
+        private readonly Dictionary<SettingInfo, string> _pending = new Dictionary<SettingInfo, string>();
+        private readonly List<SettingInfo> _pendingOrder = new List<SettingInfo>();
+        private Button _saveButton, _discardButton;
+        private RectTransform _unsavedDialog;
+
+        /// <summary>The tint a queued row wears, so a page of edits can be read at a glance.</summary>
+        private static readonly Color DirtyColor = new Color(1f, 0.82f, 0.42f, 1f);
         private TMP_InputField _search;
         private TMP_Text _accessText, _auditText, _statusText;
         private Button _undoButton, _resetButton;
@@ -460,11 +472,148 @@ namespace NoVikingLeftBehind
         /// </summary>
         public void OnOkAsync(OkActionCompletedHandler okActionCompletedCallback)
         {
+            // OK means what it says on every other tab: apply. Since 0.8.2 this page holds its
+            // edits until asked, so OK is the ask.
+            try { if (_pendingOrder.Count > 0 || HasOpenEdit()) SaveChanges(); }
+            catch (Exception e) { NoVikingLeftBehindPlugin.Log.LogError("[SettingsMenu] OnOk: " + e); }
             if (okActionCompletedCallback != null) okActionCompletedCallback();
         }
 
-        /// <summary>Back does NOT revert: a change was already announced to everyone.</summary>
-        public void OnBack() { }
+        /// <summary>
+        /// Back drops whatever is still queued - it has not been sent, so there is nothing to
+        /// revert. Anything already saved stays saved and was already announced to everyone; that
+        /// is Undo's job, not this one. The prompt that offers a last chance to save lives in
+        /// <see cref="AllowVanillaBack"/>, which runs before vanilla ever gets this far.
+        /// </summary>
+        public void OnBack()
+        {
+            _pending.Clear();
+            _pendingOrder.Clear();
+        }
+
+        private bool HasOpenEdit()
+        {
+            foreach (var r in _rows)
+            {
+                if (r == null || r.Input == null || r.Info == null || !r.Editable) continue;
+                if (!string.Equals(r.Input.text ?? "", Shown(r.Info) ?? "", StringComparison.Ordinal))
+                    return true;
+            }
+            return false;
+        }
+
+        // ---- the unsaved-changes prompt ---------------------------------------------------------
+
+        /// <summary>
+        /// Called from a prefix on <c>Settings.OnBack</c> - which is both the Back button and the
+        /// Escape key. Returning false stops vanilla closing the screen, so anything queued gets
+        /// one question asked about it first. Anything that goes wrong here lets Back through:
+        /// a bug in a prompt must never trap someone in the settings menu.
+        /// </summary>
+        internal static bool AllowVanillaBack()
+        {
+            var tab = Current;
+            if (tab == null || !tab._built) return true;
+            try
+            {
+                if (tab._pendingOrder.Count == 0 && !tab.HasOpenEdit()) return true;
+                tab.CommitOpenFields();
+                if (tab._pendingOrder.Count == 0) return true;
+                tab.ShowUnsavedDialog();
+                return false;
+            }
+            catch (Exception e)
+            {
+                NoVikingLeftBehindPlugin.Log.LogError("[SettingsMenu] unsaved-changes prompt: " + e);
+                return true;
+            }
+        }
+
+        /// <summary>
+        /// A dialog of our own, built from the same cloned parts as the rest of the page. Vanilla's
+        /// popup needs a prefab handed to it that the settings screen does not reliably have, and
+        /// three buttons on a dimmed panel is not worth a dependency.
+        /// </summary>
+        private void ShowUnsavedDialog()
+        {
+            if (_unsavedDialog != null)
+            {
+                RefreshUnsavedText();
+                _unsavedDialog.gameObject.SetActive(true);
+                _unsavedDialog.SetAsLastSibling();
+                return;
+            }
+
+            var dim = UiKit.Fill(_page, new Color(0f, 0f, 0f, 0.72f));
+            dim.raycastTarget = true;                       // swallow clicks on the page behind
+            _unsavedDialog = (RectTransform)dim.transform;
+            UiKit.Stretch(_unsavedDialog);
+
+            var panel = UiKit.Fill(_unsavedDialog, new Color(0.09f, 0.08f, 0.06f, 0.98f));
+            var prt = (RectTransform)panel.transform;
+            prt.anchorMin = new Vector2(0.5f, 0.5f);
+            prt.anchorMax = new Vector2(0.5f, 0.5f);
+            prt.pivot = new Vector2(0.5f, 0.5f);
+            prt.anchoredPosition = Vector2.zero;
+            prt.sizeDelta = new Vector2(520f, 160f);
+
+            var text = UiKit.Label(prt, "", UiKit.BaseFontSize, TextAlignmentOptions.Top);
+            var txt = (RectTransform)text.transform;
+            UiKit.Stretch(txt);
+            txt.offsetMin = new Vector2(20f, 60f);
+            txt.offsetMax = new Vector2(-20f, -18f);
+            text.enableWordWrapping = true;
+            text.overflowMode = TextOverflowModes.Overflow;
+            _unsavedText = text;
+
+            var save = UiKit.Button(prt, "Save", UiKit.BaseFontSize * 0.9f);
+            if (save != null)
+            {
+                UiKit.Place((RectTransform)save.transform, 20f, 112f, 150f, 34f);
+                save.onClick.AddListener(delegate { SaveChanges(); CloseDialogAndBack(); });
+            }
+
+            var discard = UiKit.Button(prt, "Discard", UiKit.BaseFontSize * 0.9f);
+            if (discard != null)
+            {
+                UiKit.Place((RectTransform)discard.transform, 185f, 112f, 150f, 34f);
+                discard.onClick.AddListener(delegate { DiscardChanges(); CloseDialogAndBack(); });
+            }
+
+            var cancel = UiKit.Button(prt, "Cancel", UiKit.BaseFontSize * 0.9f);
+            if (cancel != null)
+            {
+                UiKit.Place((RectTransform)cancel.transform, 350f, 112f, 150f, 34f);
+                cancel.onClick.AddListener(delegate { HideUnsavedDialog(); });
+            }
+
+            RefreshUnsavedText();
+            _unsavedDialog.SetAsLastSibling();
+        }
+
+        private TMP_Text _unsavedText;
+
+        private void RefreshUnsavedText()
+        {
+            if (_unsavedText == null) return;
+            int n = _pendingOrder.Count;
+            _unsavedText.text = "You have " + n + (n == 1 ? " unsaved change" : " unsaved changes") +
+                                " on this page.\n\nSave sends them now. Discard throws them away. " +
+                                "Cancel goes back to the page.";
+        }
+
+        private void HideUnsavedDialog()
+        {
+            if (_unsavedDialog != null) _unsavedDialog.gameObject.SetActive(false);
+        }
+
+        /// <summary>Close the prompt, then let vanilla do the Back it was asking to do.</summary>
+        private void CloseDialogAndBack()
+        {
+            HideUnsavedDialog();
+            try { if (_settings != null) _settings.OnBack(); }
+            catch (Exception e) { NoVikingLeftBehindPlugin.Log.LogError("[SettingsMenu] closing: " + e); }
+        }
 
         public void Terminate()
         {
@@ -498,6 +647,24 @@ namespace NoVikingLeftBehind
             // One notch of the wheel moves one row in whichever pane the pointer is over.
             UiKit.TickScroll(_leftScroll, _leftKnob, ModuleRowH + 2f);
             UiKit.TickScroll(_rightScroll, _rightKnob, RowH);
+
+            // A text field only raises its end-of-edit event on Enter or on a deselect, and on
+            // this page focus can move to another row without either ever arriving - which is how
+            // a typed value went missing entirely. Anything typed into a field nobody is in any
+            // more gets queued here, once, the frame after the caret leaves.
+            for (int i = 0; i < _rows.Count; i++)
+            {
+                var r = _rows[i];
+                if (r == null || r.Info == null) continue;
+
+                // A recorder waiting for a key needs a frame-by-frame look at the keyboard.
+                if (r.Recorder != null) r.Recorder.Tick();
+
+                if (r.Input == null || !r.Editable || r.Input.isFocused) continue;
+                var typed = r.Input.text ?? "";
+                if (!string.Equals(typed, Shown(r.Info) ?? "", StringComparison.Ordinal))
+                    Apply(r.Info, typed);
+            }
 
             // The "reset the network" confirmation lapses on its own, so a stray first click
             // never leaves a loaded button behind.
@@ -638,13 +805,33 @@ namespace NoVikingLeftBehind
             footer.offsetMin = new Vector2(0f, 0f);
             footer.offsetMax = new Vector2(0f, FooterH);
 
+            _saveButton = UiKit.Button(footer, "Save changes", UiKit.BaseFontSize * 0.9f);
+            if (_saveButton != null)
+            {
+                UiKit.Place((RectTransform)_saveButton.transform, 8f, 2f, 190f, 34f);
+                _saveButton.onClick.AddListener(delegate { SaveChanges(); });
+                UiKit.Tip(_saveButton.gameObject,
+                    "Send everything you have changed on this page, in the order you changed it. " +
+                    "Nothing on this tab reaches the server until you press this.");
+            }
+
+            _discardButton = UiKit.Button(footer, "Discard", UiKit.BaseFontSize * 0.9f);
+            if (_discardButton != null)
+            {
+                UiKit.Place((RectTransform)_discardButton.transform, 206f, 2f, 120f, 34f);
+                _discardButton.onClick.AddListener(delegate { DiscardChanges(); });
+                UiKit.Tip(_discardButton.gameObject,
+                    "Throw the waiting changes away and put every control back to the value that " +
+                    "is actually in force.");
+            }
+
             _undoButton = UiKit.Button(footer, "Undo last change", UiKit.BaseFontSize * 0.9f);
             if (_undoButton != null)
             {
                 // Place() measures DOWN from the top of the footer band, which is the bottom
                 // FooterH pixels of the page. Passing FooterH-6 put the buttons 24px BELOW the
                 // page, on top of vanilla's own Back/OK row.
-                UiKit.Place((RectTransform)_undoButton.transform, 8f, 2f, 200f, 34f);
+                UiKit.Place((RectTransform)_undoButton.transform, 334f, 2f, 200f, 34f);
                 _undoButton.onClick.AddListener(delegate { TweakDoor.RequestUndo(); });
                 UiKit.Tip(_undoButton.gameObject,
                     "Put the most recent change on this server back to what it was. " +
@@ -654,7 +841,7 @@ namespace NoVikingLeftBehind
             _resetButton = UiKit.Button(footer, "Reset module to defaults", UiKit.BaseFontSize * 0.9f);
             if (_resetButton != null)
             {
-                UiKit.Place((RectTransform)_resetButton.transform, 216f, 2f, 240f, 34f);
+                UiKit.Place((RectTransform)_resetButton.transform, 542f, 2f, 240f, 34f);
                 _resetButton.onClick.AddListener(delegate
                 {
                     if (_selected != null) TweakDoor.RequestResetModule(_selected.Section);
@@ -685,6 +872,7 @@ namespace NoVikingLeftBehind
             if (_selected == null && _moduleRows.Count > 0) _selected = _moduleRows[0].Module;
             RebuildRight();
             RefreshHeader();
+            RefreshFooter();
         }
 
         private TMP_FontAsset ResolveFont()
@@ -777,6 +965,7 @@ namespace NoVikingLeftBehind
                                            UiKit.BaseFontSize * 0.72f, TextAlignmentOptions.BottomLeft,
                                            UiKit.HintColor);
                     UiKit.Place((RectTransform)head.transform, 6f, y, LeftW - 20f, ThemeRowH);
+                    MakeHeaderClickable(head, theme, y, module);
                     y += ThemeRowH;
                 }
 
@@ -832,9 +1021,10 @@ namespace NoVikingLeftBehind
                         Apply(info, on ? "true" : "false");
                     });
                     mr.Enabled = toggle;
-                    // The toggle is the topmost thing over its corner of the row, so it has to
-                    // carry the tooltip itself or hovering the checkbox says nothing.
-                    UiKit.Tip(toggle.gameObject, ModuleTooltip(mod));
+                    // On the toggle's hit patch, not the toggle itself: Tip switches the raycast
+                    // on for whatever it is given, and given the whole widget it would undo the
+                    // shrunken hit area and make the row one big checkbox again.
+                    UiKit.Tip(UiKit.HitAreaOf(toggle), ModuleTooltip(mod));
                 }
 
                 _moduleRows.Add(mr);
@@ -970,6 +1160,57 @@ namespace NoVikingLeftBehind
             return seen;
         }
 
+        /// <summary>
+        /// A theme heading is a place in a long list, so make it behave like one: clicking it
+        /// scrolls the list to that theme and selects the first module under it, and it lights up
+        /// under the pointer so it reads as something you can press.
+        /// </summary>
+        private void MakeHeaderClickable(TMP_Text head, string theme, float y, FeatureModule first)
+        {
+            if (head == null) return;
+
+            var hot = new GameObject("ThemeHit", typeof(RectTransform));
+            hot.transform.SetParent(_leftContent, false);
+            UiKit.Place((RectTransform)hot.transform, 0f, y, LeftW - 12f, ThemeRowH);
+
+            var btn = hot.AddComponent<Button>();
+            btn.transition = Selectable.Transition.None;
+            float target = y;
+            var firstModule = first;
+            btn.onClick.AddListener(delegate
+            {
+                ScrollLeftTo(target);
+                if (firstModule != null) Select(firstModule);
+            });
+
+            UiKit.Tip(hot, "Jump to " + theme);
+
+            var tint = hot.AddComponent<HeaderTint>();
+            tint.Target = head;
+            tint.Normal = UiKit.HintColor;
+            tint.Lit = UiKit.TextColor;
+        }
+
+        /// <summary>Lights a heading while the pointer is on it. Nothing else, deliberately.</summary>
+        private sealed class HeaderTint : MonoBehaviour, IPointerEnterHandler, IPointerExitHandler
+        {
+            public TMP_Text Target;
+            public Color Normal, Lit;
+            public void OnPointerEnter(PointerEventData e) { if (Target != null) Target.color = Lit; }
+            public void OnPointerExit(PointerEventData e) { if (Target != null) Target.color = Normal; }
+            private void OnDisable() { if (Target != null) Target.color = Normal; }
+        }
+
+        /// <summary>Put a y offset from the top of the module list at the top of the visible pane.</summary>
+        private void ScrollLeftTo(float y)
+        {
+            if (_leftScroll == null || _leftContent == null || _leftScroll.viewport == null) return;
+            float max = Mathf.Max(0f, _leftContent.rect.height - _leftScroll.viewport.rect.height);
+            var p = _leftContent.anchoredPosition;
+            p.y = Mathf.Clamp(y - 4f, 0f, max);
+            _leftContent.anchoredPosition = p;
+        }
+
         private static string ModuleTooltip(FeatureModule m)
         {
             var sb = new System.Text.StringBuilder();
@@ -1025,6 +1266,7 @@ namespace NoVikingLeftBehind
             public TMP_InputField Input;
             public TMP_Text CycleText;
             public Button Left, Right, Reset;
+            public KeyRecorder.Handle Recorder;
             public bool Editable;
         }
 
@@ -1227,7 +1469,15 @@ namespace NoVikingLeftBehind
                                     TextAlignmentOptions.MidlineLeft);
             Span((RectTransform)row.Label.transform, 12f, RightInset, 4f, 26f);
 
-            row.Hint = UiKit.Label(rt, info.Hint ?? "", UiKit.BaseFontSize * 0.78f,
+            // Since 0.8.1 these hotkeys are real ZInput bindings and also appear on vanilla's
+            // Keyboard & Mouse page, where a rebind beats whatever is set here. Say so on the row,
+            // or the two screens look like they disagree.
+            string hint = info.Hint ?? "";
+            if (KeyRecorder.IsKeySetting(info))
+                hint = (hint.Length > 0 ? hint + "  " : "") +
+                       "Default only - a rebind on the Keyboard & Mouse page wins.";
+
+            row.Hint = UiKit.Label(rt, hint, UiKit.BaseFontSize * 0.78f,
                                    TextAlignmentOptions.MidlineLeft, UiKit.HintColor);
             Span((RectTransform)row.Hint.transform, 12f, RightInset, 26f, 22f);
 
@@ -1399,6 +1649,18 @@ namespace NoVikingLeftBehind
         private void BuildText(Row row, RectTransform control)
         {
             var info = row.Info;
+
+            // A key is not free text. Typing one is how a tester ended up with a lowercase "p"
+            // in the config, which Unity's key parser refuses - so a key setting gets a recorder
+            // instead: press the key you want and it stores the canonical name.
+            if (KeyRecorder.IsKeySetting(info))
+            {
+                var captured = info;
+                row.Recorder = KeyRecorder.Build(control, Shown(info),
+                                                 delegate (string picked) { Apply(captured, picked); });
+                return;
+            }
+
             row.Input = UiKit.Input(control, 280f, 26f);
             if (row.Input == null) return;
             UiKit.Stretch((RectTransform)row.Input.transform);
@@ -1467,12 +1729,120 @@ namespace NoVikingLeftBehind
 
         // ---- applying and refreshing ---------------------------------------------------------------------
 
+        /// <summary>
+        /// Since 0.8.2 a control does NOT send anything. It queues. Every edit lands here, is
+        /// validated the same way it always was, and is then held until the player presses Save -
+        /// so a mis-click, a slider knocked on the way past, or a value typed and thought better
+        /// of costs nothing. An edit that puts a setting back to the value it already has is
+        /// taken off the queue rather than queued as a change to nothing.
+        /// </summary>
         private void Apply(SettingInfo info, string value)
         {
             if (info == null) return;
             var why = WhyNot(info, value);
             if (why != null) { SetStatus(false, why); RefreshRow(FindRow(info)); return; }
-            TweakDoor.Request(info, value);
+
+            if (string.Equals(value ?? "", info.CurrentString ?? "", StringComparison.Ordinal))
+            {
+                if (_pending.Remove(info)) _pendingOrder.Remove(info);
+            }
+            else
+            {
+                if (!_pending.ContainsKey(info)) _pendingOrder.Add(info);
+                _pending[info] = value;
+            }
+
+            RefreshRow(FindRow(info));
+            RefreshModuleRow(info);
+            RefreshFooter();
+            SetStatus(true, _pendingOrder.Count == 0
+                ? "Nothing waiting."
+                : _pendingOrder.Count + (_pendingOrder.Count == 1 ? " change waiting" : " changes waiting") +
+                  " - press Save changes.");
+        }
+
+        /// <summary>What a control should be showing: the queued value if there is one, else what is live.</summary>
+        private string Shown(SettingInfo info)
+        {
+            string v;
+            return (info != null && _pending.TryGetValue(info, out v)) ? v : (info == null ? "" : info.CurrentString);
+        }
+
+        private bool IsDirty(SettingInfo info) { return info != null && _pending.ContainsKey(info); }
+
+        /// <summary>
+        /// Send the queue through the door, in the order it was made, one tweak each - so the
+        /// audit still names every setting that moved and Undo still works change by change.
+        /// </summary>
+        private void SaveChanges()
+        {
+            CommitOpenFields();
+            if (_pendingOrder.Count == 0) { SetStatus(true, "Nothing to save."); return; }
+
+            // Snapshot both the order and the values BEFORE emptying the queue: the door raises
+            // events as it goes, and a refresh in the middle of the loop must not find half a queue.
+            int n = _pendingOrder.Count;
+            var order = new List<SettingInfo>(_pendingOrder);
+            var values = new List<string>(order.Count);
+            foreach (var info in order) values.Add(_pending[info]);
+
+            _pending.Clear();
+            _pendingOrder.Clear();
+
+            int sent = 0;
+            for (int i = 0; i < order.Count; i++)
+            {
+                try { TweakDoor.Request(order[i], values[i]); sent++; }
+                catch (Exception e)
+                {
+                    NoVikingLeftBehindPlugin.Log.LogError("[SettingsMenu] could not send [" + order[i].Section +
+                                                          "] " + order[i].Key + ": " + e);
+                }
+            }
+
+            RefreshAll();
+            RefreshFooter();
+            SetStatus(true, "Sent " + sent + " of " + n + (n == 1 ? " change." : " changes."));
+        }
+
+        /// <summary>Drop the queue and put every control back to what is actually live.</summary>
+        private void DiscardChanges()
+        {
+            int n = _pendingOrder.Count;
+            _pending.Clear();
+            _pendingOrder.Clear();
+            RefreshAll();
+            RefreshFooter();
+            SetStatus(true, n == 0 ? "Nothing to discard."
+                                   : "Discarded " + n + (n == 1 ? " change." : " changes."));
+        }
+
+        /// <summary>
+        /// A text field that still has the caret has not raised its end-of-edit event yet, and on
+        /// this page focus can move to another row without one ever arriving - which is how a
+        /// typed value went missing entirely before 0.8.2. Read every field that has drifted from
+        /// what it should be showing, and queue it, before anything is sent.
+        /// </summary>
+        private void CommitOpenFields()
+        {
+            foreach (var r in _rows)
+            {
+                if (r == null || r.Input == null || r.Info == null || !r.Editable) continue;
+                var typed = r.Input.text ?? "";
+                if (!string.Equals(typed, Shown(r.Info) ?? "", StringComparison.Ordinal))
+                    Apply(r.Info, typed);
+            }
+        }
+
+        private void RefreshFooter()
+        {
+            int n = _pendingOrder.Count;
+            if (_saveButton != null)
+            {
+                SetCaption(_saveButton, n == 0 ? "Save changes" : "Save changes (" + n + ")");
+                _saveButton.interactable = n > 0;
+            }
+            if (_discardButton != null) _discardButton.interactable = n > 0;
         }
 
         /// <summary>The client-side half of the permission check: enough to grey a row honestly.
@@ -1637,6 +2007,11 @@ namespace NoVikingLeftBehind
             // them: there is no Enabled toggle to read, so "off" never applies to them.
             bool on = mr.Module == null || mr.Module.Enabled;
 
+            // These checkboxes queue like every other control, so what the box shows is the
+            // queued value when there is one - not what the server currently says.
+            bool dirty = mr.EnabledInfo != null && IsDirty(mr.EnabledInfo);
+            if (dirty) on = string.Equals(Shown(mr.EnabledInfo), "true", StringComparison.OrdinalIgnoreCase);
+
             if (mr.Module != null && mr.Enabled != null && mr.EnabledInfo != null)
             {
                 _suppress = true;
@@ -1650,8 +2025,10 @@ namespace NoVikingLeftBehind
 
             if (mr.Label != null)
             {
-                var tone = on ? UiKit.TextColor : UiKit.DimColor;
+                var tone = dirty ? DirtyColor : (on ? UiKit.TextColor : UiKit.DimColor);
                 mr.Label.color = selected ? SelectedTint(tone) : tone;
+                if (mr.Module != null)
+                    mr.Label.text = (dirty ? "• " : "") + mr.Module.Name;
             }
         }
 
@@ -1663,13 +2040,21 @@ namespace NoVikingLeftBehind
             bool editable = why == null;
             row.Editable = editable;
 
+            bool dirty = IsDirty(info);
+
             _suppress = true;
             try
             {
-                string current = info.CurrentString;
+                string current = Shown(info);
 
-                if (row.Toggle != null) { row.Toggle.isOn = info.Entry.BoxedValue is bool && (bool)info.Entry.BoxedValue; }
+                if (row.Toggle != null)
+                {
+                    row.Toggle.isOn = dirty
+                        ? string.Equals(current, "true", StringComparison.OrdinalIgnoreCase)
+                        : (info.Entry.BoxedValue is bool && (bool)info.Entry.BoxedValue);
+                }
                 if (row.Input != null) row.Input.SetTextWithoutNotify(current);
+                if (row.Recorder != null && !row.Recorder.Recording) row.Recorder.SetValue(current);
                 if (row.Slider != null)
                 {
                     float v;
@@ -1686,8 +2071,14 @@ namespace NoVikingLeftBehind
                 if (row.Right != null) row.Right.interactable = editable;
                 if (row.Reset != null) row.Reset.interactable = editable && current != info.DefaultString;
 
-                var tone = editable ? UiKit.TextColor : UiKit.DimColor;
-                if (row.Label != null) row.Label.color = tone;
+                // A queued row says so: tinted, and marked with a bullet so it reads at a glance
+                // even for anyone who cannot tell the two colours apart.
+                var tone = !editable ? UiKit.DimColor : (dirty ? DirtyColor : UiKit.TextColor);
+                if (row.Label != null)
+                {
+                    row.Label.color = tone;
+                    row.Label.text = (dirty ? "• " : "") + info.Label;
+                }
                 if (row.Hint != null)
                     row.Hint.color = editable ? UiKit.HintColor
                                              : new Color(UiKit.HintColor.r, UiKit.HintColor.g,

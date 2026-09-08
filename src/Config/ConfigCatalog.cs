@@ -246,6 +246,16 @@ namespace NoVikingLeftBehind
         internal static string Serialize(object value, Type type)
         {
             if (value == null) return "";
+
+            // Strings go through RAW, deliberately. BepInEx's own converter escapes them for a
+            // TOML-ish quoted form, and because the door reads a value back, re-serialises it and
+            // writes it again, every save escaped what the last save had already escaped:
+            // 1,2 typed with quotes became "1,2", then \"1,2\", then \\"1,2\\", and the module's
+            // parser gave up on it. A cfg value is a raw line to the end of the line - a quote in
+            // one is nothing special - so there is nothing here to escape in the first place.
+            var s = value as string;
+            if (s != null) return Unquote(s);
+
             try { return TomlTypeConverter.ConvertToString(value, type ?? value.GetType()); }
             catch
             {
@@ -253,6 +263,37 @@ namespace NoVikingLeftBehind
                 if (value is double) return ((double)value).ToString(CultureInfo.InvariantCulture);
                 return Convert.ToString(value, CultureInfo.InvariantCulture);
             }
+        }
+
+        /// <summary>
+        /// Peel the escaping off a value that an earlier build wrote. It strips one surrounding
+        /// pair of quotes - plain or backslash-escaped - and the backslashes in front of any that
+        /// are left, repeatedly, because the old write path could nest them several deep. A value
+        /// that never had quotes comes back untouched, so this is safe to run on every read and
+        /// every write: it is a migration that costs nothing once the file is clean.
+        /// </summary>
+        internal static string Unquote(string s)
+        {
+            if (string.IsNullOrEmpty(s)) return s;
+
+            for (int guard = 0; guard < 8; guard++)
+            {
+                string before = s;
+                s = s.Trim();
+
+                if (s.Length >= 4 && s.StartsWith("\\\"") && s.EndsWith("\\\""))
+                    s = s.Substring(2, s.Length - 4);
+                else if (s.Length >= 2 && s[0] == '"' && s[s.Length - 1] == '"')
+                    s = s.Substring(1, s.Length - 2);
+                else if (s.Length >= 2 && s[0] == '\'' && s[s.Length - 1] == '\'')
+                    s = s.Substring(1, s.Length - 2);
+
+                if (s.IndexOf("\\\"", StringComparison.Ordinal) >= 0)
+                    s = s.Replace("\\\"", "\"");
+
+                if (s == before) break;
+            }
+            return s;
         }
 
         // ---- lookups ------------------------------------------------------------------------
