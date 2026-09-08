@@ -714,6 +714,11 @@ namespace NoVikingLeftBehind
 
             foreach (var module in ConfigCatalog.ModulesForUi())
             {
+              // One module that cannot be drawn must cost that module and nothing else. In 0.7.5
+              // a single throw in here (UiKit.Tip, on the very first row) left the entire page
+              // blank - the outer catch in Initialize is a backstop, not a plan.
+              try
+              {
                 if (module.Theme != theme)
                 {
                     // Air above every heading but the first, so a theme reads as starting a new
@@ -771,7 +776,13 @@ namespace NoVikingLeftBehind
                 }
 
                 _moduleRows.Add(mr);
-                y += ModuleRowH + 2f;
+              }
+              catch (Exception e)
+              {
+                  NoVikingLeftBehindPlugin.Log.LogError("[SettingsMenu] module row '" +
+                      (module == null ? "?" : module.Name) + "' could not be built: " + e);
+              }
+              finally { y += ModuleRowH + 2f; }
             }
 
             // The Network panel, only when SmoothServer is actually loaded on this machine.
@@ -948,7 +959,14 @@ namespace NoVikingLeftBehind
                     y += ThemeRowH;
                 }
 
-                _rows.Add(BuildRow(info, y));
+                // One row that cannot be built must cost that row and nothing else. Before 0.7.6
+                // a single throw in here left the whole page blank.
+                try { _rows.Add(BuildRow(info, y)); }
+                catch (Exception e)
+                {
+                    NoVikingLeftBehindPlugin.Log.LogError("[SettingsMenu] row [" + info.Section + "] " +
+                                                          info.Key + " could not be built: " + e);
+                }
                 y += RowH;
             }
 

@@ -1,5 +1,17 @@
 # Changelog — NoVikingLeftBehind
 
+## 0.7.6 (2026-09-08)
+- **Fixes 0.7.5's blank page.** Putting a tooltip on the module names — one of 0.7.5's own fixes — threw on the
+  very first row and took the whole tab down with it. The hover needs something the pointer can hit, and it added
+  an invisible `Image` when it found none; but `UnityEngine.UI.Graphic` forbids two of its kind on one object and
+  that rule covers the whole family, so adding an `Image` beside a text component quietly returns **nothing** —
+  and the next line dereferenced it. It now uses whatever graphic is already on the object and only adds one when
+  there is genuinely none.
+- **And makes that class of mistake cost one row.** Every module row and every settings row is now built inside
+  its own guard: one that fails logs itself, by name, and the rest of the page carries on. The catch around the
+  whole build is still there, but it is a backstop now rather than the only thing standing between a typo and an
+  empty tab.
+
 ## 0.7.5 (2026-09-08)
 - **The mouse wheel works.** Both panes took about twenty notches to move two pixels. Unity's ScrollRect scrolls
   by whatever the game's input module hands it, and Valheim scales the wheel by 0.15 before anyone sees it, so a

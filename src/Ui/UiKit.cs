@@ -608,15 +608,25 @@ namespace NoVikingLeftBehind
                 if (old != null) old.Text = null;      // clear it, do not leave a stale tooltip
                 return;
             }
-            var img = go.GetComponent<Image>();
-            if (img == null)
+            // The hover needs something the graphic raycaster can hit. It used to add an Image
+            // whenever there was no Image - but UnityEngine.UI.Graphic is [DisallowMultipleComponent]
+            // and that attribute covers the whole family, so AddComponent<Image>() on an object
+            // that already carries a TMP_Text returns NULL. Putting a tooltip on a label in 0.7.5
+            // therefore threw inside here and took the entire page down with it. Use whatever
+            // Graphic is already on the object, and only add one when there is none at all.
+            var graphic = go.GetComponent<Graphic>();
+            if (graphic == null)
             {
-                img = go.AddComponent<Image>();
-                img.color = new Color(0f, 0f, 0f, 0f);   // invisible, but hit-testable
+                var img = go.AddComponent<Image>();
+                if (img == null) return;                  // no way to hit-test it: no tooltip, no throw
+                img.color = new Color(0f, 0f, 0f, 0f);    // invisible, but hit-testable
+                graphic = img;
             }
-            img.raycastTarget = true;
+            graphic.raycastTarget = true;
+
             var h = go.GetComponent<Hover>();
             if (h == null) h = go.AddComponent<Hover>();
+            if (h == null) return;
             h.Text = text;
         }
     }
