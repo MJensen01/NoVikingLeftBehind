@@ -1,5 +1,16 @@
 # Changelog — NoVikingLeftBehind
 
+## 0.7.3 (2026-09-08)
+- **The settings tab, actually.** 0.7.2's new logging did its job on the first try and named the culprit in one
+  line: the settings menu's tab list has **seven** entries, not six — the six you can see plus a hidden seventh
+  that has a page and no button at all (a platform tab the game does not draw on PC). The tab was cloned from
+  "the last tab in the list", which was that one, so it found no button to copy and gave up — silently on 0.7.1,
+  and four times over with a reason on 0.7.2. It now walks backwards to the last tab that has **both** a button
+  and a page, clones that, and drops the new button in beside it; the step between buttons is measured between
+  two tabs that actually have buttons, since a buttonless entry has no position to measure from. Our own tab is
+  still appended at the end of the list, so vanilla's tab snapshot stays lined up index for index — its tab
+  switching already skips buttonless entries. The donor's name and index are logged.
+
 ## 0.7.2 (2026-09-08)
 Three fixes from a live test session.
 

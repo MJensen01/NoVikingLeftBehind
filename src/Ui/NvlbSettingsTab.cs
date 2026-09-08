@@ -132,15 +132,43 @@ namespace NoVikingLeftBehind
                     return null;
                 }
 
-            var donor = handler.m_tabs[handler.m_tabs.Count - 1];
-            if (donor == null || donor.m_button == null || donor.m_page == null)
+            // The last entry in m_tabs is NOT necessarily a tab you can see. On Matt's build the
+            // list has seven entries: the six visible tabs plus a seventh with a page and NO
+            // button - a platform tab the game hides on PC. 0.7.2 took m_tabs[Count-1] as the
+            // donor, found no button on it and gave up, which is exactly what its own new warning
+            // said four times over. So: walk backwards to the last entry that has both a live
+            // button and a page, and only then forwards, before giving up.
+            int donorIndex = -1;
+            for (int i = handler.m_tabs.Count - 1; i >= 0; i--)
+                if (Usable(handler.m_tabs[i])) { donorIndex = i; break; }
+
+            // Second pass without the "on screen" test, in case this runs before the tab bar has
+            // been switched on: a button that exists but is not active yet still clones correctly.
+            if (donorIndex < 0)
+                for (int i = handler.m_tabs.Count - 1; i >= 0; i--)
+                {
+                    var t = handler.m_tabs[i];
+                    if (t != null && t.m_button != null && t.m_page != null) { donorIndex = i; break; }
+                }
+
+            if (donorIndex < 0)
             {
-                log.LogWarning("[SettingsMenu] install (" + via + "): the last vanilla tab is unusable as a donor (" +
-                               (donor == null
-                                    ? "the tab entry itself is null"
-                                    : "button=" + (donor.m_button != null) + " page=" + (donor.m_page != null)) + ")");
+                var shape = "";
+                for (int i = 0; i < handler.m_tabs.Count; i++)
+                {
+                    var t = handler.m_tabs[i];
+                    shape += (shape.Length > 0 ? ", " : "") + i + ":" +
+                             (t == null ? "null" : "button=" + (t.m_button != null) + " page=" + (t.m_page != null));
+                }
+                log.LogWarning("[SettingsMenu] install (" + via + "): not one of the " + handler.m_tabs.Count +
+                               " vanilla tabs is usable as a donor (" + shape + ")");
                 return null;
             }
+
+            var donor = handler.m_tabs[donorIndex];
+            log.LogInfo("[SettingsMenu] install (" + via + "): donor is tab " + donorIndex + " of " +
+                        handler.m_tabs.Count + ", button '" + donor.m_button.gameObject.name +
+                        "', page '" + donor.m_page.name + "'");
 
             // ---- the page ---------------------------------------------------------------------
             var pageGo = new GameObject("NVLB_Page", typeof(RectTransform));
@@ -173,24 +201,25 @@ namespace NoVikingLeftBehind
             }
 
             // Tab buttons are positioned in the prefab, not by a layout group on every skin, so
-            // step along by the gap between the last two when there is no layout group to do it -
-            // and, when there is only one to go by, by that one button's own width.
+            // step along by the gap between the donor and the usable tab before it when there is
+            // no layout group to do it - and, when there is no second one to measure against, by
+            // the donor button's own width. The step must be measured between two tabs that
+            // actually have buttons: a buttonless entry has no position to subtract.
             var brt = (RectTransform)buttonGo.transform;
             var bar = donor.m_button.transform.parent;
             var layout = bar != null ? bar.GetComponent<LayoutGroup>() : null;
             if (layout == null)
             {
-                var a = (RectTransform)handler.m_tabs[handler.m_tabs.Count - 1].m_button.transform;
-                if (handler.m_tabs.Count >= 2 && handler.m_tabs[handler.m_tabs.Count - 2].m_button != null)
-                {
-                    var b = (RectTransform)handler.m_tabs[handler.m_tabs.Count - 2].m_button.transform;
-                    brt.anchoredPosition = a.anchoredPosition + (a.anchoredPosition - b.anchoredPosition);
-                }
-                else
-                {
-                    brt.anchoredPosition = a.anchoredPosition + new Vector2(a.rect.width + 4f, 0f);
-                }
+                var a = (RectTransform)donor.m_button.transform;
+                RectTransform b = null;
+                for (int i = donorIndex - 1; i >= 0; i--)
+                    if (Usable(handler.m_tabs[i])) { b = (RectTransform)handler.m_tabs[i].m_button.transform; break; }
+
+                brt.anchoredPosition = (b != null)
+                    ? a.anchoredPosition + (a.anchoredPosition - b.anchoredPosition)
+                    : a.anchoredPosition + new Vector2(a.rect.width + 4f, 0f);
             }
+            brt.SetSiblingIndex(donor.m_button.transform.GetSiblingIndex() + 1);
             buttonGo.SetActive(true);
 
             int index = handler.m_tabs.Count;
@@ -247,6 +276,17 @@ namespace NoVikingLeftBehind
                              ? "nothing"
                              : "'" + PathOf(best.transform) + "' with " + best.m_tabs.Count + " tabs"));
             return best;
+        }
+
+        /// <summary>
+        /// A tab we can clone a button from and hang a page beside: one with both parts, and with
+        /// its button actually on screen. The seventh entry on Matt's build has a page and no
+        /// button at all, so "the last tab" and "the last tab you can see" are not the same thing.
+        /// </summary>
+        private static bool Usable(TabHandler.Tab t)
+        {
+            return t != null && t.m_button != null && t.m_page != null &&
+                   t.m_button.gameObject.activeInHierarchy;
         }
 
         /// <summary>Full hierarchy path of a transform - for the log, when something is not where we expect.</summary>

@@ -2,7 +2,7 @@
   <PropertyGroup>
     <AssemblyName>NoVikingLeftBehind</AssemblyName>
     <RootNamespace>NoVikingLeftBehind</RootNamespace>
-    <Version>0.7.2</Version>
+    <Version>0.7.3</Version>
     <OutputPath>bin/</OutputPath>
     <AppendTargetFrameworkToOutputPath>false</AppendTargetFrameworkToOutputPath>
     <!-- Vendor/ServerSync.cs is written with nullable reference annotations.
