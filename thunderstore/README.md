@@ -177,6 +177,13 @@ server restart", "Join a server to change this"), so everyone can see what the m
 move under you when somebody else changes something, and per-player settings — hotkeys, HUD offsets
 — are written straight to your own config and never leave your machine.
 
+If your server also runs [SmoothServer](https://thunderstore.io/c/valheim/p/Nosferatu/SmoothServer/), one
+more entry appears down the left — **Network (SmoothServer)** — with the five switches of that mod worth
+reaching for mid-game: the network preset (Default / FastLink / Custom), compression, the shared map,
+smooth motion on your own machine, and the admin-only "require the client mod", plus a **Reset network to
+Default** button. Its other settings stay in its own config file, and none of this exists if you do not
+have it installed.
+
 Nothing new is downloaded for this: the tab is built at runtime out of Valheim's own controls, so it
 matches the game's fonts and colours, and any skin you use skins it too.
 

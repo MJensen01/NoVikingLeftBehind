@@ -1,5 +1,38 @@
 # Changelog — NoVikingLeftBehind
 
+## 0.7.1 (2026-09-08)
+**A Network panel in the settings tab.** If your group also runs [SmoothServer](https://thunderstore.io/c/valheim/p/Nosferatu/SmoothServer/),
+the NoVikingLeftBehind tab now has one more entry — **Network (SmoothServer)** — with the handful of its switches
+that actually fix a bad afternoon. It appears only when SmoothServer is installed, and it is deliberately five rows
+and not its sixty knobs: the rest stay in its config file, where they belong.
+
+- **The five rows.** *Network preset* (`[Profiles] Profile` — `Default` / `FastLink` / `Custom`), *Compression*
+  (`[Compression] Enabled`), *Shared map* (`[Map] Enabled`), *Smooth motion (this PC)* (`[SmoothMotion] Enabled`,
+  written to your own machine's config and nobody else's), and the admin-only *Require the client mod*
+  (`[General] EnforceClientMod`). Each has the same one-line hint under its name and SmoothServer's own full
+  description on hover. A **Reset network to Default** button under them puts the preset back to `Default` with
+  compression and the shared map on, after asking you to confirm.
+- **The door writes a second config file.** A change to one of these goes through exactly the machinery every other
+  setting does — permission, tier, value validation, the rate limit, a timestamped `.bak-` backup, the undo history,
+  the chat line and the server log — and then writes `Nosferatu.SmoothServer.cfg` in the same directory. SmoothServer's
+  own file watcher and its own ServerSync take it from there, so a preset flip re-tunes the whole server live and
+  everyone's client follows. The audit line names the switch the way the menu does: `[NVLB] Erik set Network preset
+  FastLink -> Default`.
+- **Five keys, by name, and nothing else.** The server validates every incoming SmoothServer change against a
+  hand-written allowlist (section, key, type, permitted values, tier). Anything not on it is refused however it is
+  asked for, including by an admin — the panel can never become a remote control for that mod's other settings. If
+  SmoothServer is not installed on the server, the door answers "SmoothServer is not installed on this server".
+- **No dependency either way.** There is no compile-time reference to SmoothServer: it is found at runtime through
+  BepInEx's plugin list and read through its own live config entries. Without it this release behaves exactly like
+  0.7.0. SmoothServer itself is unchanged — nothing in it is patched, wrapped or reimplemented.
+- **Refusals that tell you the truth.** SmoothServer's preset re-asserts its own table over the config file after
+  every reload, so switching compression off while the preset owns it would be silently undone a second later. The
+  door refuses that up front and says to set the preset to `Custom` first. A SmoothServer module that booted disabled
+  is answered with "Needs a server restart", read from its own module list.
+- **New: `[Access] NetworkSelfTest`** (admin, off by default). On a dedicated server it drives the whole thing once at
+  world load — flip the preset and back, re-read SmoothServer's file from disk each time, undo both, round-trip a key
+  in a second section, and prove the three refusals — then restores everything. 235 settings -> 236; still 35 modules.
+
 ## 0.7.0 (2026-09-08)
 **The settings menu** — a NoVikingLeftBehind tab inside Valheim's own Settings screen, usable by everyone on the
 server, that changes any hot-reloadable setting live. Until now only whoever had a shell on the server box could

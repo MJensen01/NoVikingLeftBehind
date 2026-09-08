@@ -24,6 +24,15 @@ namespace NoVikingLeftBehind
     /// Local (BindLocal) settings never come here: they are the player's own machine's business,
     /// so the tab writes the client's own cfg through <see cref="ApplyLocal"/>.
     ///
+    /// **A second cfg file.** Since 0.7.1 a tweak may target SmoothServer's own
+    /// <c>Nosferatu.SmoothServer.cfg</c>, which sits in the same BepInEx config directory. Those
+    /// requests arrive with the section prefixed (<c>SS:Profiles</c>) and are resolved against
+    /// <see cref="SmoothServerBridge"/>'s hand-written allowlist instead of the
+    /// <see cref="ConfigCatalog"/> - everything after that (permission, tier, validation, rate
+    /// limit, backup, file write, undo, audit, announce) is this same code. A SmoothServer key
+    /// that is not on the allowlist is refused however it is asked for, so the panel can never
+    /// become a remote control for that mod's other fifty-odd knobs.
+    ///
     /// Everything a player can do here is announced to everyone and logged, which is the design:
     /// the guard rail against a bad afternoon is visibility plus <see cref="Undo"/>, not a lock.
     /// </summary>
@@ -127,7 +136,7 @@ namespace NoVikingLeftBehind
             if (info == null) return;
             if (info.IsLocal) { ApplyLocal(info, value); return; }
             if (ZRoutedRpc.instance == null) { Fire(false, "Not connected to a server."); return; }
-            ZRoutedRpc.instance.InvokeRoutedRPC(RpcTweak, info.Section, info.Key, value);
+            ZRoutedRpc.instance.InvokeRoutedRPC(RpcTweak, info.WireSection, info.Key, value);
         }
 
         /// <summary>Ask the server to undo the most recent change. Client side.</summary>
@@ -164,8 +173,12 @@ namespace NoVikingLeftBehind
             string before = info.CurrentString;
             try
             {
-                WriteAndSet(info, parsed, value);
-                Fire(true, info.Label + ": " + before + " -> " + info.CurrentString);
+                WriteAndSet(info, parsed, SettingValue.Format(info, parsed));
+                string note = info.Foreign
+                    ? SmoothServerBridge.LocalRestartNote(info, value)
+                    : null;
+                Fire(true, info.Label + ": " + before + " -> " + info.CurrentString +
+                           (note == null ? "" : "  " + note));
             }
             catch (Exception e)
             {
@@ -303,11 +316,25 @@ namespace NoVikingLeftBehind
 
         internal static bool ApplyOne(long sender, string section, string key, string value, out string message)
         {
-            var info = ConfigCatalog.Find(section, key);
-            if (info == null) { message = "There is no setting called " + section + "." + key + "."; return false; }
+            var info = Resolve(section, key);
+            if (info == null)
+            {
+                // A SmoothServer key that is not on the allowlist gets the allowlist's refusal,
+                // not "no such setting": the setting exists, this menu simply will not touch it.
+                message = SmoothServerBridge.IsForeignSection(section)
+                    ? (SmoothServerBridge.Available ? SmoothServerBridge.NotAllowed : SmoothServerBridge.NotInstalled)
+                    : "There is no setting called " + section + "." + key + ".";
+                return false;
+            }
 
             string denied = Permission(sender, info, value);
             if (denied != null) { message = denied; return false; }
+
+            if (info.Foreign)
+            {
+                string notAllowed = SmoothServerBridge.Validate(info, value);
+                if (notAllowed != null) { message = notAllowed; return false; }
+            }
 
             object parsed;
             string bad = SettingValue.TryParse(info, value, out parsed);
@@ -337,7 +364,7 @@ namespace NoVikingLeftBehind
             if (_undoOrder.Count == 0) { message = "Nothing to undo."; return false; }
 
             var change = _undoOrder[_undoOrder.Count - 1];
-            var info = ConfigCatalog.Find(change.Id);
+            var info = ResolveId(change.Id);
             if (info == null)
             {
                 _undoOrder.RemoveAt(_undoOrder.Count - 1);
@@ -421,6 +448,29 @@ namespace NoVikingLeftBehind
             return true;
         }
 
+        // ---- resolving a setting (ours, or the SmoothServer allowlist) --------------------------------
+
+        /// <summary>
+        /// Turn a wire (section, key) into a setting. An unprefixed section is one of ours and is
+        /// looked up in the <see cref="ConfigCatalog"/>; an <c>SS:</c>-prefixed one is resolved
+        /// against <see cref="SmoothServerBridge"/>'s allowlist, which is the only way a
+        /// SmoothServer key can reach this door at all.
+        /// </summary>
+        private static SettingInfo Resolve(string section, string key)
+        {
+            if (!SmoothServerBridge.IsForeignSection(section)) return ConfigCatalog.Find(section, key);
+            if (!SmoothServerBridge.Available) return null;
+            return SmoothServerBridge.Find(SmoothServerBridge.StripPrefix(section), key);
+        }
+
+        /// <summary>The same, for an undo entry's stored id ("Section.Key" or "SS:Section.Key").</summary>
+        private static SettingInfo ResolveId(string id)
+        {
+            if (id != null && id.StartsWith(SmoothServerBridge.Prefix, StringComparison.Ordinal))
+                return SmoothServerBridge.FindById(id);
+            return ConfigCatalog.Find(id);
+        }
+
         // ---- permission ----------------------------------------------------------------------------
 
         /// <summary>Null when allowed, otherwise the sentence to show the player.</summary>
@@ -445,6 +495,18 @@ namespace NoVikingLeftBehind
                 bool wantOn;
                 if (SettingValue.TryParseBool(newValue ?? "", out wantOn) && wantOn && !info.Owner.BootEnabled)
                     return "Needs a server restart.";
+            }
+
+            if (info.Foreign)
+            {
+                // Asked last, after this mod's own rules, so an admin-only refusal still wins.
+                if (!SmoothServerBridge.Available) return SmoothServerBridge.NotInstalled;
+
+                string preset = SmoothServerBridge.ProfileRefusal(info, newValue);
+                if (preset != null) return preset;
+
+                string restart = SmoothServerBridge.RestartRefusal(info, newValue);
+                if (restart != null) return restart;
             }
 
             return null;
@@ -490,6 +552,14 @@ namespace NoVikingLeftBehind
         /// </summary>
         private static void WriteAndSet(SettingInfo info, object parsed, string canonical)
         {
+            if (info.Foreign)
+            {
+                // Another mod's file, another mod's entry - but the same backup, the same
+                // line-level edit, and the same "file first, memory second" order.
+                SmoothServerBridge.Write(info, parsed, canonical, info.IsLocal);
+                return;
+            }
+
             string path = NoVikingLeftBehindPlugin.Cfg.ConfigFilePath;
             string backup = null;
             try
@@ -544,7 +614,11 @@ namespace NoVikingLeftBehind
                                      string verb = "set")
         {
             string actor = ActorName(sender);
-            string what = info.Section + "." + info.Key;
+
+            // Ours are named by their cfg coordinates, which everyone in this menu recognises.
+            // A SmoothServer row is named by its label instead - "Network preset", not
+            // "Profiles.Profile" - because that is the only name a player has ever seen for it.
+            string what = info.Foreign ? info.Label : info.Section + "." + info.Key;
 
             // The chat window prefixes the speaker's own name, so the chat body omits it; the log
             // line and the message-hud fallback carry it. ">" is stripped by vanilla's chat

@@ -39,8 +39,30 @@ namespace NoVikingLeftBehind
         /// <summary>True for the per-module "Enabled" toggle, which has its own restart rule.</summary>
         public bool IsEnabledToggle;
 
-        /// <summary>"Section.Key" - the id used everywhere (RPC, catalog lookups, cfg.py).</summary>
-        public string Id { get { return Section + "." + Key; } }
+        /// <summary>
+        /// Null for this mod's own settings. Otherwise the short tag of the plugin that really
+        /// owns the entry - today only <see cref="SmoothServerBridge.Tag"/>. A foreign setting is
+        /// never in the <see cref="ConfigCatalog"/>: it is built on demand from an allowlist and
+        /// its <see cref="Entry"/> belongs to another plugin's <c>ConfigFile</c>.
+        /// </summary>
+        public string ForeignTag;
+
+        /// <summary>True when this setting belongs to another mod (see <see cref="ForeignTag"/>).</summary>
+        public bool Foreign { get { return ForeignTag != null; } }
+
+        /// <summary>"Section.Key" - the id used everywhere (RPC, catalog lookups, cfg.py).
+        /// A foreign setting carries its owner's tag, so ids can never collide with ours
+        /// ([General] EnforceClientMod exists in both mods).</summary>
+        public string Id
+        {
+            get { return ForeignTag == null ? Section + "." + Key : ForeignTag + ":" + Section + "." + Key; }
+        }
+
+        /// <summary>The section as it crosses the wire: prefixed for a foreign setting.</summary>
+        public string WireSection
+        {
+            get { return ForeignTag == null ? Section : ForeignTag + ":" + Section; }
+        }
 
         /// <summary>False when the owning module is switched off, so the UI can grey the rows.</summary>
         public bool IsModuleEnabled
@@ -58,7 +80,16 @@ namespace NoVikingLeftBehind
         {
             get
             {
-                try { return Entry.GetSerializedValue(); }
+                try
+                {
+                    // A foreign entry is read through its boxed value, not GetSerializedValue():
+                    // ServerSync patches that getter to hand back the client's *own* pre-sync value
+                    // whenever the config is locked, which would make the row show a number nobody
+                    // is running. BoxedValue is always what is actually in force.
+                    return Foreign
+                        ? ConfigCatalog.Serialize(Entry.BoxedValue, ValueType)
+                        : Entry.GetSerializedValue();
+                }
                 catch { return "?"; }
             }
         }

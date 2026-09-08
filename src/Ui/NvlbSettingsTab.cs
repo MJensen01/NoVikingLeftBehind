@@ -65,6 +65,15 @@ namespace NoVikingLeftBehind
         private readonly List<Row> _rows = new List<Row>();
         private readonly List<ModuleRow> _moduleRows = new List<ModuleRow>();
         private FeatureModule _selected;
+
+        /// <summary>The Network (SmoothServer) panel is selected: a handful of another mod's rows.</summary>
+        private bool _network;
+        private Button _netReset;
+        private float _netConfirmUntil;
+
+        private const string NetResetIdle = "Reset network to Default";
+        private const string NetResetConfirm = "Click again to confirm";
+
         private string _filter = "";
         private bool _suppress;          // set while we write a control from a value, not vice versa
         private bool _built;
@@ -210,6 +219,8 @@ namespace NoVikingLeftBehind
             {
                 if (NoVikingLeftBehindPlugin.Cfg != null)
                     NoVikingLeftBehindPlugin.Cfg.SettingChanged -= OnAnySettingChanged;
+                if (SmoothServerBridge.Available)
+                    SmoothServerBridge.Cfg.SettingChanged -= OnForeignSettingChanged;
                 TweakDoor.Result -= OnDoorResult;
                 TweakDoor.AuditChanged -= OnAuditChanged;
                 UiKit.Hover.HidePanel();
@@ -226,6 +237,14 @@ namespace NoVikingLeftBehind
         {
             if (!_built) return;
             UiKit.Hover.Tick();
+
+            // The "reset the network" confirmation lapses on its own, so a stray first click
+            // never leaves a loaded button behind.
+            if (_netConfirmUntil > 0f && Time.unscaledTime > _netConfirmUntil)
+            {
+                _netConfirmUntil = 0f;
+                SetCaption(_netReset, NetResetIdle);
+            }
 
             // The page's width is only real once the canvas has laid out; re-flow once it settles.
             float w = _page != null ? _page.rect.width : 0f;
@@ -357,6 +376,10 @@ namespace NoVikingLeftBehind
 
             // ---- wiring ------------------------------------------------------------------------
             NoVikingLeftBehindPlugin.Cfg.SettingChanged += OnAnySettingChanged;
+            // The Network panel's rows live in SmoothServer's config, so they move when *its*
+            // ServerSync pushes a value - a different ConfigFile, the same live-refresh idea.
+            if (SmoothServerBridge.Available)
+                SmoothServerBridge.Cfg.SettingChanged += OnForeignSettingChanged;
             TweakDoor.Result += OnDoorResult;
             TweakDoor.AuditChanged += OnAuditChanged;
 
@@ -444,6 +467,39 @@ namespace NoVikingLeftBehind
                 y += ModuleRowH + 2f;
             }
 
+            // The Network panel, only when SmoothServer is actually loaded on this machine.
+            // It is not one of our modules and has no Enabled toggle of its own - it is a window
+            // onto five of another mod's settings, so it gets its own theme heading and one row.
+            if (SmoothServerBridge.Available && SmoothServerBridge.Rows().Count > 0)
+            {
+                var netHead = UiKit.Label(_leftContent, SmoothServerBridge.PanelTheme.ToUpperInvariant(),
+                                          UiKit.BaseFontSize * 0.72f, TextAlignmentOptions.BottomLeft,
+                                          UiKit.HintColor);
+                UiKit.Place((RectTransform)netHead.transform, 6f, y, LeftW - 20f, ThemeRowH);
+                y += ThemeRowH;
+
+                var netGo = new GameObject("Sec_Network", typeof(RectTransform));
+                netGo.transform.SetParent(_leftContent, false);
+                var netRt = UiKit.Place((RectTransform)netGo.transform, 0f, y, LeftW - 12f, ModuleRowH);
+                var netName = UiKit.Label(netRt, SmoothServerBridge.PanelLabel, UiKit.BaseFontSize * 0.92f,
+                                          TextAlignmentOptions.MidlineLeft);
+                UiKit.Place((RectTransform)netName.transform, 14f, 2f, LeftW - 30f, ModuleRowH - 4f);
+
+                var netPick = new GameObject("Pick", typeof(RectTransform));
+                netPick.transform.SetParent(netRt, false);
+                UiKit.Stretch((RectTransform)netPick.transform);
+                UiKit.Tip(netPick, SmoothServerBridge.PanelHint + "\n\nSmoothServer " +
+                    SmoothServerBridge.Version + " is installed on this machine. These are its own " +
+                    "settings, not this mod's - only the few that are worth reaching for mid-game " +
+                    "are here; the rest stay in its config file.");
+                var netBtn = netPick.AddComponent<Button>();
+                netBtn.transition = Selectable.Transition.None;
+                netBtn.onClick.AddListener(delegate { SelectNetwork(); });
+
+                _moduleRows.Add(new ModuleRow { Module = null, Label = netName, Root = netGo });
+                y += ModuleRowH + 2f;
+            }
+
             // Plugin-level settings that belong to no module: [General], [Frontier], [Tiers].
             var orphans = ConfigCatalog.Orphans();
             if (orphans.Count > 0)
@@ -502,6 +558,7 @@ namespace NoVikingLeftBehind
         {
             _selected = module;
             _selectedSection = module != null ? module.Section : null;
+            _network = false;
             RebuildRight();
         }
 
@@ -509,6 +566,15 @@ namespace NoVikingLeftBehind
         {
             _selected = null;
             _selectedSection = section;
+            _network = false;
+            RebuildRight();
+        }
+
+        private void SelectNetwork()
+        {
+            _selected = null;
+            _selectedSection = null;
+            _network = true;
             RebuildRight();
         }
 
@@ -534,16 +600,24 @@ namespace NoVikingLeftBehind
             for (int i = _rightContent.childCount - 1; i >= 0; i--)
                 UnityEngine.Object.Destroy(_rightContent.GetChild(i).gameObject);
 
+            _netReset = null;
+            _netConfirmUntil = 0f;
+
             var wanted = Wanted();
             float y = 4f;
             string section = null;
 
             foreach (var info in wanted)
             {
-                if (info.Section != section)
+                // Ours are grouped by cfg section. The five SmoothServer rows sit under one
+                // heading naming the mod and its version instead: five headings for five rows
+                // would be noise, and which of that mod's sections a row lives in is in its
+                // tooltip anyway.
+                string group = info.Foreign ? SmoothServerBridge.GroupHeader : "[" + info.Section + "]";
+                if (group != section)
                 {
-                    section = info.Section;
-                    var head = UiKit.Label(_rightContent, "[" + section + "]",
+                    section = group;
+                    var head = UiKit.Label(_rightContent, group,
                                            UiKit.BaseFontSize * 0.8f, TextAlignmentOptions.BottomLeft,
                                            UiKit.HintColor);
                     var hrt = (RectTransform)head.transform;
@@ -559,6 +633,9 @@ namespace NoVikingLeftBehind
                 y += RowH;
             }
 
+            if (_network && string.IsNullOrEmpty(_filter) && wanted.Count > 0)
+                y = BuildNetworkReset(y);
+
             if (wanted.Count == 0)
             {
                 var none = UiKit.Label(_rightContent,
@@ -571,6 +648,64 @@ namespace NoVikingLeftBehind
             UiKit.FitContent(_rightContent, y + 12f);
             _rightScroll.verticalNormalizedPosition = 1f;
             RefreshAll();
+        }
+
+        /// <summary>
+        /// A big, plain button under the five rows: put the network back to the shipped defaults.
+        /// Two clicks, because it changes three things at once for everybody on the server.
+        /// </summary>
+        private float BuildNetworkReset(float y)
+        {
+            _netReset = UiKit.Button(_rightContent, NetResetIdle);
+            if (_netReset == null) return y;
+
+            var brt = (RectTransform)_netReset.transform;
+            brt.anchorMin = new Vector2(0f, 1f);
+            brt.anchorMax = new Vector2(0f, 1f);
+            brt.pivot = new Vector2(0f, 1f);
+            brt.anchoredPosition = new Vector2(12f, -(y + 8f));
+            brt.sizeDelta = new Vector2(240f, 30f);
+
+            _netReset.onClick.AddListener(NetworkResetClicked);
+            UiKit.Tip(_netReset.gameObject,
+                "Put the network back where it ships: preset Default, compression on, shared map on.\n\n" +
+                "Three ordinary changes, announced and undoable like any other. Reach for it when " +
+                "someone has been experimenting and the server feels worse than it did.");
+
+            var note = UiKit.Label(_rightContent,
+                "Everything above is SmoothServer's, not this mod's. The rest of its settings stay " +
+                "in its own config file.",
+                UiKit.BaseFontSize * 0.75f, TextAlignmentOptions.MidlineLeft, UiKit.HintColor);
+            var nrt = (RectTransform)note.transform;
+            nrt.anchorMin = new Vector2(0f, 1f);
+            nrt.anchorMax = new Vector2(1f, 1f);
+            nrt.pivot = new Vector2(0f, 1f);
+            nrt.offsetMin = new Vector2(262f, -(y + 38f));
+            nrt.offsetMax = new Vector2(-12f, -(y + 8f));
+
+            return y + 46f;
+        }
+
+        private void NetworkResetClicked()
+        {
+            if (Time.unscaledTime > _netConfirmUntil)
+            {
+                _netConfirmUntil = Time.unscaledTime + 6f;
+                SetCaption(_netReset, NetResetConfirm);
+                SetStatus(true, "This sets the preset to Default and turns compression and the " +
+                                "shared map on, for everyone. Click again to confirm.");
+                return;
+            }
+
+            _netConfirmUntil = 0f;
+            SetCaption(_netReset, NetResetIdle);
+            SmoothServerBridge.RequestResetToDefault();
+        }
+
+        private static void SetCaption(Button button, string caption)
+        {
+            if (button == null) return;
+            foreach (var txt in button.GetComponentsInChildren<TMP_Text>(true)) txt.text = caption;
         }
 
         /// <summary>Which settings the right column should show right now.</summary>
@@ -593,6 +728,22 @@ namespace NoVikingLeftBehind
                     int c = string.CompareOrdinal(a.Section, b.Section);
                     return c != 0 ? c : string.CompareOrdinal(a.Key, b.Key);
                 });
+
+                // The Network panel's rows are searchable too, appended in panel order so they
+                // stay together under their own heading rather than scattered among ours.
+                foreach (var s in SmoothServerBridge.Rows())
+                {
+                    if (!ConfigCatalog.Matches(s, needle)) continue;
+                    if (!Visible(s)) continue;
+                    list.Add(s);
+                }
+                return list;
+            }
+
+            if (_network)
+            {
+                foreach (var s in SmoothServerBridge.Rows())
+                    if (Visible(s)) list.Add(s);
                 return list;
             }
 
@@ -707,7 +858,10 @@ namespace NoVikingLeftBehind
         private static string Tooltip(SettingInfo info)
         {
             var sb = new System.Text.StringBuilder();
-            sb.Append(info.Section).Append('.').Append(info.Key).Append('\n');
+            if (info.Foreign)
+                sb.Append("SmoothServer  [").Append(info.Section).Append("] ").Append(info.Key).Append('\n');
+            else
+                sb.Append(info.Section).Append('.').Append(info.Key).Append('\n');
             if (!string.IsNullOrEmpty(info.Description)) sb.Append('\n').Append(info.Description).Append('\n');
             sb.Append('\n').Append("Default: ").Append(info.DefaultString);
             sb.Append("   Type: ").Append(info.TypeName);
@@ -886,6 +1040,19 @@ namespace NoVikingLeftBehind
             bool connected = ZNet.instance != null;
             bool admin = !connected || LocalIsAdmin();
 
+            // A SmoothServer row. This client cannot know whether the *server* runs SmoothServer
+            // at all - only the server can answer that, and it does, in one sentence in the status
+            // strip. So the row stays live and the honest local checks are the ones below.
+            if (info.Foreign)
+            {
+                if (info.IsLocal) return null;
+                if (!connected) return "Join a server to change this";
+                if (info.Tier == SettingTier.Admin && !admin) return "Only a server admin can change this";
+                if (AccessModule.AdminsOnly && !admin) return "Only server admins can change settings here";
+                if (!AccessModule.DoorOpen) return "Switched off on this server";
+                return null;
+            }
+
             if (!info.Live) return "Needs a server restart";
             if (info.IsLocal)
             {
@@ -934,6 +1101,22 @@ namespace NoVikingLeftBehind
             catch (Exception ex)
             {
                 NoVikingLeftBehindPlugin.Log.LogWarning("[SettingsMenu] live refresh: " + ex.Message);
+            }
+        }
+
+        /// <summary>SmoothServer's own config changed (its ServerSync push, its watcher, or us).</summary>
+        private void OnForeignSettingChanged(object sender, SettingChangedEventArgs e)
+        {
+            try
+            {
+                var info = SmoothServerBridge.Find(e.ChangedSetting.Definition.Section,
+                                                   e.ChangedSetting.Definition.Key);
+                if (info == null) return;      // one of the ~55 knobs this panel does not show
+                RefreshRow(FindRow(info));
+            }
+            catch (Exception ex)
+            {
+                NoVikingLeftBehindPlugin.Log.LogWarning("[SettingsMenu] network refresh: " + ex.Message);
             }
         }
 

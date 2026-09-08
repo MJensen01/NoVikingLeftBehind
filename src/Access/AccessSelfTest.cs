@@ -30,6 +30,12 @@ namespace NoVikingLeftBehind
         private static SettingInfo _target;
         private static string _original;
 
+        /// <summary>
+        /// True once this test has stopped touching the door. The network self-test waits on it,
+        /// so the two never interleave on the shared undo stack when both are switched on.
+        /// </summary>
+        public static bool Finished { get { return _done; } }
+
         public static void Arm()
         {
             if (_armed || _done) return;

@@ -65,6 +65,7 @@ namespace NoVikingLeftBehind
         private ConfigEntry<Announce> _announce;
         private ConfigEntry<int> _rate;
         private ConfigEntry<bool> _selfTest;
+        private ConfigEntry<bool> _netSelfTest;
 
         private AccessModule() { _inst = this; }
 
@@ -125,14 +126,30 @@ namespace NoVikingLeftBehind
                 "on disk changed (with its timestamped backup), hold it for 45 seconds so it can be " +
                 "seen from outside, then undo it. Everything is written to the log. Off by default.",
                 Opt.B("Prove the settings door works, at server start").Admin());
+
+            _netSelfTest = BindSynced("NetworkSelfTest", false,
+                "Dedicated server only: at world load, drive the settings door against the " +
+                "SmoothServer settings the Network panel exposes - flip the network preset and " +
+                "back, re-reading the cfg file from disk each time, undo both changes, and prove " +
+                "the door refuses a SmoothServer key that is not on the panel's allowlist and an " +
+                "admin-only one asked for by a non-admin. Everything is restored. Needs " +
+                "SmoothServer installed on this server; otherwise it logs that and stops. " +
+                "Off by default.",
+                Opt.B("Prove the Network panel's door works, at server start").Admin());
         }
 
-        /// <summary>Drives the self-test's delayed second half. Called from the plugin's Update.</summary>
+        /// <summary>True when the operator asked for the ordinary door self-test this boot.</summary>
+        public static bool SelfTestWanted
+        {
+            get { return _inst != null && _inst._selfTest != null && _inst._selfTest.Value; }
+        }
+
+        /// <summary>Drives the self-tests' delayed steps. Called from the plugin's Update.</summary>
         public static void Pump()
         {
             if (_inst == null || !_inst.Active) return;
-            if (_inst._selfTest == null || !_inst._selfTest.Value) return;
-            AccessSelfTest.Pump();
+            if (_inst._selfTest != null && _inst._selfTest.Value) AccessSelfTest.Pump();
+            if (_inst._netSelfTest != null && _inst._netSelfTest.Value) NetworkSelfTest.Pump();
         }
 
         protected override void ApplyPatches()
@@ -164,6 +181,10 @@ namespace NoVikingLeftBehind
                 if (_inst != null && _inst.Active && ServerActive() &&
                     _inst._selfTest != null && _inst._selfTest.Value)
                     AccessSelfTest.Arm();
+
+                if (_inst != null && _inst.Active && ServerActive() &&
+                    _inst._netSelfTest != null && _inst._netSelfTest.Value)
+                    NetworkSelfTest.Arm();
             }
             catch (Exception e) { Log.LogError("[Access] self-test failed to arm: " + e); }
         }
@@ -173,7 +194,12 @@ namespace NoVikingLeftBehind
             return "who=" + (_who != null ? _who.Value.ToString() : "?") +
                    " announce=" + (_announce != null ? _announce.Value.ToString() : "?") +
                    " rate=" + RateLimit + "/10s" +
-                   " selfTest=" + (_selfTest != null && _selfTest.Value) + "  " + TweakDoor.StatusLine();
+                   " selfTest=" + (_selfTest != null && _selfTest.Value) +
+                   " networkSelfTest=" + (_netSelfTest != null && _netSelfTest.Value) +
+                   " smoothServer=" + (SmoothServerBridge.Available
+                                        ? SmoothServerBridge.Version + " (" + SmoothServerBridge.Rows().Count + " rows)"
+                                        : "not installed") +
+                   "  " + TweakDoor.StatusLine();
         }
     }
 }
