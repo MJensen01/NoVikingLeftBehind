@@ -55,6 +55,20 @@ namespace NoVikingLeftBehind
     /// below (tier x station x settlement, rounded once), so the two discounts cannot round twice
     /// or race each other's in-place m_amount save/restore. See SettlementDiscountModule.
     ///
+    /// Since 0.9.3 [Builders] BuildersGuild plugs into the same composition twice over, and this is
+    /// the only place in the mod where a build piece's cost is PER-REQUIREMENT rather than one
+    /// factor for the whole piece:
+    ///   - a per-material YARD multiplier (wood is half price near a workbench, iron a tenth near
+    ///     a forge), composed into the same single rounding, with an optional per-material floor
+    ///     that may be 0 - a requirement that rounds to 0 disappears from the piece, which vanilla
+    ///     handles cleanly at all four call sites (SetupRequirement hides the row, HaveRequirements
+    ///     skips m_amount &lt;= 0, ConsumeResources skips num &lt;= 0, DropResources skips dropCount
+    ///     &lt;= 0);
+    ///   - the FRAMING rule, an ABSOLUTE override for beams and poles (1 of each material
+    ///     free-standing, 0 when snapped onto another beam) that bypasses every multiplier.
+    /// Both arrive through <see cref="PieceAmount"/>, which is the single function every build-piece
+    /// path below now goes through.
+    ///
     /// Player.HaveRequirements(Piece, RequirementMode) is the one hole: its CanBuild branch reads
     /// requirement.m_amount DIRECTLY instead of calling GetAmount, so a GetAmount postfix cannot
     /// reach it. Rather than duplicate vanilla's station/DLC/free-build checks in a postfix, the
@@ -133,14 +147,24 @@ namespace NoVikingLeftBehind
         /// </summary>
         private static bool PieceLive()
         {
-            return Live() || SettlementDiscountModule.Live();
+            return Live() || SettlementDiscountModule.Live() || BuildersGuildModule.Live();
         }
 
         /// <summary>
-        /// The single combined build-piece cost factor: tier discount x settlement discount.
-        /// Every build-piece path - the HUD row, the CanBuild check, the consume, and the
-        /// deconstruct refund - goes through this one function, which is what makes the refund
-        /// provably equal to the price.
+        /// Are the shared build-cost patches installed and is SOMETHING contributing to them right
+        /// now? [Builders] asks before it records what a piece was paid for: a record written while
+        /// the pipeline is not actually pricing anything would be a lie the refund path would then
+        /// believe.
+        /// </summary>
+        internal static bool BuildCostsActive()
+        {
+            return _self != null && _self.Applied && PieceLive();
+        }
+
+        /// <summary>
+        /// The single combined WHOLE-PIECE cost factor: tier discount x settlement discount.
+        /// Per-material factors (the [Builders] yard) are not in here - see
+        /// <see cref="PieceAmount"/>, which is what every build-piece path actually calls.
         /// </summary>
         internal static float PieceCostFactor(Piece piece)
         {
@@ -152,6 +176,47 @@ namespace NoVikingLeftBehind
             }
             mult *= SettlementDiscountModule.FactorFor(piece);
             return mult;
+        }
+
+        /// <summary>
+        /// What ONE requirement of a build piece costs right now, rounded exactly once.
+        ///
+        /// Every build-piece path goes through here - the HUD row, the CanBuild check, the
+        /// consume, and the deconstruct refund - which is what makes the four numbers provably the
+        /// same. The order matters:
+        ///
+        ///   1. a TRACKED REFUND wins outright: the piece itself recorded what it was paid for, so
+        ///      it gives back exactly that and never a recomputed price;
+        ///   2. otherwise the FRAMING rule, an absolute cost that bypasses the multipliers (but
+        ///      never charges more than vanilla would);
+        ///   3. otherwise tier x settlement x yard, rounded once, floored at MinAmount or at the
+        ///      material's own [Builders] MinAmounts override.
+        ///
+        /// <paramref name="forRefund"/> does two things. It separates 1 from 2 - the framing rule
+        /// is a PRICE, not a refund - and it puts every TRANSIENT factor into its "cheapest"
+        /// setting: the yard counts as though the builder were standing in it (and Stage 3's
+        /// rhythm as though it were at full streak), so a refund can never pay out more than the
+        /// piece could have been bought for, wherever the player happens to be standing when they
+        /// swing the hammer. See BuildersGuildModule.MaterialFactor.
+        /// </summary>
+        internal static int PieceAmount(Piece piece, Piece.Requirement req, int vanillaAmount, bool forRefund)
+        {
+            if (vanillaAmount <= 0) return vanillaAmount;
+
+            if (forRefund && BuildersGuildModule.HasPaidRecord(piece))
+                return Mathf.Clamp(BuildersGuildModule.RecordedAmount(piece, req), 0, vanillaAmount);
+
+            int flat;
+            if (!forRefund && BuildersGuildModule.StructuralAmount(piece, req, out flat))
+                return Mathf.Clamp(flat, 0, vanillaAmount);
+
+            // vanilla x tier x settlement x YARD(material) x SKILL(builder) x RHYTHM(streak),
+            // rounded exactly once. The yard belongs to the material, the last two belong to the
+            // builder and therefore reach every piece, listed material or not.
+            float mult = PieceCostFactor(piece)
+                       * BuildersGuildModule.MaterialFactor(piece, req, forRefund)
+                       * BuildersGuildModule.ExtraFactorFor(piece, req, forRefund);
+            return ScaledAmount(vanillaAmount, mult, BuildersGuildModule.FloorFor(req));
         }
 
         protected override void Bind()
@@ -282,19 +347,31 @@ namespace NoVikingLeftBehind
 
         // ---- the one place a number changes -------------------------------------------------
 
-        private static void GetAmountPost(ref int __result)
+        /// <summary>
+        /// <paramref name="__instance"/> is the requirement being priced - needed since 0.9.3
+        /// because [Builders] prices wood and iron differently inside the same piece, and a
+        /// Requirement knows its own material even though it does not know its piece.
+        /// </summary>
+        private static void GetAmountPost(Piece.Requirement __instance, ref int __result)
         {
             if (__result <= 0) return;
             var ctx = _ctx;
 
-            float mult = 1f;
-            if (Live())
+            // Build pieces only, and only inside a context that knows it is one. Everything a
+            // build piece's cost depends on - tier, settlement, yard, framing - lives in the one
+            // shared function, so the HUD row and the consume path cannot drift apart.
+            if (ctx.IsPiece)
             {
-                if (ctx.Tier > 0 && Tiers.IsBehind(ctx.Tier)) mult = MultiplierFor(ctx.Tier);
-                if (ctx.Station > 0f && ctx.Station < 1f) mult *= ctx.Station;
+                if (!PieceLive()) return;
+                __result = PieceAmount(ctx.PieceRef, __instance, __result, false);
+                return;
             }
-            // Build pieces only, and only inside a context that knows it is one.
-            if (ctx.IsPiece) mult *= SettlementDiscountModule.FactorFor(ctx.PieceRef);
+
+            // Crafting recipes: tier x station only, exactly as before.
+            if (!Live()) return;
+            float mult = 1f;
+            if (ctx.Tier > 0 && Tiers.IsBehind(ctx.Tier)) mult = MultiplierFor(ctx.Tier);
+            if (ctx.Station > 0f && ctx.Station < 1f) mult *= ctx.Station;
             if (mult >= 1f) return;
 
             __result = ScaledAmount(__result, mult);
@@ -402,7 +479,7 @@ namespace NoVikingLeftBehind
         {
             __state = null;
             if (mode != Player.RequirementMode.CanBuild) return;
-            __state = ScaleInPlace(piece);
+            __state = ScaleInPlace(piece, false);
         }
 
         private static void HavePieceFin(Piece piece, int[] __state)
@@ -415,14 +492,15 @@ namespace NoVikingLeftBehind
         /// <summary>
         /// Piece.DropResources reads requirement.m_amount DIRECTLY, so without this a discounted
         /// piece would refund the full vanilla amount - build a wall for 3 wood, break it for 4,
-        /// repeat. The same scale-and-restore used for the CanBuild check, with the SAME combined
-        /// factor, makes the refund exactly the current price and never more. (Vanilla's own
-        /// modifiers - the Feast stack percentage and the /3 for pieces not placed by a player -
-        /// then apply on top, unchanged.)
+        /// repeat. The same scale-and-restore used for the CanBuild check, through the SAME shared
+        /// pricing function, makes the refund exactly the current price and never more - or, for a
+        /// piece that recorded what it was paid ([Builders] framing), exactly what it was paid.
+        /// (Vanilla's own modifiers - the Feast stack percentage and the /3 for pieces not placed
+        /// by a player - then apply on top, unchanged.)
         /// </summary>
         private static void DropResourcesPre(Piece __instance, out int[] __state)
         {
-            __state = ScaleInPlace(__instance);
+            __state = ScaleInPlace(__instance, true);
         }
 
         private static void DropResourcesFin(Piece __instance, int[] __state)
@@ -430,22 +508,29 @@ namespace NoVikingLeftBehind
             RestoreInPlace(__instance, __state);
         }
 
-        /// <summary>Scale a piece's m_amount fields for the duration of one call. Returns the
+        /// <summary>Rewrite a piece's m_amount fields for the duration of one call, one requirement
+        /// at a time (the yard prices wood and iron differently inside the same piece). Returns the
         /// saved originals, or null when nothing was touched.</summary>
-        private static int[] ScaleInPlace(Piece piece)
+        private static int[] ScaleInPlace(Piece piece, bool forRefund)
         {
             if (!PieceLive() || piece == null || piece.m_resources == null) return null;
 
-            float mult = PieceCostFactor(piece);
-            if (mult >= 1f) return null;
-
             var reqs = piece.m_resources;
-            var saved = new int[reqs.Length];
+            int[] saved = null;
             for (int i = 0; i < reqs.Length; i++)
             {
                 var r = reqs[i];
-                saved[i] = r == null ? 0 : r.m_amount;
-                if (r != null && r.m_amount > 0) r.m_amount = ScaledAmount(r.m_amount, mult);
+                if (r == null || r.m_amount <= 0) continue;
+
+                int now = PieceAmount(piece, r, r.m_amount, forRefund);
+                if (now == r.m_amount) continue;
+
+                if (saved == null)
+                {
+                    saved = new int[reqs.Length];
+                    for (int j = 0; j < reqs.Length; j++) saved[j] = reqs[j] == null ? 0 : reqs[j].m_amount;
+                }
+                r.m_amount = now;
             }
             return saved;
         }
@@ -484,13 +569,26 @@ namespace NoVikingLeftBehind
         /// never above the vanilla amount.</summary>
         internal static int ScaledAmount(int amount, float mult)
         {
+            return ScaledAmount(amount, mult, -1);
+        }
+
+        /// <summary>
+        /// The one place a build cost is rounded. <paramref name="floorOverride"/> is [Builders]
+        /// MinAmounts: 0 or more REPLACES every other floor for this one material (0 lets the
+        /// requirement round away and drop off the piece entirely, which is the point of the
+        /// setting); -1 means "use the normal floors".
+        /// </summary>
+        internal static int ScaledAmount(int amount, float mult, int floorOverride)
+        {
             if (amount <= 0 || mult >= 1f) return amount;
 
             int v = Mathf.RoundToInt(amount * mult);
             // Whichever discounts are in play, take the STRICTEST floor of the ones that are:
             // [Settlement] MinAmountFloor() returns 0 when that module is not contributing.
-            int floor = Mathf.Max(_minAmount != null ? _minAmount.Value : 1,
-                                  SettlementDiscountModule.MinAmountFloor());
+            int floor = floorOverride >= 0
+                            ? floorOverride
+                            : Mathf.Max(_minAmount != null ? _minAmount.Value : 1,
+                                        SettlementDiscountModule.MinAmountFloor());
             floor = Mathf.Min(amount, Mathf.Max(0, floor));
             if (v < floor) v = floor;
             if (v > amount) v = amount;

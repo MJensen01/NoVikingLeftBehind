@@ -298,7 +298,9 @@ namespace NoVikingLeftBehind
             return false;
         }
 
-        private static List<CraftingStation> AllStations()
+        /// <summary>Vanilla's own list of loaded crafting stations, resolved once. Shared with
+        /// BuildersLoad's range test and BuildersGuild's yard scan.</summary>
+        internal static List<CraftingStation> AllStations()
         {
             if (_allStationsResolved) return _allStations;
             _allStationsResolved = true;

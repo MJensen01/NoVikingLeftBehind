@@ -133,6 +133,20 @@ all. The mod never makes the leaders' game easier; it only softens the trail beh
   as much, so a big wall is a couple of trips instead of ten. Walk away and it comes straight
   back (with a three-second grace so the encumbrance arrow doesn't strobe at the edge). Building
   materials only, your own inventory only, and your carry limit is untouched. `Tune it:` `[Load] WeightMultiplier=0.5`, `Materials="Wood,FineWood,RoundLog,Stone,..."`, `Stations="piece_workbench,piece_stonecutter"`, `HysteresisSeconds=3`
+- **BuildersGuild** — build big at home without grinding for it. Anywhere inside 80 m of the right
+  station, that station's materials get cheaper: wood and stone at half price near the workbench
+  and stonecutter, **iron at a tenth** near the forge. Out in the wild everything costs what it
+  always did. And beams behave like a frame instead of a shopping list — the first pole of a
+  support tower costs **1 of each material**, and every beam you snap onto it costs **nothing**, so
+  a five-high iron tower is one iron and one wood. Snapping onto a wall or a floor doesn't count:
+  frames are what's rewarded. On top of that you get **better at building**: a Builder level that
+  goes up every time you place something (bigger pieces teach you more), worth up to 30% off at
+  level 100 — it lives on your character, it is never lost when you die, and `nvlb.builder` in the
+  console tells you where you are. And when you settle into placing the same piece over and over,
+  each repeat shaves another 5% off, up to 25%, until you switch piece or stop for twenty seconds.
+  Each piece remembers what it actually cost, so deconstructing gives back exactly that and never
+  more. The hammer tells you why the number changed. Crafting recipes are never touched — the iron
+  you save goes into gear. `Tune it:` `[Builders] YardRadius=80`, `Materials="Wood:0.5,Stone:0.5,Iron:0.10,..."`, `Stations="piece_workbench:Wood|RoundLog|FineWood,forge:Iron|Bronze|Copper,..."`, `StructuralFirstCost=1`, `StructuralAttachedCost=0`, `MinAmounts=""`, `SkillMaxDiscount=0.30`, `RhythmPerRepeat=0.05`, `RhythmMax=0.25`
 
 ### Survival & world
 

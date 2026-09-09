@@ -1,6 +1,25 @@
 
 # Changelog — NoVikingLeftBehind
 
+## 0.10.0 (2026-09-09) — BuildersGuild: cheaper building at the base (38th module)
+
+New module **BuildersGuild** `[Builders]` — build big at your base without turning costs off. Three factors, all live-editable,
+composed into the one build-cost pipeline the tier and settlement discounts already use (shown, checked, consumed and refunded
+from the same number, rounded once):
+* **Yard** — a material is cheaper while its home station is within `YardRadius` (80 m): wood/core wood/fine wood near a
+  workbench, stone near a stonecutter, iron/bronze/copper near a forge, black metal near a black forge (`Materials`, default
+  ×0.5, iron ×0.10). Outside every yard the multiplier is 1.0. Optional `StationLevelScaling`, per-material `MinAmounts`.
+* **Framing** — every beam and pole (43 pieces on 1.0, incl. the new Timber set; `StructuralPieces` to add/remove) costs a flat
+  1 of each material free-standing and **0 when snapped onto another beam or pole**. Each piece records what it was paid for
+  on its own network data, so deconstruct refunds exactly that — never more. A 5-high iron support tower: 1 iron + 1 wood.
+* **Builder skill** — a per-character level 0–100 tracked by NVLB (no death penalty, invisible to vanilla), 1 XP per vanilla
+  material of every piece placed, up to `SkillMaxDiscount` (30%) at level 100. `nvlb.builder` shows it.
+* **Rhythm** — placing the same piece again within `RhythmWindowSec` (20 s) builds a streak: 5% per repeat, capped at 25%.
+* The hammer's piece info shows the breakdown, e.g. `Yard -50% Stone · Builder Lv 31 -9% · Rhythm x4 -20%`.
+* Refund rule for all transient factors: a refund uses the cheapest price the piece could have been built for (yard applied,
+  full rhythm), so tearing something down never pays out more than it cost. Crafting recipes, station costs, repair and wards
+  are untouched. Headless self-test: 31 checks.
+
 ## 0.9.2 (2026-09-09)
 
 * **Vanilla "Stack all" / hold-E no longer empties the extra slots.** Valheim's `Inventory.StackAll` walks the whole

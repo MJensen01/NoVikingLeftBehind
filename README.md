@@ -3,13 +3,13 @@
 A BepInEx 5 mod for Valheim 1.0, built and maintained for a small dedicated-server group
 and released here for anyone to use. MIT licensed.
 
-All-in-one, server-enforced quality-of-life and catch-up mechanics: 37 modules covering inventory,
+All-in-one, server-enforced quality-of-life and catch-up mechanics: 38 modules covering inventory,
 loadouts, combat (fists + shield), crafting from chests, building and gathering, food, corpse
 runs, guardian powers, ore regrowth, portals and a frontier-based catch-up system. One DLL, installed on the server and by
 every player. The server enforces every setting (via [ServerSync](https://github.com/blaxxun-boop/ServerSync)),
 so nobody has to agree on config by hand.
 
-0.9.2 is built and tested against Valheim `1.0.7` (network version 39) / BepInEx `5.4.2350`.
+0.10.0 is built and tested against Valheim `1.0.7` (network version 39) / BepInEx `5.4.2350`.
 For servers held on the `default_pre1_0` branch (0.221.12) use 0.8.8.
 
 ## Install (players, via r2modman / Thunderstore)
@@ -33,8 +33,8 @@ For servers held on the `default_pre1_0` branch (0.221.12) use 0.8.8.
 
 ## Config overview
 
-37 modules, each with its own `[Section] Enabled` toggle, plus `Tiers` (shared config, always on,
-no toggle of its own) — 38 rows in `docs/MODULES.md`, the full per-module table (side, section,
+38 modules, each with its own `[Section] Enabled` toggle, plus `Tiers` (shared config, always on,
+no toggle of its own) — 39 rows in `docs/MODULES.md`, the full per-module table (side, section,
 settings, defaults, hot-reload). Every gameplay number is server-synced and hot-reloads (edit the
 cfg, it applies within a second — `Enabled` toggles need a restart to turn *on*, off is instant);
 hotkeys and HUD offsets (`ExtraSlots`, `Loadouts`, `CorpseRunPlus`) are per-player, local settings.
@@ -128,6 +128,25 @@ easier — the newest tier is never touched.
 - **BuildersLoad** `[Load]` — within a bench's build range, listed building materials weigh
   `WeightMultiplier` (`0.5`), with a 3 s hysteresis on the way out (`Stations="piece_workbench,piece_stonecutter"`).
   Local player's own inventory only; the carry-weight cap is never touched.
+- **BuildersGuild** `[Builders]` — cheap building at your base. **The yard**: each material costs
+  its `Materials` fraction of vanilla while its own home station is within `YardRadius` (`80` m) —
+  wood/core wood/fine wood at a workbench `0.5`, stone at a stonecutter `0.5`, iron at a forge
+  `0.10`, bronze/copper `0.5`, black metal at a black forge `0.5`; outside every yard, vanilla.
+  **The framing rule**: every beam and pole (auto-discovered from the hammer's piece table) costs
+  `StructuralFirstCost` (`1`) of each material free-standing and `StructuralAttachedCost` (`0`)
+  when snapped onto another beam — so a 5-high iron support tower is 1 iron + 1 wood, and framing
+  onto it is free. Snapping onto a wall or floor does not count. **The Builder skill**: an
+  NVLB-tracked per-character skill 0–100 (`Player.m_customData["nvlb.builder"]`, never lost on
+  death), XP = the piece's vanilla material count × `SkillXpPerMaterial=1`, vanilla's own level
+  curve, worth up to `SkillMaxDiscount=0.30` at Lv 100 (Lv 50 = −15%); `nvlb.builder` in the
+  console prints it. **Rhythm**: the same piece placed again within `RhythmWindowSec=20` builds a
+  streak worth `RhythmPerRepeat=0.05` each up to `RhythmMax=0.25`; a different piece or a pause
+  resets it. Deconstruct refunds exactly what the piece recorded it was paid (`nvlb.paid` on its
+  own ZDO), never more; everything else refunds at the *cheapest* factor it could have been built
+  for (yard applied unconditionally, rhythm at full streak), so a refund can never pay out more
+  than the piece cost. `MinAmounts="Iron:0"` lets a material round away entirely. Every factor is
+  composed with the tier and settlement discounts into one rounding, so the cost shown, checked,
+  consumed and refunded are the same number.
 
 ### Survival & world
 
