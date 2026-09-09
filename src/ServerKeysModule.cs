@@ -52,6 +52,7 @@ namespace NoVikingLeftBehind
         private ConfigEntry<bool> _noWorkbench;
         private ConfigEntry<bool> _allRecipesUnlocked;
         private ConfigEntry<bool> _deathKeepEquip;
+        private ConfigEntry<string> _removeKeys;
 
         private static ServerKeysModule _self;
 
@@ -82,6 +83,13 @@ namespace NoVikingLeftBehind
                 Opt.B("Every crafting recipe is unlocked from the start").Admin());
             _deathKeepEquip = BindSynced("DeathKeepEquip", false, "Keep equipped items on death.",
                 Opt.B("Players keep their equipped gear when they die").Admin());
+            _removeKeys = BindSynced("RemoveKeys", "",
+                "Global keys to DELETE from the world every time these settings are applied (comma-separated " +
+                "key names, e.g. 'enemyleveluprate,playerevents'). Use it to clean up stray keys - Valheim 1.0 " +
+                "renumbered its key list, so a mod built for the wrong game version writes the wrong key " +
+                "(that is how 'enemyleveluprate 250' and 'playerevents 0' got onto a world on 2026-09-09). " +
+                "Keys named here are removed and never re-added by NoVikingLeftBehind; clear the list afterwards.",
+                Opt.T("Global keys to remove from the world").Admin());
         }
 
         protected override void ApplyPatches()
@@ -160,6 +168,21 @@ namespace NoVikingLeftBehind
             SetFlag(zs, GlobalKeys.NoWorkbench, _noWorkbench.Value);
             SetFlag(zs, GlobalKeys.AllRecipesUnlocked, _allRecipesUnlocked.Value);
             SetFlag(zs, GlobalKeys.DeathKeepEquip, _deathKeepEquip.Value);
+
+            // Stray keys the admin wants gone (see the RemoveKeys description). Removed by key
+            // name; GlobalKeyRemove splits "name value" itself, so scalar keys work the same way.
+            var remove = _removeKeys != null ? _removeKeys.Value : "";
+            if (!string.IsNullOrEmpty(remove))
+            {
+                foreach (var raw in remove.Split(','))
+                {
+                    var name = raw.Trim().ToLowerInvariant();
+                    if (name.Length == 0) continue;
+                    if (!zs.GetGlobalKey(name)) continue;
+                    bool removed = zs.GlobalKeyRemove(name, true);
+                    Log.LogWarning("[ServerKeys] removed stray key '" + name + "' (RemoveKeys, removed=" + removed + ")");
+                }
+            }
 
             zs.UpdateWorldRates();
 
