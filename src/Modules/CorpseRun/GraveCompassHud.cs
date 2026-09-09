@@ -52,6 +52,13 @@ namespace NoVikingLeftBehind
         /// <summary>Font size of the hint line as a fraction of the distance label's font size.</summary>
         public static float HintScale = 0.8f;
 
+        /// <summary>
+        /// Item count of the grave being tracked, for the distance label ("Grave - 31 items - 240 m").
+        /// -1 means unknown (a record migrated from the pre-0.9.1 single-grave format), and the
+        /// label then falls back to the bare distance.
+        /// </summary>
+        private static int _items = -1;
+
         private static Hud _hud;
         private static GameObject _arrowGo;
         private static GameObject _labelGo;
@@ -76,6 +83,24 @@ namespace NoVikingLeftBehind
         public static void SetHint(string text)
         {
             _hintText = text ?? "";
+        }
+
+        /// <summary>
+        /// How many items the tracked grave holds, so the label can say WHICH grave this is - the
+        /// whole point of the 0.9.1 multi-grave change is that you can tell the 31-item grave from
+        /// the 2-mushroom one at a glance. -1 = unknown, label shows the distance alone.
+        /// </summary>
+        public static void SetItems(int items)
+        {
+            _items = items;
+        }
+
+        /// <summary>"Grave - 31 items - 240 m", or just "240 m" when the count is unknown.</summary>
+        private static string LabelText(float distance)
+        {
+            int m = Mathf.RoundToInt(distance);
+            if (_items < 0) return m + " m";
+            return "Grave · " + _items + (_items == 1 ? " item · " : " items · ") + m + " m";
         }
 
         /// <summary>
@@ -120,7 +145,7 @@ namespace NoVikingLeftBehind
                 if (_hintRt != null) _hintRt.anchoredPosition = pos + new Vector2(0f, -60f);
 
                 if (_arrow != null && _arrow.text != ArrowChar) _arrow.text = ArrowChar;
-                if (_label != null) _label.text = Mathf.RoundToInt(distance) + " m";
+                if (_label != null) _label.text = LabelText(distance);
                 if (_hint != null && _hint.text != _hintText) _hint.text = _hintText;
                 if (_hintGo != null && _hintGo.activeSelf != (_hintText.Length > 0))
                     _hintGo.SetActive(_hintText.Length > 0);
@@ -305,7 +330,10 @@ namespace NoVikingLeftBehind
                 rt.pivot = new Vector2(0.5f, 0.5f);
                 rt.localScale = Vector3.one;
                 rt.localRotation = Quaternion.identity;
-                rt.sizeDelta = new Vector2(220f, 40f);
+                // Wider than the pre-0.9.1 220 so "Grave - 31 items - 240 m" and the "+1 more"
+                // hint fit inside the rect instead of overflowing it; the glyph and both labels
+                // are centre-aligned, so nothing moves for the short strings.
+                rt.sizeDelta = new Vector2(420f, 40f);
             }
             if (text != null)
             {

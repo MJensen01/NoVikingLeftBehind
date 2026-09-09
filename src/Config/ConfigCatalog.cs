@@ -85,16 +85,29 @@ namespace NoVikingLeftBehind
             {
                 try
                 {
-                    // A foreign entry is read through its boxed value, not GetSerializedValue():
-                    // ServerSync patches that getter to hand back the client's *own* pre-sync value
-                    // whenever the config is locked, which would make the row show a number nobody
-                    // is running. BoxedValue is always what is actually in force.
-                    return Foreign
-                        ? ConfigCatalog.Serialize(Entry.BoxedValue, ValueType)
-                        : Entry.GetSerializedValue();
+                    // ALWAYS the boxed value, never GetSerializedValue(). ServerSync patches that
+                    // getter (PreventSavingServerInfo) to hand back LocalBaseValue - this machine's
+                    // *own* pre-sync value out of its own cfg file - for every synchronised entry
+                    // while the config is locked, which is exactly how a client runs. That is right
+                    // for saving the file and wrong for showing a value: it made the settings tab
+                    // show a number nobody is running (0.9.0: [Chests] Range saved as 50 on the
+                    // server, redrawn as 20 on the client, for ever). This was known for another
+                    // mod's entries since the SmoothServer panel went in; it is just as true for
+                    // ours. BoxedValue is always what is actually in force.
+                    return ConfigCatalog.Serialize(Entry.BoxedValue, ValueType);
                 }
                 catch { return "?"; }
             }
+        }
+
+        /// <summary>
+        /// Diagnostic only: what BepInEx would write to the cfg file for this entry. On a client
+        /// with the config locked ServerSync substitutes this machine's own pre-sync value here,
+        /// so it can disagree with <see cref="CurrentString"/> - which is the point of logging it.
+        /// </summary>
+        public string SerializedString
+        {
+            get { try { return Entry.GetSerializedValue(); } catch { return "?"; } }
         }
 
         public string DefaultString

@@ -67,6 +67,21 @@ namespace NoVikingLeftBehind
         private readonly Dictionary<SettingInfo, string> _pending = new Dictionary<SettingInfo, string>();
         private readonly List<SettingInfo> _pendingOrder = new List<SettingInfo>();
         private Button _saveButton, _discardButton;
+
+        // ---- the in-flight overlay (0.9.1) -----------------------------------------------------
+        // Save empties the queue and refreshes the page in the same frame, but the change has only
+        // just left for the server: what is live is still the old value for a round trip. Without
+        // this the row visibly snaps back to the old number and then forward again - which is what
+        // a genuinely stale row looks like. A value that has been sent and not yet come back is
+        // shown until the entry actually changes, or until it has been out this long, so a change
+        // the server refused cannot sit on screen pretending to be real.
+        private readonly Dictionary<SettingInfo, string> _inflight = new Dictionary<SettingInfo, string>();
+        private readonly Dictionary<SettingInfo, float> _inflightAt = new Dictionary<SettingInfo, float>();
+        private const float InflightSeconds = 5f;
+
+        /// <summary>Settings this tab has sent this session - the only rows the row-source
+        /// diagnostic logs, so the log names the ones that matter and nothing else.</summary>
+        private readonly HashSet<SettingInfo> _sent = new HashSet<SettingInfo>();
         private RectTransform _unsavedDialog;
 
         /// <summary>The tint a queued row wears, so a page of edits can be read at a glance.</summary>
@@ -1339,6 +1354,10 @@ namespace NoVikingLeftBehind
             public Button PickButton, RawButton;
             public bool Raw;
             public bool Editable;
+
+            /// <summary>Last value the row-source diagnostic logged for this row, so a refresh
+            /// that changes nothing does not repeat the line.</summary>
+            public string LoggedShown;
         }
 
         /// <summary>
@@ -1982,7 +2001,7 @@ namespace NoVikingLeftBehind
             var why = WhyNot(info, value);
             if (why != null) { SetStatus(false, why); RefreshRow(FindRow(info)); return; }
 
-            if (string.Equals(value ?? "", info.CurrentString ?? "", StringComparison.Ordinal))
+            if (string.Equals(value ?? "", Settled(info) ?? "", StringComparison.Ordinal))
             {
                 if (_pending.Remove(info)) _pendingOrder.Remove(info);
             }
@@ -2001,11 +2020,50 @@ namespace NoVikingLeftBehind
                   " - press Save changes.");
         }
 
-        /// <summary>What a control should be showing: the queued value if there is one, else what is live.</summary>
+        /// <summary>
+        /// What a control should be showing, in order: the queued value, then a value that has
+        /// been sent and whose echo has not landed yet, then what is actually live. Never a value
+        /// that exists nowhere - an in-flight value is dropped the moment the entry changes (the
+        /// change arrived) and after <see cref="InflightSeconds"/> regardless (it never will).
+        /// </summary>
         private string Shown(SettingInfo info)
         {
+            if (info == null) return "";
+
             string v;
-            return (info != null && _pending.TryGetValue(info, out v)) ? v : (info == null ? "" : info.CurrentString);
+            return _pending.TryGetValue(info, out v) ? v : Settled(info);
+        }
+
+        /// <summary>
+        /// What this row is worth with nothing queued on it: the value sent and not yet echoed if
+        /// there is one, otherwise what is live. This - not <c>CurrentString</c> - is what an edit
+        /// is measured against, so dragging a slider back to the number that is still on its way
+        /// out counts as a change and not as "nothing to do".
+        /// </summary>
+        private string Settled(SettingInfo info)
+        {
+            if (info == null) return "";
+
+            string v;
+            if (_inflight.TryGetValue(info, out v))
+            {
+                float at;
+                if (_inflightAt.TryGetValue(info, out at) &&
+                    Time.realtimeSinceStartup - at < InflightSeconds &&
+                    !string.Equals(v ?? "", info.CurrentString ?? "", StringComparison.Ordinal))
+                    return v;
+                ClearInflight(info);
+            }
+
+            return info.CurrentString;
+        }
+
+        /// <summary>A sent value has arrived (or timed out): stop overlaying it.</summary>
+        private void ClearInflight(SettingInfo info)
+        {
+            if (info == null) return;
+            _inflight.Remove(info);
+            _inflightAt.Remove(info);
         }
 
         private bool IsDirty(SettingInfo info) { return info != null && _pending.ContainsKey(info); }
@@ -2032,9 +2090,17 @@ namespace NoVikingLeftBehind
             int sent = 0;
             for (int i = 0; i < order.Count; i++)
             {
+                // Hold the sent value on screen until the server's echo arrives: the queue is
+                // already empty and the entry does not change for a round trip, so without this
+                // the very next refresh puts the old number back under the player's cursor.
+                _inflight[order[i]] = values[i];
+                _inflightAt[order[i]] = Time.realtimeSinceStartup;
+                _sent.Add(order[i]);
+
                 try { PushBinding(order[i], values[i]); TweakDoor.Request(order[i], values[i]); sent++; }
                 catch (Exception e)
                 {
+                    ClearInflight(order[i]);
                     NoVikingLeftBehindPlugin.Log.LogError("[SettingsMenu] could not send [" + order[i].Section +
                                                           "] " + order[i].Key + ": " + e);
                 }
@@ -2181,6 +2247,7 @@ namespace NoVikingLeftBehind
                 var info = ConfigCatalog.Find(e.ChangedSetting.Definition.Section,
                                               e.ChangedSetting.Definition.Key);
                 if (info == null) return;
+                ClearInflight(info);          // the echo landed - show what is live from here on
                 RefreshRow(FindRow(info));
                 RefreshModuleRow(info);
                 RefreshHeader();
@@ -2199,6 +2266,7 @@ namespace NoVikingLeftBehind
                 var info = SmoothServerBridge.Find(e.ChangedSetting.Definition.Section,
                                                    e.ChangedSetting.Definition.Key);
                 if (info == null) return;      // one of the ~55 knobs this panel does not show
+                ClearInflight(info);
                 RefreshRow(FindRow(info));
             }
             catch (Exception ex)
@@ -2207,7 +2275,19 @@ namespace NoVikingLeftBehind
             }
         }
 
-        private void OnDoorResult(bool ok, string message) { SetStatus(ok, message); }
+        /// <summary>
+        /// The server refused something. Whatever is still in flight cannot be trusted to arrive,
+        /// so drop the overlay and put every row back to what is really live rather than leave a
+        /// number on screen that the server never accepted.
+        /// </summary>
+        private void OnDoorResult(bool ok, string message)
+        {
+            SetStatus(ok, message);
+            if (ok || _inflight.Count == 0) return;
+            _inflight.Clear();
+            _inflightAt.Clear();
+            RefreshAll();
+        }
 
         private void OnAuditChanged() { RefreshHeader(); }
 
@@ -2285,7 +2365,8 @@ namespace NoVikingLeftBehind
             // These checkboxes queue like every other control, so what the box shows is the
             // queued value when there is one - not what the server currently says.
             bool dirty = mr.EnabledInfo != null && IsDirty(mr.EnabledInfo);
-            if (dirty) on = string.Equals(Shown(mr.EnabledInfo), "true", StringComparison.OrdinalIgnoreCase);
+            if (mr.EnabledInfo != null && (dirty || _inflight.ContainsKey(mr.EnabledInfo)))
+                on = string.Equals(Shown(mr.EnabledInfo), "true", StringComparison.OrdinalIgnoreCase);
 
             if (mr.Module != null && mr.Enabled != null && mr.EnabledInfo != null)
             {
@@ -2307,6 +2388,37 @@ namespace NoVikingLeftBehind
             }
         }
 
+        /// <summary>
+        /// One line per changed row, each time what it shows moves - the only way to see a
+        /// client-only UI bug from a log. Four sources, so the line says which one is stale:
+        ///   queued = waiting behind Save   sent = sent, echo not back yet
+        ///   synced = the value in force (Entry.BoxedValue)
+        ///   live   = what BepInEx serialises - ServerSync hands back THIS machine's pre-sync
+        ///            value here while the config is locked, which is the 0.9.0 bug
+        ///   shown  = what actually went into the control
+        /// Only rows this tab has sent are logged, so it costs nothing on an ordinary page.
+        /// </summary>
+        private void LogRowSources(Row row, SettingInfo info, string shown)
+        {
+            try
+            {
+                if (row == null || info == null || !_sent.Contains(info)) return;
+                if (string.Equals(row.LoggedShown ?? "\0", shown ?? "", StringComparison.Ordinal)) return;
+                row.LoggedShown = shown ?? "";
+
+                string queued, inflight;
+                if (!_pending.TryGetValue(info, out queued)) queued = "-";
+                if (!_inflight.TryGetValue(info, out inflight)) inflight = "-";
+
+                NoVikingLeftBehindPlugin.Log.LogInfo(
+                    "[SettingsMenu] row [" + info.Section + "] " + info.Key +
+                    ": queued=" + queued + " sent=" + inflight +
+                    " synced=" + info.CurrentString + " live=" + info.SerializedString +
+                    " shown=" + (shown ?? ""));
+            }
+            catch { /* a diagnostic must never be the thing that breaks the page */ }
+        }
+
         private void RefreshRow(Row row)
         {
             if (row == null || row.Info == null) return;
@@ -2321,13 +2433,13 @@ namespace NoVikingLeftBehind
             try
             {
                 string current = Shown(info);
+                LogRowSources(row, info, current);
 
+                // Every control reads the same source. The box used to read Entry.BoxedValue
+                // directly whenever the row was clean - a private fix for the same staleness the
+                // rest of the page had, which is why toggles were right while sliders were wrong.
                 if (row.Toggle != null)
-                {
-                    row.Toggle.isOn = dirty
-                        ? string.Equals(current, "true", StringComparison.OrdinalIgnoreCase)
-                        : (info.Entry.BoxedValue is bool && (bool)info.Entry.BoxedValue);
-                }
+                    row.Toggle.isOn = string.Equals(current, "true", StringComparison.OrdinalIgnoreCase);
                 if (row.Input != null) row.Input.SetTextWithoutNotify(current);
                 if (row.Recorder != null && !row.Recorder.Recording) row.Recorder.SetValue(current);
                 if (row.PickButton != null) SetCaption(row.PickButton, ListPicker.Summary(info.Picker, current));

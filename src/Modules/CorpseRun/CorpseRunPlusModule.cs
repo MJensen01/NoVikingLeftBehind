@@ -29,11 +29,25 @@ namespace NoVikingLeftBehind
     ///  | Player.Update                   | postfix | the tick: compass, pull strength, deferred    |
     ///  |                                 |         | respawn grants, deferred CorpseRun scaling    |
     ///  | Player.OnDeath                  | postfix | "died this session" flag + remember the grave |
-    ///  |                                 |         | (SetDeathPoint has already run, Player:3117)  |
+    ///  |                                 |         | (SetDeathPoint has already run, Player:3431)  |
+    ///  | Player.CreateTombStone          | prefix  | item stacks we still had a moment before      |
+    ///  |                                 |         | vanilla moved them into the grave, so a death |
+    ///  |                                 |         | that spawns NO tombstone records nothing      |
+    ///  | TombStone.Setup(string,long)    | postfix | the grave just built: its real position, its  |
+    ///  |                                 |         | ZDOID and its item count, read off its own    |
+    ///  |                                 |         | Container after MoveInventoryToGrave (:152)   |
     ///  | Player.OnSpawned(bool)          | postfix | arm the respawn grants (Game.SpawnPlayer:436) |
     ///  | TombStone.GiveBoost             | postfix | grave emptied on its owner's client: the      |
     ///  |                                 |         | vanilla CorpseRun SE was just added (:206)    |
     ///  | TombStone.OnTakeAllSuccess      | postfix | grave looted on the looter's client (:112)    |
+    ///
+    /// MULTI-GRAVE (0.9.1). Dying on the run back used to overwrite the record, so a grave holding
+    /// two mushrooms hid the 30-item grave you were actually going to. <see cref="GraveRecord"/>
+    /// now keeps up to five unlooted graves per world; this module TRACKS the one with the most
+    /// items (ties to the most recent), falls through to the next best when that one is looted or
+    /// dismissed, and lets you cycle by hand with [CorpseRun] CycleGraveKey or nvlb.grave.next.
+    /// Everything downstream - compass, GravePull, CorpseRunScaled, hold-to-dismiss - points at
+    /// the tracked grave and is otherwise exactly as it was.
     ///
     /// Everything the buffs actually *do* rides on vanilla StatusEffect virtuals - no patch on any
     /// stamina, damage or food hot path. Mobs are untouched: enemies still aggro exactly as before.
@@ -75,6 +89,8 @@ namespace NoVikingLeftBehind
         private ConfigEntry<float> _hintScale;
         private ConfigEntry<string> _clearGraveKey;
         private ConfigEntry<float> _clearGraveHoldSec;
+        private ConfigEntry<string> _cycleGraveKey;
+        private ConfigEntry<int> _minItemsToTrack;
 
         private ConfigEntry<bool> _respawnFoodEnabled;
         private ConfigEntry<string> _respawnFoods;
@@ -107,6 +123,33 @@ namespace NoVikingLeftBehind
         private static Vector3 _grave;
         private static bool _haveGrave;
         private static string _graveWorld = "";
+
+        /// <summary>Every grave recorded in THIS world, ranked (most items first, ties to newest).</summary>
+        private static List<Grave> _graves = new List<Grave>();
+        /// <summary>The one everything points at. Null when there is nothing to point at.</summary>
+        private static Grave _tracked;
+        /// <summary>Which grave the player last selected by hand, held across the per-frame re-read.
+        /// Session-only on purpose: after a relog the "most items" rule takes over again.</summary>
+        private static string _trackedId;
+        /// <summary>The raw custom-data string <see cref="_graves"/> was decoded from, so the tick
+        /// does not re-parse it every frame. null = "we have not decoded anything yet". The world
+        /// is part of the key because the decoded list is already filtered to one world - the same
+        /// record string means a different list of graves in a different world.</summary>
+        private static string _cacheRaw;
+        private static string _cacheWorld;
+        private static bool _cacheValid;
+
+        // The tombstone vanilla built for our own death, handed from the TombStone.Setup postfix to
+        // the Player.OnDeath postfix a few statements later (Player.CreateTombStone:3306-3308).
+        private static bool _pendingTomb;
+        private static Vector3 _pendingTombPos;
+        private static int _pendingTombItems;
+        private static long _pendingZdoUser;
+        private static uint _pendingZdoId;
+        private static float _pendingAt = -999f;
+        /// <summary>Item stacks the player still held when CreateTombStone started. 0 means vanilla
+        /// spawns no tombstone at all, so there is nothing worth remembering.</summary>
+        private static int _preDeathItems = -1;
         /// <summary>grave-to-home distance captured at loot time, before the record is deleted.</summary>
         private static float _lootDistanceFromHome = -1f;
         private static bool _commandRegistered;
@@ -121,6 +164,7 @@ namespace NoVikingLeftBehind
 
         private static float _compassAcc;
         private static KeyCode _clearKey = KeyCode.Delete;
+        private static KeyCode _cycleKey = KeyCode.None;
         private static float _clearHeld;
         private static float _pullAcc;
 
@@ -271,10 +315,30 @@ namespace NoVikingLeftBehind
                 "Long enough that a stray keypress cannot lose your grave marker.",
                 Opt.N("Seconds to hold the key to dismiss the grave", 0, 10));
 
+            _cycleGraveKey = BindLocal("CycleGraveKey", "None",
+                "Machine-local. PRESS this key to point the grave compass at the next recorded " +
+                "grave - the same thing nvlb.grave.next does. Only useful when you have died more " +
+                "than once without looting; the compass otherwise picks the grave with the most " +
+                "items in it on its own. A UnityEngine.KeyCode name; 'None' (the default) leaves " +
+                "it unbound, and it can be given a key on Valheim's own Keyboard & Mouse page. " +
+                "Ignored while a menu, the map, chat or the console has your input.",
+                Opt.T("Key pressed to point the compass at the next grave"));
+
+            _minItemsToTrack = BindSynced("MinItemsToTrack", 1,
+                "How many item stacks a grave must hold before it is remembered at all. The point " +
+                "of the multi-grave tracker is that dying with almost nothing on you must never " +
+                "hide the grave that holds your gear, so raise this to ignore trivial deaths " +
+                "entirely: at 5, a grave with 4 stacks in it is never recorded and the compass " +
+                "keeps pointing at the real one. A death that spawns no tombstone at all (empty " +
+                "inventory) is never recorded whatever this says.",
+                Opt.N("Item stacks a grave needs before it is tracked", 1, 32));
+
             _lootMatchDistance = BindSynced("LootMatchDistance", 20f,
-                "How close a tombstone must be to your recorded death point to count as YOUR " +
+                "How close a tombstone must be to a recorded death point of yours to count as THAT " +
                 "grave when it is looted or emptied. Guards against another player's grave " +
-                "clearing your compass.",
+                "clearing your compass. The nearest of your own records inside this radius wins, " +
+                "and an exact tombstone match beats distance outright, so looting one of several " +
+                "graves only ever removes the right one.",
                 Opt.N("Metres a tombstone must be from your grave to count", 0, 200));
         }
 
@@ -305,11 +369,15 @@ namespace NoVikingLeftBehind
             GraveCompassHud.EdgeMargin = Mathf.Max(0f, _compassEdgeMargin.Value);
             GraveCompassHud.HintAlpha = _hintAlpha.Value;
             GraveCompassHud.HintScale = _hintScale.Value;
-            _clearKey = ParseKey(_clearGraveKey.Value);
+            _clearKey = ParseKey(_clearGraveKey.Value, "ClearGraveKey");
+            _cycleKey = ParseKey(_cycleGraveKey.Value, "CycleGraveKey");
 
             // 0.8.1: a real, rebindable Valheim keybinding, so Delete can be moved on the game's
-            // own Keyboard & Mouse page rather than only in a cfg file.
+            // own Keyboard & Mouse page rather than only in a cfg file. 0.9.1 adds the cycle key
+            // the same way - a default of KeyCode.None still registers the row, so it shows up on
+            // the page as an unbound action waiting for a key.
             NvlbKeys.Declare("GraveDismiss", "Dismiss grave (hold)", delegate { return _clearKey; });
+            NvlbKeys.Declare("GraveCycle", "Next grave", delegate { return _cycleKey; });
         }
 
         /// <summary>
@@ -325,15 +393,23 @@ namespace NoVikingLeftBehind
             return _clearKey == KeyCode.None ? "" : _clearKey.ToString();
         }
 
+        /// <summary>Same, for the 0.9.1 "next grave" key. "" when nothing is bound to it.</summary>
+        private static string CycleKeyLabel()
+        {
+            var s = NvlbKeys.Label("GraveCycle");
+            if (!string.IsNullOrEmpty(s)) return s;
+            return _cycleKey == KeyCode.None ? "" : _cycleKey.ToString();
+        }
+
         /// <summary>KeyCode name -> KeyCode; an unparsable name disables the hotkey rather than throwing.</summary>
-        private static KeyCode ParseKey(string s)
+        private static KeyCode ParseKey(string s, string setting)
         {
             if (string.IsNullOrEmpty(s)) return KeyCode.None;
             try { return (KeyCode)Enum.Parse(typeof(KeyCode), s.Trim(), true); }
             catch
             {
-                Log.LogWarning("[CorpseRun] ClearGraveKey = '" + s + "' is not a UnityEngine.KeyCode " +
-                               "name - the hold-to-dismiss hotkey is off.");
+                Log.LogWarning("[CorpseRun] " + setting + " = '" + s + "' is not a UnityEngine.KeyCode " +
+                               "name - that hotkey is off.");
                 return KeyCode.None;
             }
         }
@@ -343,8 +419,11 @@ namespace NoVikingLeftBehind
             return "compass=" + _compassEnabled.Value + "(" + _compassMode.Value + " margin " +
                    _compassEdgeMargin.Value + "px, hide<" + _compassHideDistance.Value +
                    "m every " + _compassUpdateSec.Value + "s, dismiss=hold " + DismissKeyLabel() + " " +
-                   _clearGraveHoldSec.Value + "s, hint alpha " + _hintAlpha.Value + " scale " +
+                   _clearGraveHoldSec.Value + "s, cycle=" +
+                   (CycleKeyLabel().Length == 0 ? "unbound" : CycleKeyLabel()) +
+                   ", hint alpha " + _hintAlpha.Value + " scale " +
                    _hintScale.Value + ")" +
+                   " graves=max " + GraveRecord.MaxPerWorld + "/world min " + _minItemsToTrack.Value + " items" +
                    " food=" + _respawnFoodEnabled.Value + "(" + _respawnFoods.Value + " x" +
                    _respawnFoodCount.Value + ")" +
                    " rested=" + _respawnRestedEnabled.Value + "(" + _restedMinutes.Value + "min)" +
@@ -374,6 +453,14 @@ namespace NoVikingLeftBehind
             if (onDeath == null) throw new Exception("Player.OnDeath() not found");
             var onSpawned = AccessTools.Method(typeof(Player), "OnSpawned", new[] { typeof(bool) });
             if (onSpawned == null) throw new Exception("Player.OnSpawned(bool) not found");
+            // 0.9.1: the two hooks that tell us HOW MUCH was in the grave, which is what decides
+            // which of several graves the compass points at.
+            var createTomb = AccessTools.Method(typeof(Player), "CreateTombStone");
+            if (createTomb == null) throw new Exception("Player.CreateTombStone() not found");
+            var tombSetup = AccessTools.Method(typeof(TombStone), "Setup",
+                                               new[] { typeof(string), typeof(long) });
+            if (tombSetup == null) throw new Exception("TombStone.Setup(string,long) not found");
+
             var giveBoost = AccessTools.Method(typeof(TombStone), "GiveBoost");
             if (giveBoost == null) throw new Exception("TombStone.GiveBoost() not found");
             var takeAll = AccessTools.Method(typeof(TombStone), "OnTakeAllSuccess");
@@ -410,6 +497,8 @@ namespace NoVikingLeftBehind
             Harmony.Patch(awake, postfix: odbPost);
             Harmony.Patch(copy, postfix: odbPost);
             Harmony.Patch(update, postfix: new HarmonyMethod(typeof(CorpseRunPlusModule), nameof(PlayerUpdatePostfix)));
+            Harmony.Patch(createTomb, prefix: new HarmonyMethod(typeof(CorpseRunPlusModule), nameof(CreateTombStonePrefix)));
+            Harmony.Patch(tombSetup, postfix: new HarmonyMethod(typeof(CorpseRunPlusModule), nameof(TombStoneSetupPostfix)));
             Harmony.Patch(onDeath, postfix: new HarmonyMethod(typeof(CorpseRunPlusModule), nameof(OnDeathPostfix)));
             Harmony.Patch(onSpawned, postfix: new HarmonyMethod(typeof(CorpseRunPlusModule), nameof(OnSpawnedPostfix)));
             Harmony.Patch(giveBoost, postfix: new HarmonyMethod(typeof(CorpseRunPlusModule), nameof(GiveBoostPostfix)));
@@ -426,6 +515,7 @@ namespace NoVikingLeftBehind
             try
             {
                 RemovePull();
+                GraveCompassHud.SetItems(-1);
                 GraveCompassHud.Destroy();
                 var odb = ObjectDB.instance;
                 if (odb != null && odb.m_StatusEffects != null && _pullTemplate != null)
@@ -505,26 +595,160 @@ namespace NoVikingLeftBehind
 
         // ---- death / respawn ----------------------------------------------------------------
 
+        /// <summary>
+        /// Vanilla only builds a tombstone at all when the inventory is not empty
+        /// (Player.CreateTombStone:3290), and by the time OnDeath's postfix runs the items have
+        /// already been moved out of the player (Inventory.MoveInventoryToGrave:1099). So the count
+        /// is taken HERE, one statement before the move, and used as the fallback answer when the
+        /// TombStone.Setup hook does not fire. 0 means "no grave will exist" - the whole reason a
+        /// death with nothing on you must not become a compass target.
+        /// </summary>
+        private static void CreateTombStonePrefix(Player __instance)
+        {
+            if (_inst == null || !_inst.Active || !ClientActive()) return;
+            if (__instance == null || __instance != Player.m_localPlayer) return;
+            try
+            {
+                _pendingTomb = false;
+                var inv = __instance.GetInventory();
+                _preDeathItems = inv != null ? inv.NrOfItems() : -1;
+            }
+            catch (Exception e)
+            {
+                _preDeathItems = -1;
+                Log.LogWarning("[CorpseRun] pre-death item count: " + e.Message);
+            }
+        }
+
+        /// <summary>
+        /// The tombstone vanilla just made for us. Setup() is the last thing CreateTombStone does
+        /// (Player.cs:3308), by which point MoveInventoryToGrave has filled the container, so this
+        /// is the one place the real item count, the real stone position and its ZDOID are all
+        /// available at once. Handed to the OnDeath postfix a few statements later.
+        ///
+        /// Setup only ever runs on the client that created the stone, and the owner id is checked
+        /// anyway, so another player's grave can never land in our record.
+        /// </summary>
+        private static void TombStoneSetupPostfix(TombStone __instance, long ownerUID)
+        {
+            if (_inst == null || !_inst.Active || !ClientActive()) return;
+            try
+            {
+                if (__instance == null || Game.instance == null) return;
+                var prof = Game.instance.GetPlayerProfile();
+                if (prof == null || prof.GetPlayerID() != ownerUID) return;
+
+                var container = __instance.GetComponent<Container>();
+                var inv = container != null ? container.GetInventory() : null;
+
+                _pendingTombPos = __instance.transform.position;
+                _pendingTombItems = inv != null ? inv.NrOfItems() : -1;
+                _pendingZdoUser = 0L;
+                _pendingZdoId = 0u;
+                var nview = __instance.GetComponent<ZNetView>();
+                if (nview != null && nview.IsValid())
+                {
+                    var zdo = nview.GetZDO();
+                    if (zdo != null) { _pendingZdoUser = zdo.m_uid.UserID; _pendingZdoId = zdo.m_uid.ID; }
+                }
+                _pendingTomb = true;
+                _pendingAt = Time.time;
+            }
+            catch (Exception e)
+            {
+                _pendingTomb = false;
+                Log.LogWarning("[CorpseRun] tombstone hand-off: " + e.Message);
+            }
+        }
+
         private static void OnDeathPostfix(Player __instance)
         {
             if (_inst == null || !_inst.Active || !ClientActive()) return;
             if (__instance == null || __instance != Player.m_localPlayer) return;
             try
             {
-                // Player.OnDeath has already called SetDeathPoint (Player.cs:3117) - we ignore it
+                // Player.OnDeath has already called SetDeathPoint (Player.cs:3431) - we ignore it
                 // and write our own record instead, stamped with the world we are actually in.
                 _diedThisSession = true;
-                _looted = false;
                 _lastScaled = null;
                 _lootDistanceFromHome = -1f;
-                GraveRecord.Write(__instance, __instance.transform.position);
-                ReadGrave();
-                Log.LogInfo("[CorpseRun] death recorded in world '" + GraveRecord.CurrentWorld() + "' at " +
-                            (_haveGrave ? _grave.ToString("F0") : "?") +
-                            " - respawn grants armed (food=" + _inst._respawnFoodEnabled.Value +
+                RecordDeath(__instance);
+                Log.LogInfo("[CorpseRun] respawn grants armed (food=" + _inst._respawnFoodEnabled.Value +
                             " rested=" + _inst._respawnRestedEnabled.Value + ")");
             }
             catch (Exception e) { Log.LogWarning("[CorpseRun] OnDeath: " + e.Message); }
+            finally { _pendingTomb = false; _preDeathItems = -1; }
+        }
+
+        /// <summary>
+        /// Add this death to the record - or deliberately not.
+        ///
+        /// Three ways it records nothing, all of them the point of the 0.9.1 fix:
+        ///  * vanilla spawned no tombstone (empty inventory, or a DeathKeep* global key), so there
+        ///    is no grave in the world to walk to;
+        ///  * the grave holds fewer than [CorpseRun] MinItemsToTrack stacks - the "I died again
+        ///    with basically nothing on me" death that used to hide the grave holding the gear;
+        ///  * we are already holding this world's five graves AND this one is the oldest.
+        ///
+        /// The position stored is the TOMBSTONE's, not the player's, so the compass points at the
+        /// thing you are actually walking to and loot matching lines up with it.
+        /// </summary>
+        private static void RecordDeath(Player me)
+        {
+            // The hand-off is only trusted inside the same death: TombStone.Setup runs three
+            // statements before this in Player.OnDeath, so anything older is somebody else's stone
+            // (or a stone another mod built) and is ignored.
+            bool fresh = _pendingTomb && Time.time - _pendingAt < 2f;
+            int items = fresh ? _pendingTombItems : (_preDeathItems == 0 ? 0 : -1);
+            Vector3 pos = fresh ? _pendingTombPos : me.transform.position;
+            long zu = fresh ? _pendingZdoUser : 0L;
+            uint zi = fresh ? _pendingZdoId : 0u;
+            int min = _inst._minItemsToTrack.Value;
+
+            if (items == 0)
+            {
+                Log.LogInfo("[CorpseRun] death in '" + GraveRecord.CurrentWorld() + "' with nothing " +
+                            "to lose - no tombstone, nothing recorded" +
+                            (_graves.Count > 0 ? "; still tracking " + TrackedText() : ""));
+                RefreshGraves(true);
+                return;
+            }
+
+            Grave added; List<Grave> evicted;
+            if (!GraveRecord.Add(me, pos, items, zu, zi, min, out added, out evicted))
+            {
+                Log.LogInfo("[CorpseRun] grave NOT recorded: " + items + " item(s) is below " +
+                            "MinItemsToTrack=" + min + " - the compass stays on " + TrackedText());
+                RefreshGraves(true);
+                return;
+            }
+
+            _looted = false;
+            RefreshGraves(true);
+            foreach (var g in evicted)
+                Log.LogInfo("[CorpseRun] grave forgotten (only " + GraveRecord.MaxPerWorld +
+                            " are kept per world, oldest out): " + g.Describe());
+
+            int rank = IndexOf(added);
+            Log.LogInfo("[CorpseRun] grave recorded #" + rank + " (" + added.ItemsText + ") at (" +
+                        Mathf.RoundToInt(added.Pos.x) + "," + Mathf.RoundToInt(added.Pos.z) +
+                        "); tracking " + TrackedText() + " of " + _graves.Count);
+        }
+
+        /// <summary>"#1 (31 items)" for the tracked grave, for the log and the console.</summary>
+        private static string TrackedText()
+        {
+            if (_tracked == null) return "nothing";
+            return "#" + IndexOf(_tracked) + " (" + _tracked.ItemsText + ")";
+        }
+
+        /// <summary>1-based rank of a grave in <see cref="_graves"/>, 0 when it is not in there.</summary>
+        private static int IndexOf(Grave g)
+        {
+            if (g == null) return 0;
+            for (int i = 0; i < _graves.Count; i++)
+                if (string.Equals(_graves[i].Id, g.Id, StringComparison.Ordinal)) return i + 1;
+            return 0;
         }
 
         private static void OnSpawnedPostfix(Player __instance)
@@ -540,33 +764,69 @@ namespace NoVikingLeftBehind
             // player's ZNetView reports IsOwner, which is settled a frame or two after spawn.
             _grantPending = true;
             _grantAt = Time.time + 0.5f;
-            ReadGrave();
+            RefreshGraves();
         }
 
         /// <summary>
-        /// Refresh <see cref="_grave"/> from OUR OWN record in the player's custom data.
+        /// Refresh <see cref="_graves"/> and <see cref="_tracked"/> from OUR OWN record in the
+        /// player's custom data.
         ///
         /// This used to read PlayerProfile.HaveDeathPoint()/GetDeathPoint(), which are written on
         /// every death and never cleared by anything in vanilla - so an old character joining a new
         /// world arrived with the compass already lit, pointing at a death spot from some other
-        /// world. The record is world-stamped and is deleted when the grave is looted, so all three
-        /// features now switch on only after a death in THIS world and switch off when it is over.
+        /// world. The record is world-stamped and an entry is deleted when its own grave is looted,
+        /// so all three features switch on only after a death in THIS world and switch off when it
+        /// is over.
+        ///
+        /// WHICH grave is tracked: the one the player last picked by hand if it is still there,
+        /// otherwise the one with the most items in it (ties to the most recent death). So a second
+        /// death carrying two mushrooms never steals the compass from a 30-item grave, and looting
+        /// the tracked grave drops tracking onto the next best rather than switching everything off.
+        ///
+        /// The tick calls this every frame while there is no grave, so the decoded list is cached
+        /// against the raw custom-data string and only re-parsed when that string actually changes.
         /// </summary>
-        private static void ReadGrave()
+        private static void RefreshGraves(bool force = false)
         {
-            _haveGrave = false;
-            _graveWorld = "";
             try
             {
                 var me = Player.m_localPlayer;
-                if (me == null) return;
-                Vector3 pos; double when; string world;
-                if (!GraveRecord.TryRead(me, out pos, out when, out world)) return;
-                _grave = pos;
-                _graveWorld = world ?? "";
-                _haveGrave = true;
+                if (me == null)
+                {
+                    _graves = new List<Grave>(); _tracked = null; _haveGrave = false;
+                    _graveWorld = ""; _cacheValid = false;
+                    return;
+                }
+
+                string raw = GraveRecord.Raw(me);
+                string world = GraveRecord.CurrentWorld();
+                if (force || !_cacheValid ||
+                    !string.Equals(raw, _cacheRaw, StringComparison.Ordinal) ||
+                    !string.Equals(world, _cacheWorld, StringComparison.Ordinal))
+                {
+                    _graves = GraveRecord.ReadWorld(me);
+                    _cacheRaw = raw;
+                    _cacheWorld = world;
+                    _cacheValid = true;
+                }
+
+                Grave t = GraveRecord.ById(_graves, _trackedId) ?? GraveRecord.Best(_graves);
+                _tracked = t;
+                _trackedId = t != null ? t.Id : null;
+                _haveGrave = t != null;
+                _grave = t != null ? t.Pos : Vector3.zero;
+                _graveWorld = t != null ? t.World : "";
+
+                // "Looted" only ever means "there is nothing left to walk to". Anything still on
+                // the record clears it, so falling through to the next grave - or arriving in
+                // another world with an unlooted grave in it - lights the compass again.
+                if (_graves.Count > 0) _looted = false;
             }
-            catch (Exception e) { Log.LogWarning("[CorpseRun] grave record read: " + e.Message); }
+            catch (Exception e)
+            {
+                _graves = new List<Grave>(); _tracked = null; _haveGrave = false; _cacheValid = false;
+                Log.LogWarning("[CorpseRun] grave record read: " + e.Message);
+            }
         }
 
         private static Vector3 HomePoint()
@@ -693,25 +953,49 @@ namespace NoVikingLeftBehind
         /// <summary>The grave was looted with Take All on this client.</summary>
         private static void TakeAllPostfix(TombStone __instance) { OnGraveTouched(__instance, "looted"); }
 
+        /// <summary>
+        /// A tombstone was looted or emptied. Since 0.9.1 this removes THE RECORD THAT STONE
+        /// BELONGS TO - matched by ZDOID when we have one, otherwise the nearest of our own records
+        /// within LootMatchDistance - rather than blindly the tracked one, which with several
+        /// graves on the go would have thrown away the wrong marker. If any graves are left,
+        /// tracking falls through to the next best instead of switching everything off.
+        /// </summary>
         private static void OnGraveTouched(TombStone ts, string how)
         {
             if (_inst == null || !_inst.Active || !ClientActive()) return;
             try
             {
-                if (ts == null || Player.m_localPlayer == null) return;
-                if (!_haveGrave) ReadGrave();
-                if (!_haveGrave) return;
-                float d = Vector3.Distance(ts.transform.position, _grave);
-                if (d > _inst._lootMatchDistance.Value) return;   // somebody else's grave
+                var me = Player.m_localPlayer;
+                if (ts == null || me == null) return;
+                RefreshGraves();
+                if (_graves.Count == 0) return;
+
+                long zu = 0L; uint zi = 0u;
+                var nview = ts.GetComponent<ZNetView>();
+                if (nview != null && nview.IsValid())
+                {
+                    var zdo = nview.GetZDO();
+                    if (zdo != null) { zu = zdo.m_uid.UserID; zi = zdo.m_uid.ID; }
+                }
+
+                Vector3 stone = ts.transform.position;
+                var hit = GraveRecord.Match(_graves, stone, zu, zi, _inst._lootMatchDistance.Value);
+                if (hit == null) return;                          // somebody else's grave
+
+                bool wasTracked = _tracked != null &&
+                                  string.Equals(hit.Id, _tracked.Id, StringComparison.Ordinal);
+                int rank = IndexOf(hit);
+                float d = Vector3.Distance(stone, hit.Pos);
 
                 if (ts.m_lootStatusEffect != null) _corpseRunHash = ts.m_lootStatusEffect.NameHash();
-                _lootDistanceFromHome = Vector3.Distance(_grave, HomePoint());
+                _lootDistanceFromHome = Vector3.Distance(hit.Pos, HomePoint());
 
-                _looted = true;
-                _haveGrave = false;              // the record is gone; nothing may re-arm off it
-                GraveRecord.Clear(Player.m_localPlayer);
-                GraveCompassHud.Hide();
-                RemovePull();
+                GraveRecord.Remove(me, hit.Id);
+                if (wasTracked) _trackedId = null;                // let the next best take over
+                RefreshGraves(true);
+
+                _looted = _graves.Count == 0;
+                if (_looted) { GraveCompassHud.Hide(); RemovePull(); }
 
                 if (_inst._scaledEnabled.Value)
                 {
@@ -720,17 +1004,25 @@ namespace NoVikingLeftBehind
                     _scalePending = true;
                     _scalePendingUntil = Time.time + 5f;
                 }
-                Log.LogInfo("[CorpseRun] grave " + how + " " + d.ToString("0.0") + "m from the " +
-                            "recorded death point - compass off, pull off" +
+                Log.LogInfo("[CorpseRun] grave #" + rank + " (" + hit.ItemsText + ") " + how + " " +
+                            d.ToString("0.0") + "m from its recorded point - " +
+                            (_graves.Count == 0
+                                ? "no graves left, compass off, pull off"
+                                : _graves.Count + " grave(s) left, now tracking " + TrackedText()) +
                             (_inst._scaledEnabled.Value ? ", CorpseRun scaling armed" : ""));
             }
             catch (Exception e) { Log.LogWarning("[CorpseRun] grave " + how + ": " + e.Message); }
         }
 
         /// <summary>
-        /// nvlb.grave.clear - forget the recorded grave by hand. The escape hatch for a grave that
-        /// can no longer be reached or looted (destroyed, unreachable terrain, another mod ate it),
-        /// which would otherwise keep the compass and GravePull on until the next death.
+        /// The three grave commands. <c>nvlb.grave.clear</c> forgets the TRACKED grave by hand -
+        /// the escape hatch for a grave that can no longer be reached or looted (destroyed,
+        /// unreachable terrain, another mod ate it), which would otherwise keep the compass and
+        /// GravePull on until the next death; with several graves on the go it now drops tracking
+        /// onto the next best rather than switching everything off. <c>nvlb.grave.clear all</c>
+        /// forgets every grave recorded in this world (other worlds are left alone).
+        /// <c>nvlb.grave.next</c> is the console twin of CycleGraveKey, and <c>nvlb.grave.list</c>
+        /// prints what is recorded.
         /// </summary>
         private static void RegisterCommand()
         {
@@ -739,31 +1031,117 @@ namespace NoVikingLeftBehind
             try
             {
                 new Terminal.ConsoleCommand("nvlb.grave.clear",
-                    "Forget the recorded grave: turns the Grave Compass and Grave Pull off until your next death.",
+                    "Forget the grave the compass is pointing at, falling through to the next best. " +
+                    "'nvlb.grave.clear all' forgets every grave recorded in this world.",
                     new Terminal.ConsoleEvent(ClearCommand));
-                Log.LogInfo("[CorpseRun] console command 'nvlb.grave.clear' registered");
+                new Terminal.ConsoleCommand("nvlb.grave.next",
+                    "Point the Grave Compass at the next recorded grave (wraps around).",
+                    new Terminal.ConsoleEvent(NextCommand));
+                new Terminal.ConsoleCommand("nvlb.grave.list",
+                    "List every grave recorded in this world, richest first, and which one is tracked.",
+                    new Terminal.ConsoleEvent(ListCommand));
+                Log.LogInfo("[CorpseRun] console commands 'nvlb.grave.clear', 'nvlb.grave.next' and " +
+                            "'nvlb.grave.list' registered");
             }
             catch (Exception e)
             {
                 _commandRegistered = false;
-                Log.LogError("[CorpseRun] could not register nvlb.grave.clear: " + e);
+                Log.LogError("[CorpseRun] could not register the nvlb.grave commands: " + e);
             }
+        }
+
+        private static void Say(Terminal.ConsoleEventArgs args, string msg)
+        {
+            if (args != null && args.Context != null) args.Context.AddString("[CorpseRun] " + msg);
+            Log.LogInfo("[CorpseRun] " + msg);
         }
 
         private static void ClearCommand(Terminal.ConsoleEventArgs args)
         {
             var me = Player.m_localPlayer;
-            string had = GraveRecord.Describe(me);
-            bool cleared = GraveRecord.Clear(me);
-            _haveGrave = false;
-            _graveWorld = "";
+            bool all = args != null && args.Args != null && args.Args.Length > 1 &&
+                       string.Equals(args.Args[1].Trim(), "all", StringComparison.OrdinalIgnoreCase);
+
+            RefreshGraves(true);
+            if (_graves.Count == 0)
+            {
+                _haveGrave = false; _graveWorld = ""; _lastDistance = -1f; _lootDistanceFromHome = -1f;
+                GraveCompassHud.Hide(); RemovePull();
+                Say(args, "no grave record to clear in this world");
+                return;
+            }
+
+            string msg;
+            if (all)
+            {
+                int n = GraveRecord.ClearWorld(me);
+                _trackedId = null;
+                RefreshGraves(true);
+                msg = n + " grave record(s) cleared in this world" +
+                      (GraveRecord.ReadAll(me).Count > 0
+                          ? " (records from other worlds left alone)" : "");
+            }
+            else
+            {
+                var gone = _tracked;
+                GraveRecord.Remove(me, gone.Id);
+                _trackedId = null;
+                RefreshGraves(true);
+                msg = "grave cleared (was " + gone.Describe() + ")" +
+                      (_graves.Count > 0
+                          ? " - now tracking " + TrackedText() + " of " + _graves.Count
+                          : " - no graves left");
+            }
+
             _lastDistance = -1f;
             _lootDistanceFromHome = -1f;
-            GraveCompassHud.Hide();
-            RemovePull();
-            string msg = cleared ? "grave record cleared (was " + had + ")" : "no grave record to clear";
-            if (args != null && args.Context != null) args.Context.AddString("[CorpseRun] " + msg);
-            Log.LogInfo("[CorpseRun] " + msg);
+            if (_graves.Count == 0) { GraveCompassHud.Hide(); RemovePull(); }
+            Say(args, msg);
+        }
+
+        private static void NextCommand(Terminal.ConsoleEventArgs args)
+        {
+            if (!CycleTracked())
+            {
+                Say(args, _graves.Count == 0 ? "no graves recorded in this world"
+                                             : "only one grave recorded - nothing to cycle to");
+                return;
+            }
+            Say(args, "now tracking " + TrackedText() + " of " + _graves.Count + ": " + _tracked.Describe());
+        }
+
+        private static void ListCommand(Terminal.ConsoleEventArgs args)
+        {
+            var me = Player.m_localPlayer;
+            RefreshGraves(true);
+            if (_graves.Count == 0)
+            {
+                Say(args, "no graves recorded in this world (" + GraveRecord.ReadAll(me).Count +
+                          " recorded in all worlds)");
+                return;
+            }
+            Say(args, _graves.Count + " grave(s) in '" + GraveRecord.CurrentWorld() + "', richest first:");
+            for (int i = 0; i < _graves.Count; i++)
+            {
+                var g = _graves[i];
+                float d = me != null ? Vector3.Distance(me.transform.position, g.Pos) : -1f;
+                Say(args, "  #" + (i + 1) + (g == _tracked ? " *" : "  ") + " " + g.ItemsText +
+                          "  (" + Mathf.RoundToInt(g.Pos.x) + ", " + Mathf.RoundToInt(g.Pos.z) + ")" +
+                          (d >= 0f ? "  " + Mathf.RoundToInt(d) + " m away" : ""));
+            }
+        }
+
+        /// <summary>Move tracking on one grave, wrapping. False when there is nothing to move to.</summary>
+        private static bool CycleTracked()
+        {
+            RefreshGraves(true);
+            if (_graves.Count < 2) return false;
+            var next = GraveRecord.Next(_graves, _trackedId);
+            if (next == null) return false;
+            _trackedId = next.Id;
+            RefreshGraves();
+            _looted = false;
+            return true;
         }
 
         private static int CorpseRunHash()
@@ -842,7 +1220,20 @@ namespace NoVikingLeftBehind
 
             if (me.IsDead()) { GraveCompassHud.Hide(); return; }
 
-            if (!_haveGrave) ReadGrave();
+            RefreshGraves();
+
+            // --- next grave (0.9.1) ---
+            // Only worth a keystroke when there is more than one grave; the gating is the same as
+            // the dismiss hold's, because ZInput reads the raw device and knows nothing about chat,
+            // the console or an open menu.
+            if (_graves.Count > 1 && CycleKeyLabel().Length > 0 && DualPowersModule.InputAllowed(me) &&
+                NvlbKeys.Down("GraveCycle") && CycleTracked())
+            {
+                me.Message(MessageHud.MessageType.Center,
+                           "Grave " + IndexOf(_tracked) + "/" + _graves.Count + " · " + _tracked.ItemsText);
+                Log.LogInfo("[CorpseRun] cycled to grave " + TrackedText() + " of " + _graves.Count);
+            }
+
             float dist = -1f;
             if (_haveGrave && !_looted)
             {
@@ -853,6 +1244,7 @@ namespace NoVikingLeftBehind
             {
                 _lastDistance = -1f;
             }
+            GraveCompassHud.SetItems(_tracked != null && _tracked.ItemsKnown ? _tracked.Items : -1);
 
             // --- compass ---
             // An edge waypoint has to follow the camera, so it is refreshed every frame; the
@@ -896,17 +1288,27 @@ namespace NoVikingLeftBehind
         private static void UpdateClearHold(Player me, float dt, bool compassShown)
         {
             var c = _inst;
-            if (!compassShown || DismissKeyLabel().Length == 0 || !_haveGrave || _looted)
+            if (!compassShown || !_haveGrave || _looted)
             {
                 _clearHeld = 0f;
                 GraveCompassHud.SetHint("");
                 return;
             }
 
+            string more = MoreGravesHint();
+            string dismissKey = DismissKeyLabel();
+            if (dismissKey.Length == 0)
+            {
+                _clearHeld = 0f;
+                GraveCompassHud.SetHint(more);            // still say there are others to cycle to
+                return;
+            }
+            string idle = Join(more, "Hold " + dismissKey + " to dismiss grave");
+
             if (!DualPowersModule.InputAllowed(me))
             {
                 _clearHeld = 0f;
-                GraveCompassHud.SetHint("Hold " + DismissKeyLabel() + " to dismiss grave");
+                GraveCompassHud.SetHint(idle);
                 return;
             }
 
@@ -919,7 +1321,10 @@ namespace NoVikingLeftBehind
                     _clearHeld = 0f;
                     GraveCompassHud.SetHint("");
                     ClearCommand(null);                       // the same path as nvlb.grave.clear
-                    me.Message(MessageHud.MessageType.Center, "Grave marker cleared");
+                    me.Message(MessageHud.MessageType.Center,
+                               _graves.Count > 0
+                                   ? "Grave marker cleared - " + _graves.Count + " grave(s) left"
+                                   : "Grave marker cleared");
                     return;
                 }
                 GraveCompassHud.SetHint("Dismissing grave... " +
@@ -928,8 +1333,28 @@ namespace NoVikingLeftBehind
             else
             {
                 _clearHeld = 0f;
-                GraveCompassHud.SetHint("Hold " + DismissKeyLabel() + " to dismiss grave");
+                GraveCompassHud.SetHint(idle);
             }
+        }
+
+        /// <summary>
+        /// "(+1 more)" - the 0.9.1 hint that the compass is picking one of several graves, with the
+        /// cycle key named when one is bound. "" when this is the only grave, so the hint line
+        /// reads exactly as it did before for the normal single-grave case.
+        /// </summary>
+        private static string MoreGravesHint()
+        {
+            int extra = _graves.Count - 1;
+            if (extra <= 0) return "";
+            string key = CycleKeyLabel();
+            return "(+" + extra + " more" + (key.Length > 0 ? ", " + key + " to cycle" : "") + ")";
+        }
+
+        private static string Join(string a, string b)
+        {
+            if (string.IsNullOrEmpty(a)) return b;
+            if (string.IsNullOrEmpty(b)) return a;
+            return a + " · " + b;
         }
 
         private static void UpdatePull(Player me, float dist)
@@ -1018,7 +1443,9 @@ namespace NoVikingLeftBehind
             string compass = !_compassEnabled.Value ? "off"
                 : GraveCompassHud.Failed ? "FAILED"
                 : GraveCompassHud.Visible ? "shown" : "hidden";
-            return "grave=" + grave + " compass=" + compass +
+            return "grave=" + grave +
+                   " tracking=" + (_tracked == null ? "none" : TrackedText() + "/" + _graves.Count) +
+                   " compass=" + compass +
                    " pull=" + (_pullOn ? Mathf.RoundToInt(_lastStrength * 100f) + "%" : "off") +
                    " lastGrants=" + _lastGrantText +
                    " lastCorpseRun=" + (_lastScaledTtl > 0f ? _lastScaledTtl.ToString("0") + "s" : "-") +
@@ -1131,10 +1558,13 @@ namespace NoVikingLeftBehind
         }
 
         /// <summary>
-        /// The four cases from the 0.4.2 bug report, driven straight through GraveRecord's
-        /// dictionary-level API - no Player, no world, so it runs on a headless server with zero
-        /// players. Case 1 is the actual bug: a character whose .fch has had a death point since
-        /// forever, joining a world it has never died in, must get NOTHING.
+        /// The 0.4.2 world-scoping cases plus the 0.9.1 multi-grave rules, driven straight through
+        /// GraveRecord's dictionary-level API - no Player, no world, no ObjectDB, so the whole
+        /// thing runs on a headless dedicated server with zero players.
+        ///
+        /// Case 1 is the original bug: a character whose .fch has had a death point since forever,
+        /// joining a world it has never died in, must get NOTHING. Cases 7 onwards are Matt's
+        /// 2026-09-09 report: die rich, die again poor, and the compass must stay on the rich one.
         /// </summary>
         private static void GraveRecordSelfTest()
         {
@@ -1149,42 +1579,136 @@ namespace NoVikingLeftBehind
             const string other = "BLACKWORLD";
             var pos = new Vector3(1234.5f, -12.25f, -678.75f);
             var data = new Dictionary<string, string>();
-            Vector3 got; double when; string world;
+            Grave added; List<Grave> evicted;
 
             // (1) stale PlayerProfile death point, no record of ours -> everything inactive.
-            check(!GraveRecord.TryRead(data, here, out got, out when, out world),
+            check(GraveRecord.ReadWorld(data, here).Count == 0,
                   "(1) a character with a stale profile death point but no nvlb.grave record reads as NO grave " +
                   "- compass, GravePull and CorpseRunScaled all stay off");
 
-            // (2) a death in this world -> active, and the position survives the round trip.
-            GraveRecord.Write(data, here, pos, 4242.5d);
-            bool ok2 = GraveRecord.TryRead(data, here, out got, out when, out world);
-            check(ok2 && (got - pos).sqrMagnitude < 0.0001f && world == here && Math.Abs(when - 4242.5d) < 0.001d,
-                  "(2) a record written in '" + here + "' reads back there: " + got.ToString("F2") +
-                  " world='" + world + "' t=" + when);
+            // (2) a death in this world -> active, and everything survives the round trip.
+            GraveRecord.Add(data, here, pos, 4242.5d, 31, 7L, 99u, 1, out added, out evicted);
+            var mine = GraveRecord.ReadWorld(data, here);
+            check(mine.Count == 1 && (mine[0].Pos - pos).sqrMagnitude < 0.0001f &&
+                  mine[0].World == here && Math.Abs(mine[0].Time - 4242.5d) < 0.001d &&
+                  mine[0].Items == 31 && mine[0].ZdoUser == 7L && mine[0].ZdoId == 99u,
+                  "(2) a record written in '" + here + "' reads back there: " + mine[0].Describe() +
+                  " t=" + mine[0].Time + " zdo=" + mine[0].ZdoUser + ":" + mine[0].ZdoId);
 
             // (3) the same record, read from a different world -> inactive, and NOT destroyed.
-            check(!GraveRecord.TryRead(data, other, out got, out when, out world),
+            check(GraveRecord.ReadWorld(data, other).Count == 0,
                   "(3) the same record is invisible in '" + other + "' (the 0.4.2 bug: an old grave from " +
                   "another world used to light the compass)");
-            check(GraveRecord.Has(data),
+            check(GraveRecord.ReadWorld(data, here).Count == 1,
                   "(3b) ...and it is left in place, so returning to '" + here + "' still finds the grave");
 
-            // (4) looting the grave clears it.
-            check(GraveRecord.Clear(data) && !GraveRecord.Has(data) &&
-                  !GraveRecord.TryRead(data, here, out got, out when, out world),
-                  "(4) looting/emptying the grave clears the record - no grave anywhere afterwards");
+            // (4) THE 0.9.1 BUG. Die again on the run back with two mushrooms on you: the poor
+            //     grave is recorded, but the compass must NOT move to it.
+            GraveRecord.Add(data, here, new Vector3(1000f, 0f, -600f), 4300d, 2, 0L, 0u, 1,
+                            out added, out evicted);
+            mine = GraveRecord.ReadWorld(data, here);
+            check(mine.Count == 2 && GraveRecord.Best(mine).Items == 31,
+                  "(4) a second, near-empty death is remembered but the richest grave still wins: " +
+                  "tracking " + GraveRecord.Best(mine).Describe() + " of " + mine.Count);
 
-            // A corrupt or truncated record must degrade to "no grave", never throw.
+            // (5) MinItemsToTrack: a death below the floor is not recorded at all.
+            check(!GraveRecord.Add(data, here, new Vector3(1f, 0f, 1f), 4400d, 2, 0L, 0u, 5,
+                                   out added, out evicted) &&
+                  GraveRecord.ReadWorld(data, here).Count == 2,
+                  "(5) MinItemsToTrack=5 keeps a 2-item grave out of the record entirely");
+            check(!GraveRecord.Add(data, here, new Vector3(2f, 0f, 2f), 4500d, 0, 0L, 0u, 1,
+                                   out added, out evicted) &&
+                  GraveRecord.ReadWorld(data, here).Count == 2,
+                  "(6) a death with 0 items records nothing - vanilla spawns no tombstone for an " +
+                  "empty inventory (Player.CreateTombStone)");
+
+            // (7) looting the RIGHT grave: the poor one is matched by position and removed, and the
+            //     rich one is untouched. This is what OnGraveTouched does.
+            mine = GraveRecord.ReadWorld(data, here);
+            var hit = GraveRecord.Match(mine, new Vector3(1001f, 1.5f, -601f), 0L, 0u, 20f);
+            check(hit != null && hit.Items == 2,
+                  "(7) a tombstone at the poor grave matches the POOR record, not the tracked one");
+            GraveRecord.Remove(data, hit.Id);
+            mine = GraveRecord.ReadWorld(data, here);
+            check(mine.Count == 1 && mine[0].Items == 31,
+                  "(7b) ...and removing it leaves the 31-item grave still tracked");
+
+            // (8) an exact ZDOID match beats distance, so a drifted tombstone still matches.
+            var far = GraveRecord.Match(GraveRecord.ReadWorld(data, here),
+                                        new Vector3(9999f, 0f, 9999f), 7L, 99u, 20f);
+            check(far != null && far.Items == 31,
+                  "(8) a tombstone 12 km from its recorded point still matches on ZDOID");
+
+            // (9) tracking falls through: loot the rich one and nothing is left.
+            GraveRecord.Remove(data, far.Id);
+            check(GraveRecord.ReadWorld(data, here).Count == 0,
+                  "(9) looting the last grave leaves none - compass off, pull off");
+
+            // (10) the per-world cap, oldest out.
+            var cap = new Dictionary<string, string>();
+            for (int i = 0; i < GraveRecord.MaxPerWorld + 2; i++)
+                GraveRecord.Add(cap, here, new Vector3(i, 0f, 0f), 100d + i, 10 + i, 0L, 0u, 1,
+                                out added, out evicted);
+            var capped = GraveRecord.ReadWorld(cap, here);
+            bool oldestGone = true;
+            foreach (var g in capped) if (Math.Abs(g.Time - 100d) < 0.001d) oldestGone = false;
+            check(capped.Count == GraveRecord.MaxPerWorld && oldestGone,
+                  "(10) only " + GraveRecord.MaxPerWorld + " graves are kept per world and the " +
+                  "oldest is the one that goes (" + capped.Count + " kept)");
+
+            // (11) cycling wraps all the way round.
+            string id = GraveRecord.Best(capped).Id;
+            string firstId = id;
+            for (int i = 0; i < capped.Count; i++) id = GraveRecord.Next(capped, id).Id;
+            check(id == firstId,
+                  "(11) cycling " + capped.Count + " times with nvlb.grave.next / CycleGraveKey " +
+                  "comes back to the grave it started on");
+            check(GraveRecord.Next(capped, "no-such-grave") == GraveRecord.Best(capped),
+                  "(11b) cycling from a grave that was just looted starts again at the richest");
+
+            // (12) migration: a v1 single-grave record from 0.9.0 and earlier must still arrive.
+            var oldFmt = new Dictionary<string, string> {
+                { GraveRecord.Key, "1|" + here + "|1234.5|-12.25|-678.75|4242.5" } };
+            var migrated = GraveRecord.ReadWorld(oldFmt, here);
+            check(migrated.Count == 1 && (migrated[0].Pos - pos).sqrMagnitude < 0.0001f &&
+                  !migrated[0].ItemsKnown,
+                  "(12) a pre-0.9.1 single-grave record loads as a one-entry list with an unknown " +
+                  "item count - nobody loses a grave marker on update");
+            GraveRecord.Add(oldFmt, here, new Vector3(5f, 0f, 5f), 4999d, 12, 0L, 0u, 1,
+                            out added, out evicted);
+            var mixed = GraveRecord.ReadWorld(oldFmt, here);
+            check(mixed.Count == 2 && GraveRecord.Best(mixed).Items == 12,
+                  "(12b) ...and the next death rewrites the whole record in v2 alongside it");
+            var reEncoded = new Dictionary<string, string> { { GraveRecord.Key, GraveRecord.Encode(mixed) } };
+            var reRead = GraveRecord.ReadWorld(reEncoded, here);
+            check(reRead.Count == 2 && reRead[0].Items == 12 && !reRead[1].ItemsKnown,
+                  "(12c) ...and the v2 string it produced decodes back to the same two graves, " +
+                  "unknown count and all");
+
+            // (13) a corrupt or truncated record must degrade to "no graves", never throw.
             var junk = new Dictionary<string, string> { { GraveRecord.Key, "1|OnlyTwo" } };
-            check(!GraveRecord.TryRead(junk, here, out got, out when, out world),
-                  "(5) a corrupt record decodes to no grave instead of throwing");
+            check(GraveRecord.ReadWorld(junk, here).Count == 0,
+                  "(13) a corrupt record decodes to no graves instead of throwing");
+            var junk2 = new Dictionary<string, string> { { GraveRecord.Key, "2;bad;also|bad" } };
+            check(GraveRecord.ReadWorld(junk2, here).Count == 0,
+                  "(13b) a corrupt v2 entry is skipped rather than losing the whole record");
 
-            // A world name containing our separator must survive.
+            // (14) a world name containing either separator must survive.
             var odd = new Dictionary<string, string>();
-            GraveRecord.Write(odd, "a|b", pos, 1d);
-            check(GraveRecord.TryRead(odd, "a|b", out got, out when, out world) && world == "a|b",
-                  "(6) a world name containing '|' round trips");
+            GraveRecord.Add(odd, "a|b;c%d", pos, 1d, 3, 0L, 0u, 1, out added, out evicted);
+            var oddBack = GraveRecord.ReadWorld(odd, "a|b;c%d");
+            check(oddBack.Count == 1 && oddBack[0].World == "a|b;c%d",
+                  "(14) a world name containing '|', ';' and '%' round trips");
+
+            // (15) graves in other worlds are kept but never counted here.
+            var multi = new Dictionary<string, string>();
+            GraveRecord.Add(multi, here, pos, 1d, 5, 0L, 0u, 1, out added, out evicted);
+            GraveRecord.Add(multi, other, pos, 2d, 50, 0L, 0u, 1, out added, out evicted);
+            check(GraveRecord.ReadWorld(multi, here).Count == 1 &&
+                  GraveRecord.ReadAll(multi).Count == 2 &&
+                  GraveRecord.ClearWorld(multi, here) == 1 &&
+                  GraveRecord.ReadAll(multi).Count == 1,
+                  "(15) 'nvlb.grave.clear all' empties this world only - other worlds keep theirs");
 
             Log.LogInfo("[CorpseRun] SelfTest: grave record - " + pass + " passed, " + fail + " FAILED");
         }

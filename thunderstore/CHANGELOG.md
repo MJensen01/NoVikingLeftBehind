@@ -1,6 +1,21 @@
 
 # Changelog — NoVikingLeftBehind
 
+## 0.9.1 (2026-09-09)
+
+* **Settings tab showed stale values after a save.** On a client, ServerSync answers "serialize this setting" with the
+  machine's own pre-sync cfg value whenever the config is locked, so every non-toggle row (sliders, text, lists, keys,
+  cyclers) redrew the client's old number after a successful save — `[Chests] Range` saved as 50 on the server, shown
+  as 20 for ever. Rows now read the value actually in force, and a saved value stays displayed until the server's
+  echo lands. A `[SettingsMenu] row [...] queued/sent/synced/live/shown` log line names the stale source if it recurs.
+* **CorpseRunPlus tracks the richest grave, not the newest.** Up to 5 unlooted graves are remembered per world with
+  their item counts; the compass, grave pull and portal follow the one with the most items (ties → most recent), so a
+  second death carrying two mushrooms no longer hides a 30-item grave. Looting a grave removes that grave (matched by
+  tombstone id, else nearest) and tracking falls through to the next best. Empty deaths record nothing; new synced
+  `[CorpseRun] MinItemsToTrack` (default 1) filters the rest. Compass reads `Grave · 31 items · 240 m` with a "+N more"
+  hint; new rebindable "Next grave" key (`[CorpseRun] CycleGraveKey`, default unbound) and console `nvlb.grave.next`,
+  `nvlb.grave.list`, `nvlb.grave.clear all`. Old single-grave records migrate. Self-test: 21 passed.
+
 ## 0.9.0 (2026-09-09) — Valheim 1.0
 
 **Rebuilt for Valheim 1.0.7 (network version 39).** Requires BepInExPack_Valheim 5.4.2350. Not compatible
