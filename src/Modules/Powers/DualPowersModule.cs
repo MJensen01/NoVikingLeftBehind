@@ -387,8 +387,9 @@ namespace NoVikingLeftBehind
             // The vanilla pieces we call instead of patching - fail loudly if the game renamed them.
             if (AccessTools.Method(typeof(Player), "SetGuardianPower", new[] { typeof(string) }) == null)
                 throw new Exception("Player.SetGuardianPower(string) not found");
-            if (AccessTools.Method(typeof(SEMan), "AddStatusEffect", new[] { typeof(int), typeof(bool), typeof(int), typeof(float) }) == null)
-                throw new Exception("SEMan.AddStatusEffect(int,bool,int,float) not found - slot 2 could not be applied");
+            if (AccessTools.Method(typeof(SEMan), "AddStatusEffect",
+                                   new[] { typeof(int), typeof(bool), typeof(int), typeof(float), typeof(short) }) == null)
+                throw new Exception("SEMan.AddStatusEffect(int,bool,int,float,short) not found - slot 2 could not be applied");
             if (AccessTools.Method(typeof(Player), "GetPlayersInRange", new[] { typeof(Vector3), typeof(float), typeof(List<Player>) }) == null)
                 throw new Exception("Player.GetPlayersInRange(Vector3,float,List<Player>) not found");
 

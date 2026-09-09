@@ -1,6 +1,6 @@
 # NoVikingLeftBehind — the ultimate Valheim quality-of-life mod
 
-A BepInEx 5 mod for Valheim 0.221.12, built and maintained for a small dedicated-server group
+A BepInEx 5 mod for Valheim 1.0, built and maintained for a small dedicated-server group
 and released here for anyone to use. MIT licensed.
 
 All-in-one, server-enforced quality-of-life and catch-up mechanics: 37 modules covering inventory,
@@ -9,8 +9,8 @@ runs, guardian powers, ore regrowth, portals and a frontier-based catch-up syste
 every player. The server enforces every setting (via [ServerSync](https://github.com/blaxxun-boop/ServerSync)),
 so nobody has to agree on config by hand.
 
-Pre-release (see version plan below), built and tested against Valheim `0.221.12` / BepInEx
-`5.4.2333`. A 1.0-compatible build will follow once the game updates.
+0.9.0 is built and tested against Valheim `1.0.7` (network version 39) / BepInEx `5.4.2350`.
+For servers held on the `default_pre1_0` branch (0.221.12) use 0.8.8.
 
 ## Install (players, via r2modman / Thunderstore)
 
@@ -26,7 +26,7 @@ Pre-release (see version plan below), built and tested against Valheim `0.221.12
    dedicated server (the path BepInEx's plugin folder is mounted at on this project's own
    Docker host; a bare-metal BepInEx install uses `BepInEx/plugins/NoVikingLeftBehind/`
    instead). Depends on [BepInExPack_Valheim](https://valheim.thunderstore.io/package/denikson/BepInExPack_Valheim/)
-   5.4.2333.
+   5.4.2350.
 2. Start the server once to generate `Nosferatu.NoVikingLeftBehind.cfg` next to the other
    BepInEx configs, then edit the values you want (see below). Synced settings are pushed to
    every connecting client automatically.

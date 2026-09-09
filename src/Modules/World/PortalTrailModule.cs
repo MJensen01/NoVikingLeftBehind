@@ -118,8 +118,9 @@ namespace NoVikingLeftBehind
 
         protected override void ApplyPatches()
         {
-            var m = AccessTools.Method(typeof(Inventory), "IsTeleportable", Type.EmptyTypes);
-            if (m == null) throw new Exception("Inventory.IsTeleportable() not found");
+            // 1.0 added the allowAllItems argument: IsTeleportable(bool allowAllItems).
+            var m = AccessTools.Method(typeof(Inventory), "IsTeleportable", new[] { typeof(bool) });
+            if (m == null) throw new Exception("Inventory.IsTeleportable(bool) not found");
             Harmony.Patch(m, prefix: new HarmonyMethod(typeof(PortalTrailModule), nameof(IsTeleportablePrefix)));
 
             Log.LogInfo("[" + Name + "] " + Numbers());
@@ -129,17 +130,15 @@ namespace NoVikingLeftBehind
         /// Replaces Inventory.IsTeleportable() (skips the original) but only ever relaxes it: see
         /// the class doc for why this can never be MORE restrictive than vanilla.
         /// </summary>
-        private static bool IsTeleportablePrefix(Inventory __instance, ref bool __result)
+        private static bool IsTeleportablePrefix(Inventory __instance, bool allowAllItems, ref bool __result)
         {
             if (!Live()) return true;                        // run vanilla unmodified
+            if (allowAllItems) return true;                  // 1.0 caller already waives the check
             if (!IsLocalPlayerInventory(__instance)) return true;
 
+            // TeleportAll: 1.0 vanilla still hard-blocks toolTier >= 1000 first, so let it run.
             var zs = ZoneSystem.instance;
-            if (zs != null && zs.GetGlobalKey(GlobalKeys.TeleportAll))
-            {
-                __result = true;
-                return false; // skip original
-            }
+            if (zs != null && zs.GetGlobalKey(GlobalKeys.TeleportAll)) return true;
 
             bool extra = _self._allowBehindFrontier.Value;
             int margin = _self._extraTiersBehind.Value;
@@ -147,6 +146,9 @@ namespace NoVikingLeftBehind
             foreach (var item in __instance.GetAllItems())
             {
                 if (item == null || item.m_shared == null) continue;
+                // 1.0 hard-blocks these regardless of TeleportAll (Inventory.cs:1181); never relax it.
+                if (item.m_shared.m_toolTier >= 1000) { __result = false; return false; }
+
                 string name = Tiers.CleanName(item.m_dropPrefab != null ? item.m_dropPrefab.name : item.m_shared.m_name);
 
                 if (_neverSet.Contains(name))

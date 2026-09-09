@@ -29,6 +29,28 @@ namespace NoVikingLeftBehind
         private static readonly AccessTools.FieldRef<Inventory, int> HeightRef =
             AccessTools.FieldRefAccess<Inventory, int>("m_height");
         private static readonly MethodInfo ChangedMi = AccessTools.Method(typeof(Inventory), "Changed");
+        /// <summary>
+        /// Valheim 1.0 turned <c>Inventory.Changed()</c> into
+        /// <c>Changed(bool success = false, bool cheatedStateChanged = false)</c> (Inventory.cs:1104),
+        /// and Invoke does not fill in defaults - a null argument array throws
+        /// TargetParameterCountException. Both defaults are false and only gate the
+        /// "picked up a cheated item" toast, so passing false for however many parameters the
+        /// live build has is exactly vanilla's own <c>Changed()</c> call.
+        /// </summary>
+        private static readonly object[] ChangedArgs = ChangedArgsFor(ChangedMi);
+
+        private static object[] ChangedArgsFor(MethodInfo mi)
+        {
+            if (mi == null) return null;
+            var ps = mi.GetParameters();
+            if (ps.Length == 0) return null;
+            var args = new object[ps.Length];
+            for (int i = 0; i < ps.Length; i++)
+                args[i] = ps[i].HasDefaultValue ? ps[i].DefaultValue
+                                                : (ps[i].ParameterType.IsValueType
+                                                   ? Activator.CreateInstance(ps[i].ParameterType) : null);
+            return args;
+        }
 
         /// <summary>The one inventory this module manages: the local player's. Null when not in a game.</summary>
         public static Inventory Managed;
@@ -49,7 +71,7 @@ namespace NoVikingLeftBehind
 
         public static void Changed(Inventory inv)
         {
-            if (ChangedMi != null) ChangedMi.Invoke(inv, null);
+            if (ChangedMi != null) ChangedMi.Invoke(inv, ChangedArgs);
         }
 
         public static int GetHeight(Inventory inv) { return HeightRef(inv); }

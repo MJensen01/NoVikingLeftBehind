@@ -80,9 +80,9 @@ namespace NoVikingLeftBehind
                     new[]
                     {
                         typeof(string), typeof(int), typeof(int), typeof(int),
-                        typeof(long), typeof(string), typeof(bool)
+                        typeof(long), typeof(string), typeof(bool), typeof(bool)
                     }) == null)
-                throw new Exception("Inventory.AddItem(string,int,int,int,long,string,bool) not found");
+                throw new Exception("Inventory.AddItem(string,int,int,int,long,string,bool,bool) not found");
 
             if (AccessTools.Method(typeof(Player), "SetGuardianPower", new[] { typeof(string) }) == null)
                 throw new Exception("Player.SetGuardianPower(string) not found");
@@ -108,14 +108,14 @@ namespace NoVikingLeftBehind
                     "nvlb.give <ItemPrefab> [amount] [quality] - add an item to your own inventory " +
                     "(needs [Debug] AllowTestCommands on the server)",
                     new Terminal.ConsoleEvent(CmdGive), false, false, false, false, false,
-                    new Terminal.ConsoleOptionsFetcher(ItemOptions));
+                    optionsFetcher: new Terminal.ConsoleOptionsFetcher(ItemOptions));
 
                 new Terminal.ConsoleCommand("nvlb.power",
                     "nvlb.power <list|clear 1|2|swap|GP_Name [1|2]> - list guardian powers, empty a " +
                     "slot, exchange slot 1 and 2, or (with [Debug] AllowTestCommands) put a power " +
                     "in a slot. 'clear' and 'swap' are ordinary player actions and are never gated.",
                     new Terminal.ConsoleEvent(CmdPower), false, false, false, false, false,
-                    new Terminal.ConsoleOptionsFetcher(PowerOptions));
+                    optionsFetcher: new Terminal.ConsoleOptionsFetcher(PowerOptions));
 
                 new Terminal.ConsoleCommand("nvlb.tier",
                     "nvlb.tier - show the current frontier tier (changing it is a server setting)",
@@ -280,7 +280,8 @@ namespace NoVikingLeftBehind
                 int added = 0;
                 for (int i = 0; i < amount; i++)
                 {
-                    var item = inv.AddItem(name, 1, quality, 0, player.GetPlayerID(), player.GetPlayerName());
+                    var item = inv.AddItem(name, 1, quality, 0, player.GetPlayerID(), player.GetPlayerName(),
+                                            !PlayerProfile.s_bypassCheatChecks);
                     if (item == null) break;
                     added++;
                 }

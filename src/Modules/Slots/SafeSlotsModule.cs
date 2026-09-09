@@ -174,9 +174,9 @@ namespace NoVikingLeftBehind
                 throw new Exception("PlayerProfile.GetPlayerID() not found");
             if (AccessTools.Method(typeof(PlayerProfile), "GetPath", new Type[0]) == null)
                 throw new Exception("PlayerProfile.GetPath() not found");
-            if (AccessTools.Method(typeof(PlayerProfile), "GetCharacterFolderPath",
+            if (AccessTools.Method(typeof(SaveSystem), "GetCharacterFolderPath",
                                    new[] { typeof(FileHelpers.FileSource) }) == null)
-                throw new Exception("PlayerProfile.GetCharacterFolderPath(FileSource) not found");
+                throw new Exception("SaveSystem.GetCharacterFolderPath(FileSource) not found");
 
             Harmony.Patch(savePlayerData, postfix: new HarmonyMethod(self, nameof(SavePlayerDataPostfix)));
             Harmony.Patch(logout, prefix: new HarmonyMethod(self, nameof(LogoutPrefix)));

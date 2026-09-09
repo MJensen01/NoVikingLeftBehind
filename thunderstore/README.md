@@ -262,7 +262,7 @@ remove any of the mods it replaces from that profile: `SkillGainModifier`, `Smar
 **Server admins** — unzip the whole Thunderstore package contents into
 `BepInEx/plugins/NoVikingLeftBehind/` on the dedicated server (depends on
 [BepInExPack_Valheim](https://valheim.thunderstore.io/package/denikson/BepInExPack_Valheim/)
-5.4.2333). Start the server once to generate the cfg, then edit it to taste.
+5.4.2350). Start the server once to generate the cfg, then edit it to taste.
 `[General] EnforceClientMod` (default on) rejects any connecting client that isn't running a
 matching version — turn it off to let vanilla clients join alongside modded ones (they just won't
 see the client-side features).

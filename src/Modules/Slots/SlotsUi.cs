@@ -198,15 +198,15 @@ namespace NoVikingLeftBehind
                 for (int i = first; i < elements.Count; i++)
                 {
                     var el = elements[i];
-                    if (el == null || el.m_go == null) continue;
+                    if (el == null || el.gameObject == null) continue;
 
                     int x = i % SlotLayout.VanillaWidth;
                     int y = i / SlotLayout.VanillaWidth;
                     var slot = SlotLayout.At(x, y);
-                    if (slot == null) { el.m_go.SetActive(false); continue; }   // padding cell
+                    if (slot == null) { el.gameObject.SetActive(false); continue; }   // padding cell
 
-                    el.m_go.SetActive(true);
-                    var rt = el.m_go.transform as RectTransform;
+                    el.gameObject.SetActive(true);
+                    var rt = el.transform as RectTransform;
                     if (rt != null)
                     {
                         rt.localScale = Vector3.one * scale;
@@ -327,9 +327,9 @@ namespace NoVikingLeftBehind
         /// vanilla uses for the 1-8 hotbar numbers on the top row. Sized to the whole cell and left
         /// to TMP's auto-sizing, so it never runs vertically the way a fixed narrow rect makes it.
         /// </summary>
-        private static void Label(InventoryGrid.Element el, SlotDef slot)
+        private static void Label(InventoryElement el, SlotDef slot)
         {
-            var binding = el.m_go.transform.Find("binding");
+            var binding = el.transform.Find("binding");
             if (binding == null) return;
             var text = binding.GetComponent<TMP_Text>();
             var rt = binding as RectTransform;
@@ -368,7 +368,7 @@ namespace NoVikingLeftBehind
         /// left entirely to vanilla, except that the icon material and scale we borrowed for the
         /// hint have to be handed back.
         /// </summary>
-        private static void Decorate(InventoryGrid grid, InventoryGrid.Element el, SlotDef slot)
+        private static void Decorate(InventoryGrid grid, InventoryElement el, SlotDef slot)
         {
             if (el.m_used)
             {
@@ -437,9 +437,9 @@ namespace NoVikingLeftBehind
         /// Redden a slot the item being dragged cannot go into, so the per-slot filters are visible
         /// before the drop is refused. shudnal's SetSlotColor, with his colour deltas.
         /// </summary>
-        private static void Tint(InventoryGrid.Element el, bool unfit)
+        private static void Tint(InventoryElement el, bool unfit)
         {
-            var button = el.m_go.GetComponent<Button>();
+            var button = el.GetComponent<Button>();
             if (button == null) return;
 
             if (_normal == Color.clear)
@@ -486,9 +486,9 @@ namespace NoVikingLeftBehind
             for (int i = 0; i < elements.Count; i++)
             {
                 var el = elements[i];
-                if (el == null || el.m_go == null) continue;
-                el.m_go.SetActive(true);
-                var rt = el.m_go.transform as RectTransform;
+                if (el == null || el.gameObject == null) continue;
+                el.gameObject.SetActive(true);
+                var rt = el.transform as RectTransform;
                 if (rt == null) continue;
                 rt.localScale = Vector3.one;
                 rt.anchoredPosition = baseAt + new Vector2((i % w) * space, -(i / w) * space);

@@ -43,7 +43,7 @@ namespace NoVikingLeftBehind
             {
                 try
                 {
-                    var chars = PlayerProfile.GetCharacterFolderPath(FileHelpers.FileSource.Local);
+                    var chars = SaveSystem.GetCharacterFolderPath(FileHelpers.FileSource.Local);
                     if (string.IsNullOrEmpty(chars)) return null;
                     return Path.Combine(chars, FolderName);
                 }

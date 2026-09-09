@@ -61,7 +61,8 @@ namespace NoVikingLeftBehind
                 var addItemLoad = AccessTools.Method(typeof(Inventory), "AddItem", new[]
                 {
                     typeof(string), typeof(int), typeof(float), typeof(Vector2i), typeof(bool), typeof(int),
-                    typeof(int), typeof(long), typeof(string), typeof(Dictionary<string, string>), typeof(int), typeof(bool)
+                    typeof(int), typeof(long), typeof(string), typeof(Dictionary<string, string>), typeof(int), typeof(bool),
+                    typeof(bool), typeof(bool)
                 });
                 if (addItemLoad == null)
                     throw new Exception("Inventory.AddItem(string,int,float,Vector2i,...) not found");

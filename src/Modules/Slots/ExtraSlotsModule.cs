@@ -295,7 +295,8 @@ namespace NoVikingLeftBehind
             var addItemLoad = AccessTools.Method(typeof(Inventory), "AddItem", new[]
             {
                 typeof(string), typeof(int), typeof(float), typeof(Vector2i), typeof(bool), typeof(int),
-                typeof(int), typeof(long), typeof(string), typeof(Dictionary<string, string>), typeof(int), typeof(bool)
+                typeof(int), typeof(long), typeof(string), typeof(Dictionary<string, string>), typeof(int), typeof(bool),
+                typeof(bool), typeof(bool)
             });
             var findEmpty = AccessTools.Method(typeof(Inventory), "FindEmptySlot", new[] { typeof(bool) });
             var emptySlots = AccessTools.Method(typeof(Inventory), "GetEmptySlots");
@@ -315,7 +316,7 @@ namespace NoVikingLeftBehind
             var termInit = AccessTools.Method(typeof(Terminal), "InitTerminal");
 
             Require(invSave, "Inventory.Save(ZPackage)");
-            Require(addItemLoad, "Inventory.AddItem(string,int,float,Vector2i,bool,int,int,long,string,Dictionary,int,bool)");
+            Require(addItemLoad, "Inventory.AddItem(string,int,float,Vector2i,bool,int,int,long,string,Dictionary,int,bool,bool,bool)");
             Require(findEmpty, "Inventory.FindEmptySlot(bool)");
             Require(emptySlots, "Inventory.GetEmptySlots()");
             Require(haveEmpty, "Inventory.HaveEmptySlot()");
@@ -356,6 +357,17 @@ namespace NoVikingLeftBehind
             Harmony.Patch(unequipAll, postfix: new HarmonyMethod(self, nameof(UnequipAllPostfix)));
             Harmony.Patch(containerAwake, postfix: new HarmonyMethod(self, nameof(ContainerAwakePostfix)));
             Harmony.Patch(termInit, postfix: new HarmonyMethod(self, nameof(RegisterCommand)));
+
+            // Valheim 1.0 only. Optional on purpose: on a build without them the module still
+            // applies, it just has nothing to guard against. See DropInvalidItemsPrefix.
+            var dropInvalid = AccessTools.Method(typeof(Humanoid), "DropInvalidItems", Type.EmptyTypes);
+            var setInvSize = AccessTools.Method(typeof(Player), "SetInventorySize", new[] { typeof(int) });
+            if (dropInvalid != null)
+                Harmony.Patch(dropInvalid, prefix: new HarmonyMethod(self, nameof(DropInvalidItemsPrefix)));
+            if (setInvSize != null)
+                Harmony.Patch(setInvSize, postfix: new HarmonyMethod(self, nameof(SetInventorySizePostfix)));
+            Log.LogInfo("[Slots] 1.0 inventory-rows guard: DropInvalidItems=" + (dropInvalid != null) +
+                        " SetInventorySize=" + (setInvSize != null));
 
             SlotsUi.Install(Harmony,
                 () => Inst != null && Inst.Active && Inst._showUi.Value,
@@ -591,6 +603,58 @@ namespace NoVikingLeftBehind
                 s += decoded == null ? "?" : decoded.Count.ToString();
             }
             return s;
+        }
+
+        /// <summary>
+        /// Valheim 1.0 gave vanilla its own inventory-rows upgrade: <c>Player.SetInventorySize(int
+        /// rows)</c> (Player.cs:5049) does <c>m_inventory.SetHeight(rows)</c> and then
+        /// <c>DropInvalidItems()</c> (Humanoid.cs:792), which DROPS ON THE GROUND every item whose
+        /// <c>m_gridPos.y &gt;= rows</c> - i.e. the whole extra-slot area. <c>Player.OnSpawned</c>
+        /// calls it on every single login (Player.cs:2510, from the "invrows" unique key), and the
+        /// console has a command that calls DropInvalidItems directly (Terminal.cs:1934).
+        ///
+        /// Putting our own grid height back BEFORE vanilla scans makes the extra rows in bounds
+        /// again, so vanilla drops only what is genuinely invalid. Cheap, idempotent, and inert on
+        /// any inventory that is not the one we manage.
+        /// </summary>
+        private static void DropInvalidItemsPrefix(Humanoid __instance)
+        {
+            if (!Live() || __instance == null) return;
+            try
+            {
+                var inv = __instance.GetInventory();
+                if (!IsManaged(inv)) return;
+                if (SlotStore.GetHeight(inv) < SlotLayout.TotalHeight)
+                {
+                    Log.LogWarning("[Slots] DropInvalidItems would have dropped the extra rows (grid was " +
+                                   SlotStore.GetHeight(inv) + ", need " + SlotLayout.TotalHeight +
+                                   ") - grid height restored first");
+                    SlotStore.SetHeight(inv, SlotLayout.TotalHeight);
+                }
+            }
+            catch (Exception e) { Log.LogWarning("[Slots] DropInvalidItems guard failed: " + e.Message); }
+        }
+
+        /// <summary>
+        /// Vanilla has just resized the bag (1.0's own rows upgrade). Put our height back, and say
+        /// so loudly if vanilla now wants more than the four rows SlotLayout is built on - the
+        /// panel geometry assumes SlotLayout.VanillaHeight and would overlap a bigger bag.
+        /// </summary>
+        private static void SetInventorySizePostfix(Player __instance, int rows)
+        {
+            if (!Live() || __instance == null || __instance != Player.m_localPlayer) return;
+            try
+            {
+                var inv = __instance.GetInventory();
+                if (!IsManaged(inv)) return;
+                SlotStore.SetHeight(inv, SlotLayout.TotalHeight);
+                if (rows != SlotLayout.VanillaHeight)
+                    Log.LogWarning("[Slots] vanilla set the bag to " + rows + " rows; the extra-slot " +
+                                   "layout is built on " + SlotLayout.VanillaHeight +
+                                   " - the panel and the extra rows will overlap the bag");
+                SlotsUi.Invalidate();
+            }
+            catch (Exception e) { Log.LogWarning("[Slots] SetInventorySize guard failed: " + e.Message); }
         }
 
         private static void PlayerSpawnedPostfix(Player __instance)

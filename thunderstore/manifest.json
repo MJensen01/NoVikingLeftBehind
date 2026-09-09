@@ -1,10 +1,10 @@
 {
   "name": "NoVikingLeftBehind",
   "author": "Nosferatu",
-  "version_number": "0.8.8",
+  "version_number": "0.9.0",
   "website_url": "https://github.com/MJensen01/NoVikingLeftBehind",
   "description": "The ultimate Valheim quality-of-life mod! 37 modules, one install: overkill tools, workbench reach, cheaper building, lighter loads, repair-all, catch-up mechanics, extra slots, loadouts, chest crafting & more. Every setting is live on the server.",
   "dependencies": [
-    "denikson-BepInExPack_Valheim-5.4.2333"
+    "denikson-BepInExPack_Valheim-5.4.2350"
   ]
 }

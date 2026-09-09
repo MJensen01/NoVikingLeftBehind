@@ -1,6 +1,27 @@
 
 # Changelog — NoVikingLeftBehind
 
+## 0.9.0 (2026-09-09) — Valheim 1.0
+
+**Rebuilt for Valheim 1.0.7 (network version 39).** Requires BepInExPack_Valheim 5.4.2350. Not compatible
+with 0.221.x — stay on 0.8.8 if your server is held on the `default_pre1_0` branch. Server and clients must
+match (0.9.0 rejects older clients, as always).
+
+* **Extra slots survive 1.0's new inventory-rows upgrade.** 1.0 added a vanilla "more rows" upgrade whose
+  `Player.SetInventorySize` runs on every login and then drops on the ground every item outside the vanilla
+  grid — which would have been the entire extra-slot area. NVLB now restores its grid height before that
+  scan and again after the resize, so vanilla only drops genuinely invalid items. If a player takes vanilla's
+  upgrade beyond 4 rows the panel geometry overlaps the bigger bag; the log says so loudly (layout for that
+  is a follow-up).
+* Ported to 1.0 signatures: `InventoryGrid.Element` → `InventoryElement`; the 14-argument load-path
+  `Inventory.AddItem`; `Inventory.Changed(bool, bool)`; `Inventory.IsTeleportable(bool allowAllItems)`
+  (PortalTrail now also honours 1.0's hard block on `m_toolTier >= 1000` and never relaxes it);
+  `SEMan.AddStatusEffect(..., short variant)`; `SaveSystem.GetCharacterFolderPath`; `Terminal.ConsoleCommand`'s
+  new `hideBehindDevCommands`; `Inventory.AddItem(..., bool cheated)` in the test commands.
+* Every patch target re-verified against the 1.0 decompile; the FoodNoDecay transpiler assertion holds at
+  its true count; all headless self-tests pass (SlotsSelfTest 88/88, SafeSlots 26/26, Pickers 19/19,
+  CorpseRun 7/7).
+
 ## 0.8.8 (2026-09-08)
 
 A pre-launch safety pass over the code, looking only for things that could crash the game, hang it,
