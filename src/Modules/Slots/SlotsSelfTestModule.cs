@@ -85,6 +85,7 @@ namespace NoVikingLeftBehind
                 TestStashDepthLeak();
                 TestLayoutDesyncNeverEmptiesTheBlob();
                 TestEnabledToggleReturnsItems();
+                TestStackAllSkipsExtraSlots();
                 TestMigrationRescue();
                 TestLoadoutRoundTrip();
             }
@@ -630,6 +631,123 @@ namespace NoVikingLeftBehind
             }
 
             SlotStore.Managed = null;
+        }
+
+        // ---- test 1g: vanilla Stack-all must not empty the extra slots -------------------------------
+
+        /// <summary>
+        /// The 0.9.1 bug: vanilla's "Stack all" button and the hold-E gesture both run
+        /// <c>Inventory.StackAll(from, message)</c>, which walks <c>from.GetAllItems()</c> with no
+        /// grid-row filter - so a chest holding arrows pulled the arrows out of the ammo slots.
+        /// <c>ExtraSlotsModule.StackAllSource</c> replaces that one call; this proves the filter it
+        /// applies.
+        ///
+        /// Vanilla's own <c>StackAll</c> cannot be called here: it dereferences
+        /// <c>Player.m_localPlayer</c> (IsItemEquiped, Message) and <c>Game.instance</c>, neither of
+        /// which exists on a dedicated server. So the test drives
+        /// <c>ExtraSlotsModule.FilterVanillaRows</c> - the half of the guard that is pure - and then
+        /// replays vanilla's move loop verbatim over what it returned, which is exactly the sequence
+        /// the transpiled method executes in game. It also asserts the guard is inert on an
+        /// inventory the module does not manage.
+        /// </summary>
+        private static void TestStackAllSkipsExtraSlots()
+        {
+            if (ObjectDB.instance == null) { Log.LogWarning("[SlotsSelfTest] ObjectDB not ready - test 1g skipped"); return; }
+
+            var ammo = SlotLayout.ByKey("ammo1");
+            if (ammo == null) { Log.LogWarning("[SlotsSelfTest] no ammo1 slot in this layout - test 1g skipped"); return; }
+
+            var inSlot = Make("ArrowWood", 20);
+            var inBag = Make("ArrowWood", 15);
+            if (inSlot == null || inBag == null)
+            { Log.LogWarning("[SlotsSelfTest] no ArrowWood prefab - test 1g skipped"); return; }
+
+            // The bag stack goes in FIRST, while the grid is still four rows high, so vanilla's own
+            // FindEmptySlot cannot put it in an extra row (FindEmptySlotPrefix is client-side and is
+            // not installed here). Then the grid grows and the ammo slot is filled by exact
+            // placement - PlaceRaw never merges, which is the whole reason it exists.
+            var inv = new Inventory("nvlb-stackall", null, SlotLayout.VanillaWidth, SlotLayout.VanillaHeight);
+            Check(inv.AddItem(inBag), "stackall: 15 arrows seeded into the bag");
+            Check(inBag.m_gridPos.y < SlotLayout.VanillaHeight,
+                  "stackall: the bag stack really is in a vanilla row (y=" + inBag.m_gridPos.y + ")");
+
+            SlotStore.SetHeight(inv, SlotLayout.TotalHeight);
+            SlotStore.Managed = inv;
+            Check(SlotStore.PlaceRaw(inv, inSlot, ammo.Pos),
+                  "stackall: 20 more arrows seeded into the ammo slot at " + ammo.Pos.x + "," + ammo.Pos.y);
+
+            // The chest already holds the same arrow, which is what makes StackAll interested in it.
+            var chest = new Inventory("nvlb-stackall-chest", null, SlotLayout.VanillaWidth, SlotLayout.VanillaHeight);
+            var seed = Make("ArrowWood", 1);
+            Check(seed != null && chest.AddItem(seed), "stackall: the chest already holds an arrow");
+
+            // --- the guard: what vanilla's loop is allowed to see
+            var source = ExtraSlotsModule.FilterVanillaRows(inv.GetAllItems());
+            Check(!source.Contains(inSlot), "stackall: the ammo-slot stack is NOT offered to StackAll");
+            Check(source.Contains(inBag), "stackall: the bag stack IS offered to StackAll");
+            Check(source.Count == inv.GetAllItems().Count - 1,
+                  "stackall: exactly one stack was filtered out (" + source.Count + " of " +
+                  inv.GetAllItems().Count + " offered)");
+
+            // --- vanilla's move loop, verbatim, over that source (Inventory.cs:246-252 minus the
+            //     IsItemEquiped call, which needs a local player; neither arrow stack is equipped).
+            var moved = new List<ItemDrop.ItemData>(source);
+            for (int i = 0; i < moved.Count; i++)
+            {
+                var item = moved[i];
+                if (chest.ContainsItemByName(item.m_shared.m_name) && chest.AddItem(item)) inv.RemoveItem(item);
+            }
+
+            Check(inv.GetItemAt(ammo.Pos.x, ammo.Pos.y) == inSlot && inSlot.m_stack == 20,
+                  "stackall: the ammo slot still holds its own 20 arrows after Stack all");
+            Check(!inv.GetAllItems().Contains(inBag), "stackall: the bag stack left the inventory");
+            Check(ArrowsIn(chest) == 16, "stackall: the chest received the bag's 15 arrows on top of " +
+                  "its own 1 (chest holds " + ArrowsIn(chest) + ")");
+            Check(SlotStore.ExtraItems(inv).Count == 1,
+                  "stackall: exactly one item is still in an extra slot (" +
+                  SlotStore.ExtraItems(inv).Count + ")");
+
+            // --- the transpiler must still find its one call site in the live game's IL. ExtraSlots
+            //     is client-side, so a dedicated server never applies that patch and a game update
+            //     that moved the call would otherwise go unnoticed until somebody played. Running
+            //     the transpiler over the real method body here catches it on the server boot.
+            try
+            {
+                var stackAll = AccessTools.Method(typeof(Inventory), "StackAll",
+                                                  new[] { typeof(Inventory), typeof(bool) });
+                Check(stackAll != null, "stackall: Inventory.StackAll(Inventory,bool) still exists");
+                if (stackAll != null)
+                {
+                    var body = PatchProcessor.GetOriginalInstructions(stackAll);
+                    var patched = new List<CodeInstruction>(ExtraSlotsModule.StackAllTranspiler(body));
+                    Check(patched.Count == body.Count,
+                          "stackall: the transpiler replaced one call and moved nothing else (" +
+                          patched.Count + " vs " + body.Count + " instructions)");
+                }
+            }
+            catch (Exception e)
+            {
+                Check(false, "stackall: the transpiler no longer matches Inventory.StackAll - " + e.Message);
+            }
+
+            // --- and the guard is inert on anything we do not manage: same list, same reference.
+            var other = new Inventory("nvlb-stackall-other", null, SlotLayout.VanillaWidth, SlotLayout.VanillaHeight);
+            var loose = Make("ArrowWood", 3);
+            if (loose != null) other.AddItem(loose);
+            Check(ReferenceEquals(ExtraSlotsModule.StackAllSource(other), other.GetAllItems()),
+                  "stackall: an unmanaged inventory gets vanilla's own list back, untouched");
+
+            SlotStore.Managed = null;
+        }
+
+        /// <summary>Total ArrowWood across every stack, counted by prefab so no name token is assumed.</summary>
+        private static int ArrowsIn(Inventory inv)
+        {
+            int n = 0;
+            var all = inv.GetAllItems();
+            for (int i = 0; i < all.Count; i++)
+                if (SlotBlob.PrefabNameOf(all[i]) == "ArrowWood") n += all[i].m_stack;
+            return n;
         }
 
         // ---- test 2: migration rescue -------------------------------------------------------------

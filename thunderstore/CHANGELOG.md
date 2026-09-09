@@ -1,6 +1,15 @@
 
 # Changelog — NoVikingLeftBehind
 
+## 0.9.2 (2026-09-09)
+
+* **Vanilla "Stack all" / hold-E no longer empties the extra slots.** Valheim's `Inventory.StackAll` walks the whole
+  player inventory with no row filter, so stacking into a chest that held arrows or food pulled them straight out of the
+  ammo and food slots (equipment survived only because it is flagged equipped). A one-instruction transpiler now feeds
+  StackAll only the vanilla rows when the inventory is NVLB-managed; everything else about the button is vanilla,
+  unmanaged inventories are untouched, and the self-test replays the guard over the live game IL on every server boot
+  so a future game patch that moves the call is caught early. SlotsSelfTest: 102 passed.
+
 ## 0.9.1 (2026-09-09)
 
 * **Settings tab showed stale values after a save.** On a client, ServerSync answers "serialize this setting" with the

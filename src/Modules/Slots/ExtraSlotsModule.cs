@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Reflection;
+using System.Reflection.Emit;
 using BepInEx.Configuration;
 using HarmonyLib;
 using UnityEngine;
@@ -308,6 +309,8 @@ namespace NoVikingLeftBehind
             var pInvChanged = AccessTools.Method(typeof(Player), "OnInventoryChanged");
             var gridDrop = AccessTools.Method(typeof(InventoryGrid), "DropItem",
                 new[] { typeof(Inventory), typeof(ItemDrop.ItemData), typeof(int), typeof(Vector2i) });
+            var stackAll = AccessTools.Method(typeof(Inventory), "StackAll",
+                new[] { typeof(Inventory), typeof(bool) });
             var updSe = AccessTools.Method(typeof(Humanoid), "UpdateEquipmentStatusEffects");
             var isEquiped = AccessTools.Method(typeof(Humanoid), "IsItemEquiped", new[] { typeof(ItemDrop.ItemData) });
             var unequip = AccessTools.Method(typeof(Humanoid), "UnequipItem", new[] { typeof(ItemDrop.ItemData), typeof(bool) });
@@ -326,6 +329,7 @@ namespace NoVikingLeftBehind
             Require(pUpdate, "Player.Update()");
             Require(pInvChanged, "Player.OnInventoryChanged()");
             Require(gridDrop, "InventoryGrid.DropItem(Inventory,ItemData,int,Vector2i)");
+            Require(stackAll, "Inventory.StackAll(Inventory,bool)");
             Require(updSe, "Humanoid.UpdateEquipmentStatusEffects()");
             Require(isEquiped, "Humanoid.IsItemEquiped(ItemData)");
             Require(unequip, "Humanoid.UnequipItem(ItemData,bool)");
@@ -351,6 +355,16 @@ namespace NoVikingLeftBehind
             Harmony.Patch(pUpdate, postfix: new HarmonyMethod(self, nameof(PlayerUpdatePostfix)));
             Harmony.Patch(pInvChanged, postfix: new HarmonyMethod(self, nameof(InventoryChangedPostfix)));
             Harmony.Patch(gridDrop, prefix: new HarmonyMethod(self, nameof(GridDropPrefix)));
+            Harmony.Patch(stackAll, transpiler: new HarmonyMethod(self, nameof(StackAllTranspiler)));
+
+            // Siblings audited against the 1.0.7 decompile and deliberately NOT patched - see the
+            // StackAllSource doc comment for the reasoning on each. The count is stated out loud so
+            // the log says what the audit concluded rather than leaving it in a comment nobody reads.
+            const int stackAllSiblings = 0;
+            Log.LogInfo("[Slots] StackAll guard: patched Inventory.StackAll (+ " + stackAllSiblings +
+                        " sibling(s)) - the Stack all button, the hold-E gesture and Container's " +
+                        "RPC_StackResponse all funnel through it; Inventory.MoveAll only ever reads " +
+                        "a container");
             Harmony.Patch(updSe, postfix: new HarmonyMethod(self, nameof(UpdateEquipSePostfix)));
             Harmony.Patch(isEquiped, postfix: new HarmonyMethod(self, nameof(IsItemEquipedPostfix)));
             Harmony.Patch(unequip, prefix: new HarmonyMethod(self, nameof(UnequipItemPrefix)));
@@ -734,6 +748,122 @@ namespace NoVikingLeftBehind
                     slot == null ? "This slot is not in use" : ("Only " + slot.Label + " items fit here"));
             __result = false;
             return false;
+        }
+
+        // ---- keeping bulk moves out of the extra area --------------------------------------------
+
+        /// <summary>
+        /// Vanilla's "Stack all" empties the extra slots, and this is the guard against it.
+        ///
+        /// Both gestures - the button in the container window (<c>InventoryGui.m_stackAllButton</c>
+        /// -> <c>OnStackAll()</c>, InventoryGui.cs:841) and holding E on an open chest
+        /// (<c>InventoryGui.UpdateContainer</c> :702 -> <c>Container.StackAll()</c> Container.cs:350
+        /// -> <c>RPC_RequestStack</c> :356 -> <c>RPC_StackResponse</c> :381) - end in the same
+        /// <c>Inventory.StackAll(Inventory fromInventory, bool message)</c> (Inventory.cs:244), which
+        /// walks <c>fromInventory.GetAllItems()</c> with NO grid-row filter and moves every stack the
+        /// chest already holds by name. The extra rows are ordinary cells of the player's own
+        /// Inventory, so ammo, food and generic slots are swept up with the bag. Equipment survives
+        /// only by accident: <see cref="SyncEquipment"/> sets <c>m_equipped</c> and vanilla skips
+        /// <c>IsItemEquiped</c> items. Food and ammo are not equipped - so on the live server a chest
+        /// holding arrows ripped the arrows straight out of the ammo slots.
+        ///
+        /// Siblings audited against the 1.0.7 decompile, none of which need patching:
+        ///   * <c>Container.StackAll()</c> / <c>RPC_RequestStack</c> / <c>RPC_StackResponse</c> - the
+        ///     RPC only hands ownership over; the move itself is the same
+        ///     <c>Inventory.StackAll</c> running on the requesting client. Covered by this patch.
+        ///   * <c>Inventory.MoveAll(Inventory)</c> (Inventory.cs:218), "Take all". All three call
+        ///     sites (InventoryGui.cs:837, Container.cs:120 and :450) are
+        ///     <c>player.GetInventory().MoveAll(chestInventory)</c>, so the player's inventory is
+        ///     never the <c>fromInventory</c> - it is the destination, and inbound placement is
+        ///     already confined to the vanilla rows by <see cref="FindEmptySlotPrefix"/>.
+        ///   * Nothing else in the assembly calls either method.
+        /// </summary>
+        public static List<ItemDrop.ItemData> StackAllSource(Inventory fromInventory)
+        {
+            // The virtual call first and unconditionally, so a null fromInventory throws exactly the
+            // NullReferenceException vanilla's own callvirt would have thrown at this instruction.
+            var all = fromInventory.GetAllItems();
+            try
+            {
+                if (!Live() || !IsManaged(fromInventory)) return all;
+                return FilterVanillaRows(all);
+            }
+            catch (Exception e)
+            {
+                // A guard must never be the thing that breaks a vanilla button.
+                Log.LogWarning("[Slots] StackAll guard failed, falling back to vanilla: " + e.Message);
+                return all;
+            }
+        }
+
+        /// <summary>
+        /// <paramref name="all"/> minus every item sitting in an extra-slot row. Returns the SAME
+        /// list instance when there is nothing to skip, so the ordinary case allocates nothing and
+        /// is byte-for-byte vanilla. Items with no grid position of ours (and any null) are kept, so
+        /// the only behaviour that ever changes is "an extra-slot stack is left alone".
+        ///
+        /// Internal rather than private so <see cref="SlotsSelfTestModule"/> can prove it on a
+        /// dedicated server, where <see cref="Live"/> is false by design (this module is client-side).
+        /// </summary>
+        internal static List<ItemDrop.ItemData> FilterVanillaRows(List<ItemDrop.ItemData> all)
+        {
+            if (all == null) return null;
+
+            int skipped = 0;
+            for (int i = 0; i < all.Count; i++)
+                if (all[i] != null && all[i].m_gridPos.y >= SlotLayout.VanillaHeight) skipped++;
+            if (skipped == 0) return all;
+
+            var kept = new List<ItemDrop.ItemData>(all.Count - skipped);
+            for (int i = 0; i < all.Count; i++)
+                if (all[i] == null || all[i].m_gridPos.y < SlotLayout.VanillaHeight) kept.Add(all[i]);
+
+            Log.LogDebug("[Slots] StackAll skipped " + skipped + " extra-slot stack(s)");
+            return kept;
+        }
+
+        /// <summary>
+        /// Replace the single <c>fromInventory.GetAllItems()</c> inside
+        /// <c>Inventory.StackAll(Inventory,bool)</c> with <see cref="StackAllSource"/>: same
+        /// argument on the stack, same return type, so not one other instruction in the method
+        /// moves and every one of vanilla's own decisions (ContainsItemByName, IsItemEquiped,
+        /// AddItem, the $msg_stackall message, the PlaceStacks stat) is left exactly as written.
+        ///
+        /// Chosen over a prefix that reimplements StackAll because it is one instruction instead of
+        /// twenty-five lines of copied vanilla, and because "the item list it iterates" is precisely
+        /// and only what we mean to change - a reimplementation would have to be re-audited against
+        /// every future patch of that method. A prefix that temporarily hid the extra-slot items
+        /// from the list was rejected outright: it leaves the inventory in a lying state across a
+        /// vanilla call that raises Changed() and can throw.
+        ///
+        /// Exactly one match is required. A game update that adds or removes a GetAllItems call in
+        /// this method must fail loudly rather than silently guard the wrong list.
+        /// </summary>
+        internal static IEnumerable<CodeInstruction> StackAllTranspiler(IEnumerable<CodeInstruction> instructions)
+        {
+            var mine = AccessTools.Method(typeof(ExtraSlotsModule), nameof(StackAllSource));
+            if (mine == null) throw new Exception("ExtraSlotsModule.StackAllSource not found");
+
+            var code = new List<CodeInstruction>(instructions);
+            int hits = 0;
+            for (int i = 0; i < code.Count; i++)
+            {
+                if (code[i].opcode != OpCodes.Callvirt && code[i].opcode != OpCodes.Call) continue;
+                // Matched by declaring type + name + signature rather than by MethodInfo identity:
+                // the operand handed to a transpiler comes from reading the IL and need not be the
+                // same object AccessTools.Method would hand back.
+                var mi = code[i].operand as MethodInfo;
+                if (mi == null || mi.DeclaringType != typeof(Inventory) || mi.Name != "GetAllItems") continue;
+                if (mi.GetParameters().Length != 0) continue;
+                // Edited in place so any label or exception block attached here survives.
+                code[i].opcode = OpCodes.Call;
+                code[i].operand = mine;
+                hits++;
+            }
+            if (hits != 1)
+                throw new Exception("Inventory.StackAll: expected exactly 1 GetAllItems() call to replace, found " + hits);
+
+            return code;
         }
 
         // ---- equipment sync ---------------------------------------------------------------------
