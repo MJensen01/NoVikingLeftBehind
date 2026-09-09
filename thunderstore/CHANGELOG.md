@@ -8,7 +8,8 @@
   ammo and food slots (equipment survived only because it is flagged equipped). A one-instruction transpiler now feeds
   StackAll only the vanilla rows when the inventory is NVLB-managed; everything else about the button is vanilla,
   unmanaged inventories are untouched, and the self-test replays the guard over the live game IL on every server boot
-  so a future game patch that moves the call is caught early. SlotsSelfTest: 102 passed.
+  so a future game patch that moves the call is caught early. New synced `[Slots] StackAllProtectsSlots` (default on;
+  off = vanilla behaviour). SlotsSelfTest: 102 passed.
 
 ## 0.9.1 (2026-09-09)
 

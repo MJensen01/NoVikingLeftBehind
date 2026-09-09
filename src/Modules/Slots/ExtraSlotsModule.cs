@@ -40,6 +40,7 @@ namespace NoVikingLeftBehind
         private ConfigEntry<int> _quickSlots;
         private ConfigEntry<int> _genericSlots;
         private ConfigEntry<bool> _autoEat;
+        private ConfigEntry<bool> _stackAllGuard;
         private ConfigEntry<bool> _showUi;
         private ConfigEntry<string> _quickKeys;
         private ConfigEntry<float> _panelOffsetX;
@@ -90,6 +91,12 @@ namespace NoVikingLeftBehind
                 "Server: when a food buff runs out and the same food is sitting in a food slot, " +
                 "eat it automatically.",
                 Opt.B("Automatically eat from a food slot when a buff runs out"));
+            _stackAllGuard = BindSynced("StackAllProtectsSlots", true,
+                "Server: keep the vanilla 'Stack all' button and hold-E on a chest out of the extra " +
+                "slots. Vanilla walks the whole bag with no row filter, so a chest holding arrows or " +
+                "food would otherwise pull them straight out of the ammo and food slots. Off = vanilla " +
+                "behaviour (the extra slots are fair game for Stack all).",
+                Opt.B("Stack all leaves the extra slots alone"));
 
             _quickKeys = BindLocal("QuickSlotKeys", "",
                 "Local: comma-separated keys for the quick slots, in order. Unity KeyCode names " +
@@ -786,6 +793,7 @@ namespace NoVikingLeftBehind
             try
             {
                 if (!Live() || !IsManaged(fromInventory)) return all;
+                if (Inst != null && Inst._stackAllGuard != null && !Inst._stackAllGuard.Value) return all;
                 return FilterVanillaRows(all);
             }
             catch (Exception e)
