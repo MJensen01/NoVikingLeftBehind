@@ -12,7 +12,8 @@ namespace NoVikingLeftBehind
     /// Client side only. Each feature has its own Enabled sub-flag under [CorpseRun].
     ///
     ///  1. GraveCompass   - a HUD arrow + distance pointing at your death point (GraveCompassHud).
-    ///  2. RespawnFood    - one free food slot on a death-respawn (never on login).
+    ///  2. RespawnFood    - one free food slot on a death-respawn (never on login), picked to match
+    ///                      the world's frontier (see <see cref="ResolveForTier"/>).
     ///  3. RespawnRested  - a guaranteed Rested buff on a death-respawn.
     ///  4. GravePull      - a distance-scaled stamina buff while the corpse is far away
     ///                      (GravePullStatusEffect).
@@ -94,6 +95,7 @@ namespace NoVikingLeftBehind
 
         private ConfigEntry<bool> _respawnFoodEnabled;
         private ConfigEntry<string> _respawnFoods;
+        private ConfigEntry<string> _respawnFoodsByFrontier;
         private ConfigEntry<int> _respawnFoodCount;
 
         private ConfigEntry<bool> _respawnRestedEnabled;
@@ -219,13 +221,30 @@ namespace NoVikingLeftBehind
                 "RespawnFood: put food in your belly when you respawn after a death (never on " +
                 "login). The item is created from the prefab - it is not taken from any inventory.",
                 Opt.B("Give free food when you respawn after dying"));
-            _respawnFoods = BindSynced("RespawnFoods", "Bread",
-                "RespawnFood: comma-separated item prefab names, best first. Only the first " +
-                "RespawnFoodCount that exist in ObjectDB are used (Valheim allows 3 food slots).",
-                Opt.T("Which foods to grant on a death-respawn, in order")
+            _respawnFoods = BindSynced("RespawnFoods", "",
+                "RespawnFood: ADMIN OVERRIDE. Empty (the default) means \"pick automatically from " +
+                "the world's frontier\" - see RespawnFoodsByFrontier. Set it to a comma-separated " +
+                "list of item prefab names, best first, and that list is used at every tier " +
+                "instead, exactly as it worked before: only the first RespawnFoodCount that exist " +
+                "in ObjectDB are used (Valheim allows 3 food slots).",
+                Opt.T("Force one food list instead of picking by world progress")
                     .Pick(new PickerSpec(PickerSource.Foods)));
+            _respawnFoodsByFrontier = BindSynced("RespawnFoodsByFrontier", DefaultFrontierFoods,
+                "RespawnFood: which food the automatic pick grants at each stage of the world's " +
+                "progress, so a day-one Meadows death does not conjure a Plains loaf. " +
+                "Comma-separated Biome:Prefab|Prefab|Prefab entries, best first within a stage; " +
+                "the biome names are the stage the world's frontier ([Frontier] WorldTier) has " +
+                "opened up - Meadows (no boss), BlackForest (Eikthyr), Swamp (The Elder), " +
+                "Mountain (Bonemass), Plains (Moder), Mistlands (Yagluth), Ashlands (The Queen), " +
+                "DeepNorth (Fader). Each list is the best STAMINA food craftable at that stage " +
+                "from ingredients of that biome or an earlier one. At respawn the stage's list is " +
+                "tried in order, prefabs missing from ObjectDB are skipped, and if a whole stage " +
+                "is missing the next stage down is tried, ending at CookedMeat. Ignored entirely " +
+                "while RespawnFoods is non-empty.",
+                Opt.T("Which food each stage of world progress grants on respawn"));
             _respawnFoodCount = BindSynced("RespawnFoodCount", 1,
-                "RespawnFood: how many of the RespawnFoods entries to grant, 0-3.",
+                "RespawnFood: how many foods to grant, 0-3. They are taken in order from the " +
+                "resolved list - the stage's list, or RespawnFoods when that override is set.",
                 Opt.N("How many foods to grant on a death-respawn", 0, 3));
 
             _respawnRestedEnabled = BindSynced("RespawnRestedEnabled", true,
@@ -340,10 +359,13 @@ namespace NoVikingLeftBehind
                 "and an exact tombstone match beats distance outright, so looting one of several " +
                 "graves only ever removes the right one.",
                 Opt.N("Metres a tombstone must be from your grave to count", 0, 200));
+
+            ParseFrontierFoods();
         }
 
         public override void OnConfigChanged(ConfigEntryBase entry)
         {
+            if (entry == _respawnFoodsByFrontier) ParseFrontierFoods();
             PushNumbers();
             GraveCompassHud.SetOffset(new Vector2(_compassOffsetX.Value, _compassOffsetY.Value),
                                       _compassArrow.Value, _compassArrowScale.Value);
@@ -424,8 +446,11 @@ namespace NoVikingLeftBehind
                    ", hint alpha " + _hintAlpha.Value + " scale " +
                    _hintScale.Value + ")" +
                    " graves=max " + GraveRecord.MaxPerWorld + "/world min " + _minItemsToTrack.Value + " items" +
-                   " food=" + _respawnFoodEnabled.Value + "(" + _respawnFoods.Value + " x" +
-                   _respawnFoodCount.Value + ")" +
+                   " food=" + _respawnFoodEnabled.Value + "(" +
+                   (string.IsNullOrEmpty(_respawnFoods.Value) || _respawnFoods.Value.Trim().Length == 0
+                       ? "auto " + ResolveText()
+                       : "override '" + _respawnFoods.Value + "'") +
+                   " x" + _respawnFoodCount.Value + ")" +
                    " rested=" + _respawnRestedEnabled.Value + "(" + _restedMinutes.Value + "min)" +
                    " pull=" + _pullEnabled.Value + "(>" + _pullMinDistance.Value + "m ramp " +
                    _pullFullDistance.Value + "m regen+" +
@@ -541,6 +566,7 @@ namespace NoVikingLeftBehind
             try
             {
                 Register(__instance);
+                ValidateFoodTableOnce(__instance);
                 if (_inst._selfTest.Value) RunSelfTest(__instance);
             }
             catch (Exception e)
@@ -836,26 +862,256 @@ namespace NoVikingLeftBehind
             return prof.HaveCustomSpawnPoint() ? prof.GetCustomSpawnPoint() : prof.GetHomePoint();
         }
 
+        // ---- respawn food: which food, decided by the world's frontier -----------------------
+
+        /// <summary>
+        /// The biome each world tier has opened up, indexed by <see cref="Frontier.WorldTier"/>:
+        /// tier 0 is a world with no boss down, tier 7 one that has killed Fader. These are the
+        /// KEYS of [CorpseRun] RespawnFoodsByFrontier, so the setting reads as biomes, not numbers.
+        /// </summary>
+        internal static readonly string[] StageBiomes =
+        {
+            "Meadows",      // 0  no boss killed
+            "BlackForest",  // 1  Eikthyr
+            "Swamp",        // 2  The Elder
+            "Mountain",     // 3  Bonemass
+            "Plains",       // 4  Moder
+            "Mistlands",    // 5  Yagluth
+            "Ashlands",     // 6  The Queen
+            "DeepNorth"     // 7  Fader (new in Valheim 1.0)
+        };
+
+        /// <summary>Last resort when not one prefab in any configured stage list exists.</summary>
+        private const string FinalFallbackFood = "CookedMeat";
+
+        /// <summary>
+        /// Default RespawnFoodsByFrontier: the best STAMINA food (m_foodStamina &gt; m_food) whose
+        /// ingredients AND cauldron/oven level are all reachable at that stage, plus two simpler
+        /// fallbacks, best first. Stamina values (Valheim 1.0.7): 35, 45, 55, 65, 75, 90, 100, 115.
+        ///
+        /// Read out of the shipped 1.0.7 asset bundles rather than guessed - the whole table,
+        /// with each food's ingredients, its cauldron level and the biome that unlocks that level,
+        /// is written up in research/RESPAWN-FOOD-TABLE.md. Two things it settles that a stale
+        /// wiki gets wrong: 1.0 re-balanced every food (Bread is 23/70 now, not 15/50), and the
+        /// Deep North foods really are craftable, so tier 7 does not have to borrow the Ashlands
+        /// list. Meadows' third entry, Mushroom, is 15/15 - neutral rather than stamina-leaning -
+        /// and only ever reached at RespawnFoodCount=3, because Meadows has just two true stamina
+        /// foods.
+        /// </summary>
+        internal const string DefaultFrontierFoods =
+            "Meadows:Honey|Raspberry|Mushroom," +
+            "BlackForest:CarrotSoup|QueensJam|Honey," +
+            "Swamp:TurnipStew|ShocklateSmoothie|CarrotSoup," +
+            "Mountain:Eyescream|OnionSoup|TurnipStew," +
+            "Plains:BloodPudding|Bread|Eyescream," +
+            "Mistlands:FishAndBread|MushroomOmelette|Salad," +
+            "Ashlands:RoastedCrustPie|ScorchingMedley|SpicyMarmalade," +
+            "DeepNorth:OatmealLingonberryJam|OatMilk|KaleChips";
+
+        /// <summary>RespawnFoodsByFrontier decoded: index = world tier, value = prefabs, best first.</summary>
+        private static List<string>[] _stageFoods = new List<string>[StageBiomes.Length];
+        private static bool _foodTableValidated;
+
+        /// <summary>Biome name (or a bare tier number) -> tier index. -1 when it is neither.</summary>
+        private static int StageIndex(string name)
+        {
+            if (string.IsNullOrEmpty(name)) return -1;
+            string want = Squash(name);
+            if (want.Length == 0) return -1;
+            for (int i = 0; i < StageBiomes.Length; i++)
+                if (string.Equals(Squash(StageBiomes[i]), want, StringComparison.Ordinal)) return i;
+            int n;
+            if (int.TryParse(want, out n) && n >= 0 && n < StageBiomes.Length) return n;
+            return -1;
+        }
+
+        /// <summary>Lower-case, letters and digits only, so "Black Forest" == "BlackForest".</summary>
+        private static string Squash(string s)
+        {
+            var sb = new System.Text.StringBuilder(s.Length);
+            for (int i = 0; i < s.Length; i++)
+                if (char.IsLetterOrDigit(s[i])) sb.Append(char.ToLowerInvariant(s[i]));
+            return sb.ToString();
+        }
+
+        /// <summary>Decode Biome:Prefab|Prefab,Biome:... into <see cref="_stageFoods"/>.</summary>
+        private static void ParseFrontierFoods()
+        {
+            var byStage = new List<string>[StageBiomes.Length];
+            string raw = (_inst != null && _inst._respawnFoodsByFrontier != null)
+                ? _inst._respawnFoodsByFrontier.Value : DefaultFrontierFoods;
+
+            foreach (var chunk in (raw ?? "").Split(new[] { ',', ';', '\n' },
+                                                    StringSplitOptions.RemoveEmptyEntries))
+            {
+                string piece = chunk.Trim();
+                if (piece.Length == 0) continue;
+
+                int colon = piece.IndexOf(':');
+                if (colon <= 0 || colon == piece.Length - 1)
+                {
+                    Log.LogWarning("[CorpseRun] ignoring malformed RespawnFoodsByFrontier entry '" +
+                                   piece + "' (want Biome:Prefab|Prefab)");
+                    continue;
+                }
+
+                int tier = StageIndex(piece.Substring(0, colon));
+                if (tier < 0)
+                {
+                    Log.LogWarning("[CorpseRun] ignoring RespawnFoodsByFrontier entry '" + piece +
+                                   "': '" + piece.Substring(0, colon).Trim() + "' is not one of " +
+                                   string.Join(", ", StageBiomes));
+                    continue;
+                }
+
+                var list = byStage[tier];
+                if (list == null) byStage[tier] = list = new List<string>();
+                foreach (var f in piece.Substring(colon + 1)
+                                       .Split(new[] { '|', '/' }, StringSplitOptions.RemoveEmptyEntries))
+                {
+                    string nm = f.Trim();
+                    if (nm.Length > 0 && !list.Contains(nm)) list.Add(nm);
+                }
+            }
+
+            _stageFoods = byStage;
+            _foodTableValidated = false;
+        }
+
+        /// <summary>
+        /// What a respawn should grant right now. A non-empty [CorpseRun] RespawnFoods is an admin
+        /// override and wins outright - exactly the behaviour every version before this one had.
+        /// Otherwise the world's frontier picks the stage.
+        /// </summary>
+        private static List<string> ResolveFoods(ObjectDB odb, out string stage)
+        {
+            var c = _inst;
+            string over = (c != null && c._respawnFoods != null) ? c._respawnFoods.Value : null;
+            if (!string.IsNullOrEmpty(over) && over.Trim().Length > 0)
+            {
+                var list = new List<string>();
+                foreach (var raw in over.Split(new[] { ',', ';' }, StringSplitOptions.RemoveEmptyEntries))
+                {
+                    string nm = raw.Trim();
+                    if (nm.Length > 0 && !list.Contains(nm)) list.Add(nm);
+                }
+                stage = "override";
+                return list;
+            }
+            return ResolveForTier(Frontier.WorldTier, odb, out stage);
+        }
+
+        /// <summary>
+        /// The stage list for <paramref name="tier"/>, filtered to prefabs this game build actually
+        /// has, falling down one stage at a time when a whole list is missing and ending at
+        /// <see cref="FinalFallbackFood"/>. A null ObjectDB (nothing loaded yet - nvlb.status can be
+        /// asked before a world exists) skips the existence filter rather than answering "nothing".
+        /// </summary>
+        private static List<string> ResolveForTier(int tier, ObjectDB odb, out string stage)
+        {
+            int start = tier < 0 ? 0
+                      : (tier >= StageBiomes.Length ? StageBiomes.Length - 1 : tier);
+
+            for (int t = start; t >= 0; t--)
+            {
+                var list = (_stageFoods != null && t < _stageFoods.Length) ? _stageFoods[t] : null;
+                if (list == null || list.Count == 0) continue;
+
+                var found = new List<string>();
+                for (int i = 0; i < list.Count; i++)
+                    if (odb == null || odb.GetItemPrefab(list[i]) != null) found.Add(list[i]);
+                if (found.Count == 0) continue;
+
+                stage = StageBiomes[t] + (t == start ? "" : " (down from " + StageBiomes[start] + ")");
+                return found;
+            }
+
+            stage = StageBiomes[start] + " (nothing configured resolved)";
+            var last = new List<string>();
+            if (odb == null || odb.GetItemPrefab(FinalFallbackFood) != null) last.Add(FinalFallbackFood);
+            else Log.LogWarning("[CorpseRun] RespawnFood: no configured food resolved and this build " +
+                                "has no '" + FinalFallbackFood + "' either - nothing will be granted");
+            return last;
+        }
+
+        /// <summary>"Swamp-&gt;CarrotSoup", for nvlb.status and the config log line.</summary>
+        private static string ResolveText()
+        {
+            try
+            {
+                string stage;
+                var list = ResolveFoods(ObjectDB.instance, out stage);
+                return stage + "->" + (list.Count == 0 ? "none" : list[0]);
+            }
+            catch { return "?"; }
+        }
+
+        /// <summary>
+        /// Once per populated ObjectDB: name every configured food this game build does not have,
+        /// and print what all eight stages resolve to. This is what catches a typo'd prefab before
+        /// anybody dies, and it runs on the dedicated server as well as the client.
+        /// </summary>
+        private static void ValidateFoodTableOnce(ObjectDB odb)
+        {
+            if (_foodTableValidated) return;
+            if (odb == null || odb.m_items == null || odb.m_items.Count < 50) return;
+            _foodTableValidated = true;
+
+            var missing = new List<string>();
+            for (int t = 0; t < _stageFoods.Length; t++)
+            {
+                var list = _stageFoods[t];
+                if (list == null) continue;
+                foreach (var nm in list)
+                    if (odb.GetItemPrefab(nm) == null && !missing.Contains(nm)) missing.Add(nm);
+            }
+            if (missing.Count > 0)
+                Log.LogWarning("[CorpseRun] RespawnFoodsByFrontier: " + missing.Count +
+                               " prefab(s) are not in this game build and are skipped: " +
+                               string.Join(", ", missing.ToArray()));
+
+            var sb = new System.Text.StringBuilder();
+            for (int t = 0; t < StageBiomes.Length; t++)
+            {
+                string stage;
+                var got = ResolveForTier(t, odb, out stage);
+                if (sb.Length > 0) sb.Append("  ");
+                sb.Append(t).Append(' ').Append(StageBiomes[t]).Append('=')
+                  .Append(got.Count == 0 ? "none" : got[0]);
+            }
+            Log.LogInfo("[CorpseRun] RespawnFood by frontier: " + sb +
+                        (_inst != null && !string.IsNullOrEmpty(_inst._respawnFoods.Value) &&
+                         _inst._respawnFoods.Value.Trim().Length > 0
+                            ? "  (ALL IGNORED - RespawnFoods override is set to '" +
+                              _inst._respawnFoods.Value + "')"
+                            : ""));
+        }
+
         private static void GrantRespawnGifts(Player me)
         {
             var c = _inst;
             var parts = new List<string>();
 
-            if (c._respawnFoodEnabled.Value)
+            int want = c._respawnFoodEnabled.Value
+                ? Mathf.Clamp(c._respawnFoodCount.Value, 0, 3) : 0;
+            if (want > 0)
             {
-                int want = Mathf.Clamp(c._respawnFoodCount.Value, 0, 3);
+                string stage;
+                var candidates = ResolveFoods(ObjectDB.instance, out stage);
+
+                // The one line that shows the frontier rule working, at the moment it decides.
+                Log.LogInfo("[CorpseRun] respawn food: frontier=" + stage + " -> " +
+                            (candidates.Count == 0 ? "nothing" : string.Join("|", candidates.ToArray())));
+
                 int given = 0;
-                foreach (var raw in c._respawnFoods.Value.Split(','))
-                {
-                    if (given >= want) break;
-                    string nm = raw.Trim();
-                    if (nm.Length == 0) continue;
-                    if (GiveFood(me, nm)) { parts.Add("food:" + nm); given++; }
-                }
+                for (int i = 0; i < candidates.Count && given < want; i++)
+                    if (GiveFood(me, candidates[i])) { parts.Add("food:" + candidates[i]); given++; }
+
                 if (given < want)
-                    Log.LogWarning("[CorpseRun] RespawnFood: wanted " + want + " item(s) from '" +
-                                   c._respawnFoods.Value + "', granted " + given +
-                                   " (missing prefab, or all 3 food slots were full)");
+                    Log.LogWarning("[CorpseRun] RespawnFood: wanted " + want + " item(s) from " +
+                                   stage + " list '" + string.Join("|", candidates.ToArray()) +
+                                   "', granted " + given +
+                                   " (missing prefab, already in your belly, or all 3 food slots were full)");
             }
 
             if (c._respawnRestedEnabled.Value)
@@ -1447,6 +1703,7 @@ namespace NoVikingLeftBehind
                    " tracking=" + (_tracked == null ? "none" : TrackedText() + "/" + _graves.Count) +
                    " compass=" + compass +
                    " pull=" + (_pullOn ? Mathf.RoundToInt(_lastStrength * 100f) + "%" : "off") +
+                   " nextFood=" + ResolveText() +
                    " lastGrants=" + _lastGrantText +
                    " lastCorpseRun=" + (_lastScaledTtl > 0f ? _lastScaledTtl.ToString("0") + "s" : "-") +
                    " diedThisSession=" + _diedThisSession +
@@ -1501,19 +1758,40 @@ namespace NoVikingLeftBehind
                             " burn=" + f.Value.m_foodBurnTime + "s" +
                             " regen=" + f.Value.m_foodRegen);
             }
-            foreach (var raw in c._respawnFoods.Value.Split(','))
+            // (1b) the frontier food table: what EVERY stage resolves to on this build, so Matt can
+            //      read the whole ladder off a headless test server without killing eight bosses.
+            bool overridden = !string.IsNullOrEmpty(c._respawnFoods.Value) &&
+                              c._respawnFoods.Value.Trim().Length > 0;
+            Log.LogInfo("[CorpseRun] SelfTest: RespawnFoods override = " +
+                        (overridden ? "'" + c._respawnFoods.Value + "' - the frontier table below " +
+                                      "is IGNORED at every tier"
+                                    : "empty -> automatic by frontier; WorldTier is currently " +
+                                      Frontier.Describe()));
+            for (int t = 0; t < StageBiomes.Length; t++)
             {
-                string nm = raw.Trim();
-                if (nm.Length == 0) continue;
-                var p = odb.GetItemPrefab(nm);
-                var sh = p != null ? p.GetComponent<ItemDrop>() : null;
-                Log.LogInfo("[CorpseRun] SelfTest: default RespawnFoods entry '" + nm + "' -> " +
-                            (sh != null && sh.m_itemData != null && sh.m_itemData.m_shared != null
-                                ? "PRESENT stamina=" + sh.m_itemData.m_shared.m_foodStamina +
-                                  " health=" + sh.m_itemData.m_shared.m_food +
-                                  " burn=" + sh.m_itemData.m_shared.m_foodBurnTime + "s  OK"
-                                : "MISSING"));
+                string stage;
+                var got = ResolveForTier(t, odb, out stage);
+                var cfg = (_stageFoods != null && t < _stageFoods.Length) ? _stageFoods[t] : null;
+                Log.LogInfo("[CorpseRun] SelfTest:   tier " + t + " " + StageBiomes[t].PadRight(11) +
+                            " (" + Frontier.KeyFor(t) + ") -> " +
+                            (got.Count == 0 ? "NOTHING" : got[0] + " " + FoodStatText(odb, got[0])) +
+                            "   resolved=" + stage +
+                            "   configured=[" + (cfg == null ? "" : string.Join("|", cfg.ToArray())) + "]");
             }
+            foreach (var nm in AllConfiguredFoods())
+                if (odb.GetItemPrefab(nm) == null)
+                    Log.LogError("[CorpseRun] SelfTest: RespawnFoodsByFrontier names '" + nm +
+                                 "' but this game build has no such item prefab");
+            if (overridden)
+                foreach (var raw in c._respawnFoods.Value.Split(new[] { ',', ';' },
+                                                                StringSplitOptions.RemoveEmptyEntries))
+                {
+                    string nm = raw.Trim();
+                    if (nm.Length == 0) continue;
+                    Log.LogInfo("[CorpseRun] SelfTest: RespawnFoods override entry '" + nm + "' -> " +
+                                (odb.GetItemPrefab(nm) != null ? "PRESENT " + FoodStatText(odb, nm) + "  OK"
+                                                               : "MISSING"));
+                }
 
             // (2) the vanilla status effects we lean on.
             DumpVanillaSe(odb, "Rested");
@@ -1711,6 +1989,33 @@ namespace NoVikingLeftBehind
                   "(15) 'nvlb.grave.clear all' empties this world only - other worlds keep theirs");
 
             Log.LogInfo("[CorpseRun] SelfTest: grave record - " + pass + " passed, " + fail + " FAILED");
+        }
+
+        /// <summary>"(sta 45 hp 30 for 1800s)" straight off the prefab, for the self test.</summary>
+        private static string FoodStatText(ObjectDB odb, string prefabName)
+        {
+            var p = odb != null ? odb.GetItemPrefab(prefabName) : null;
+            var drop = p != null ? p.GetComponent<ItemDrop>() : null;
+            if (drop == null || drop.m_itemData == null || drop.m_itemData.m_shared == null)
+                return "(MISSING)";
+            var sh = drop.m_itemData.m_shared;
+            return "(sta " + sh.m_foodStamina + " hp " + sh.m_food + " eitr " + sh.m_foodEitr +
+                   " for " + sh.m_foodBurnTime + "s" +
+                   (sh.m_foodStamina > sh.m_food ? ", stamina food" : ", NOT a stamina food") + ")";
+        }
+
+        /// <summary>Every distinct prefab named anywhere in the frontier table, in stage order.</summary>
+        private static List<string> AllConfiguredFoods()
+        {
+            var all = new List<string>();
+            if (_stageFoods == null) return all;
+            for (int t = 0; t < _stageFoods.Length; t++)
+            {
+                var list = _stageFoods[t];
+                if (list == null) continue;
+                foreach (var nm in list) if (!all.Contains(nm)) all.Add(nm);
+            }
+            return all;
         }
 
         private static void DumpVanillaSe(ObjectDB odb, string name)

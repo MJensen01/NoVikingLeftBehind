@@ -65,7 +65,7 @@ namespace NoVikingLeftBehind
             _perHitTaken = BindSynced("SecondsPerHitTaken", 3f,
                 "Seconds taken off your power cooldowns for every hit you take.",
                 Opt.N("Cooldown seconds removed for every hit you take", 0, 20, 0.1));
-            _maxPerSecond = BindSynced("MaxPerSecond", 10f,
+            _maxPerSecond = BindSynced("MaxPerSecond", 5f,
                 "Hard cap on how many cooldown seconds one real second of combat can remove. " +
                 "Stops multi-hit AoE and damage-over-time from emptying a cooldown instantly.",
                 Opt.N("Highest cooldown reduction allowed per real second", 0, 60, 1));

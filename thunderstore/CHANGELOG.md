@@ -1,6 +1,26 @@
 
 # Changelog — NoVikingLeftBehind
 
+## Unreleased — install-and-forget defaults + frontier-aware respawn food
+
+Tuning pass on the shipped defaults for the returning-veteran audience (a full audit of all 276 settings is in the
+repo under `research/`); existing servers keep the values already written in their cfg, only fresh installs see these.
+* **CorpseRun** — `RespawnFoods` no longer conjures a Plains loaf on a day-one death. Its default is now empty =
+  **automatic by frontier**: the new `RespawnFoodsByFrontier` table grants the best stamina food craftable at the stage the
+  world has reached (Meadows Honey → Black Forest Carrot soup → Swamp Turnip stew → Mountain Eyescream → Plains Blood
+  pudding → Mistlands Fish 'n' bread → Ashlands Roasted crust pie → Deep North Oatmeal with lingonberry jam), read from the
+  1.0.7 game data. Missing prefabs are skipped, a missing stage falls back one stage, last resort Cooked meat. A non-empty
+  `RespawnFoods` is an admin override and behaves exactly as before. `nvlb.status` shows the resolved food; `SelfTest`
+  prints every stage with that build's own numbers.
+* **Discount** — `StationMultipliers` default is now empty (it shipped CookingAdditions' pot at 0.75; the format and example
+  are in the description).
+* **Vanguard** — `RequireBehindFrontier` now defaults on: the aura never applies at the frontier.
+* **Recharge** — `MaxPerSecond` 10 → 5.
+* **Builders** — `Materials` iron yard multiplier 0.10 → 0.5 (the Framing rule already prices beams 1-then-0).
+* **Regrowth** — `RegrowDays` 7 → 14; the description and README now say `[Regrowth] Enabled=false` is the full off switch.
+* README: actively-maintained note, who-it's-for, authorship; settings count corrected (276); "replaces six mods" made honest
+  (four mods plus their two libraries); module count 38.
+
 ## 0.10.0 (2026-09-09) — BuildersGuild: cheaper building at the base (38th module)
 
 New module **BuildersGuild** `[Builders]` — build big at your base without turning costs off. Three factors, all live-editable,

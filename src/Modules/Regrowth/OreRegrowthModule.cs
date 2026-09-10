@@ -137,8 +137,9 @@ namespace NoVikingLeftBehind
                         new PickerField("Tier", 0, 7, 1, true))
                         .Optional().ThenPrefab("Respawns as")));
 
-            _regrowDays = BindSynced("RegrowDays", 7,
-                "In-game days a mined-out node stays gone before it may regrow.",
+            _regrowDays = BindSynced("RegrowDays", 14,
+                "In-game days a mined-out node stays gone before it may regrow. To turn ore " +
+                "regrowth off entirely, set [Regrowth] Enabled=false rather than raising this.",
                 Opt.N("Days before a mined ore node comes back", 0, 60));
 
             _checkIntervalSec = BindSynced("CheckIntervalSec", 60f,

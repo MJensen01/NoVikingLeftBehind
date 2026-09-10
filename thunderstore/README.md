@@ -1,13 +1,24 @@
 # NoVikingLeftBehind — the ultimate Valheim quality-of-life mod!
 
-**One install. Thirty-six modules. Zero arguments about config.** NoVikingLeftBehind is the
+> **Actively maintained for Valheim 1.0.** Rebuilt for 1.0.7 on launch day and kept current as patches land;
+> version 1.x of the mod is in the works. Bugs and ideas: [GitHub issues](https://github.com/MJensen01/NoVikingLeftBehind/issues).
+>
+> **Who it's for:** Vikings coming back to Valheim who already put in their hundreds of hours and want a more
+> streamlined run this time, without cheating the game. Nothing here hands you gear or skips a boss; it removes
+> the busywork between you and the game you already know.
+>
+> Designed and thought up by **Nosferatu** from real pain points hit in-game with a co-op crew.
+> Coded using Claude, tested by humans.
+
+**One install. Thirty-eight modules. Zero arguments about config.** NoVikingLeftBehind is the
 all-in-one quality-of-life mod for co-op Valheim: extra inventory slots, one-key loadouts, fist
 weapons with a shield, crafting straight from your chests, food that never decays, a compass back
 to your corpse, dual guardian powers, ore that grows back, portals that carry your metal, a
 longship that points closer into the wind when your crew is aboard, tools that tear through
 material they outclass, a workbench whose reach grows with your settlement — and a
 catch-up system that keeps the whole crew playing together even when half of them only get online
-on weekends. It replaces six other mods and plays nicely with the content mods you already run.
+on weekends. It replaces four other mods (plus two of their library dependencies) and plays
+nicely with the content mods you already run.
 
 Every number below is a server setting, and every one of them can be changed **while the server is
 running** — save the cfg file and it applies within a second, no restart, no client re-download.
@@ -40,14 +51,15 @@ all. The mod never makes the leaders' game easier; it only softens the trail beh
 - **TrailingTierDiscount** — that iron cuirass costs half the ore it used to, the moment iron
   stops being your group's edge. It can also re-price everything made at one named crafting
   station, whatever its tier — handy when another mod's own cost settings refuse to stick.
-  `Tune it:` `[Discount] CostMultiplier=0.5`, `ExtraPerTierBehind=0.0`, `MinAmount=1`, `StationMultipliers="BCA_CookingPot:0.75"`
+  `Tune it:` `[Discount] CostMultiplier=0.5`, `ExtraPerTierBehind=0.0`, `MinAmount=1`, `StationMultipliers=""` (e.g. `"BCA_CookingPot:0.75"` for another mod's station)
 - **RichSmelting** — drop copper in a behind-the-frontier smelter and watch it spit out twice the
   bars per ore; craft a bronze recipe and get double the yield per craft. `Tune it:` `[Smelting] OutputMultiplier=2`, `RecipeYieldMultiplier=2`
 - **FastMining** — a behind-the-frontier vein melts under your pickaxe instead of eating your
   stamina bar. `Tune it:` `[Mining] SpeedMultiplier=3.0`, `DropMultiplier=1.0`, `IgnoreToolTier=false`, `OreNodes="rock4_copper:1,rock4_copper_frac:1,MineRock_Tin:1,silvervein:3,silvervein_frac:3,MineRock_Obsidian:3,MineRock_Meteorite:4"`
 - **OreRegrowth** — that copper vein your group stripped bare a month ago is standing again next
   time someone new needs it, quietly regrown while nobody was near — and only once the whole vein
-  is gone, never while a half-mined chunk of it is still standing. `Tune it:` `[Regrowth] RegrowDays=7`, `CheckIntervalSec=60`, `MinPlayerDistance=64m`, `MaxPerTick=5`, `Prefabs="rock4_copper_frac:1:rock4_copper,silvervein_frac:3:silvervein,MineRock_Tin:1,MineRock_Obsidian:3,MineRock_Meteorite:4"`
+  is gone, never while a half-mined chunk of it is still standing. Set `[Regrowth] Enabled=false`
+  to turn ore regrowth off entirely. `Tune it:` `[Regrowth] RegrowDays=14`, `CheckIntervalSec=60`, `MinPlayerDistance=64m`, `MaxPerTick=5`, `Prefabs="rock4_copper_frac:1:rock4_copper,silvervein_frac:3:silvervein,MineRock_Tin:1,MineRock_Obsidian:3,MineRock_Meteorite:4"`
 - **TraderStock** — Haldor has bronze and iron bars on his shelf now, not just the trinkets he's
   always sold, and only once your group has actually earned the right (boss-key gated). `Tune it:` `[Trader] Items="Bronze:5:60,Iron:5:80,Silver:5:120,BlackMetal:5:150"`, `TraderNames="Haldor"`
 - **PortalTrail** — that stack of iron you'd normally have to lug home on foot? Toss it through
@@ -58,7 +70,7 @@ all. The mod never makes the leaders' game easier; it only softens the trail beh
 - **GroupSkillCatchup** — your one-hand sword skill climbs noticeably faster while it trails the
   group's best swordsman — and stops mattering once you catch up. `Tune it:` `[SkillCatchup] Bonus=1.0`, `MaxFactor=3.0`, `WindowDays=14`
 - **VanguardShadow** — stand near your better-geared friend and feel it: hits land softer, XP
-  ticks up faster, stamina comes back quicker — the moment you drift out of range, it's gone. `Tune it:` `[Vanguard] Radius=20`, `TierGap=1`, `DamageReduction=0.25`, `XpBonus=0.5`, `StaminaRegen=0.2`, `RequireBehindFrontier=false`
+  ticks up faster, stamina comes back quicker — the moment you drift out of range, it's gone. `Tune it:` `[Vanguard] Radius=20`, `TierGap=1`, `DamageReduction=0.25`, `XpBonus=0.5`, `StaminaRegen=0.2`, `RequireBehindFrontier=true`
 
 ### Combat & powers
 
@@ -77,7 +89,7 @@ all. The mod never makes the leaders' game easier; it only softens the trail beh
   wherever you like with `HudOffsetX`/`HudOffsetY`. `Tune it:` local `[Powers] RoundIcons=true`, `CooldownRing=true`, `RingThickness=4`, `RingColor="E6C88AD9"`, `RingTrackColor="00000066"`, `HudOffsetX=84`, `HudOffsetY=0`
 - **CombatRecharge** — every hit you land or take visibly chips seconds off your power's
   cooldown bar, so a hard fight brings your power back around, not the clock. Watch the charge
-  ring on the icon jump forward with each hit. `Tune it:` `[Recharge] SecondsPerHitDealt=2`, `SecondsPerHitTaken=3`, `MaxPerSecond=10`, `AffectAllSlots=true`
+  ring on the icon jump forward with each hit. `Tune it:` `[Recharge] SecondsPerHitDealt=2`, `SecondsPerHitTaken=3`, `MaxPerSecond=5`, `AffectAllSlots=true`
 - **FistsAndShields** — put the Flesh Rippers (or Hugo's bronze knuckles) in one hand and a
   shield in the other. Vanilla calls every fist weapon two-handed, so equipping one drops your
   shield — even though bare fists and a shield have always worked fine together. Now they don't
@@ -146,7 +158,7 @@ all. The mod never makes the leaders' game easier; it only softens the trail beh
   each repeat shaves another 5% off, up to 25%, until you switch piece or stop for twenty seconds.
   Each piece remembers what it actually cost, so deconstructing gives back exactly that and never
   more. The hammer tells you why the number changed. Crafting recipes are never touched — the iron
-  you save goes into gear. `Tune it:` `[Builders] YardRadius=80`, `Materials="Wood:0.5,Stone:0.5,Iron:0.10,..."`, `Stations="piece_workbench:Wood|RoundLog|FineWood,forge:Iron|Bronze|Copper,..."`, `StructuralFirstCost=1`, `StructuralAttachedCost=0`, `MinAmounts=""`, `SkillMaxDiscount=0.30`, `RhythmPerRepeat=0.05`, `RhythmMax=0.25`
+  you save goes into gear. `Tune it:` `[Builders] YardRadius=80`, `Materials="Wood:0.5,Stone:0.5,Iron:0.5,..."`, `Stations="piece_workbench:Wood|RoundLog|FineWood,forge:Iron|Bronze|Copper,..."`, `StructuralFirstCost=1`, `StructuralAttachedCost=0`, `MinAmounts=""`, `SkillMaxDiscount=0.30`, `RhythmPerRepeat=0.05`, `RhythmMax=0.25`
 
 ### Survival & world
 
@@ -158,7 +170,15 @@ all. The mod never makes the leaders' game easier; it only softens the trail beh
   your grave so you're never guessing; you respawn with a meal already eaten and Rested already
   running; **Grave Pull** boosts your stamina regen the farther you are from your loot, easing off
   as you close in; and vanilla's own Corpse Run buff scales up the farther your grave was from
-  home, so a death way out in the mountains actually helps on the long walk back. `Tune it:` `[CorpseRun] CompassEnabled=true`, `RespawnRestedEnabled=true (RestedMinutes=10)`, `RespawnFoodEnabled=true (RespawnFoods="Bread")`, `PullEnabled=true (PullMinDistance=50m, PullFullDistance=1000m)`, `ScaledEnabled=true (ScaledDurationPer100m=0.2)`, local `HintAlpha=0.55`, `HintScale=0.8`
+  home, so a death way out in the mountains actually helps on the long walk back. `Tune it:` `[CorpseRun] CompassEnabled=true`, `RespawnRestedEnabled=true (RestedMinutes=10)`, `RespawnFoodEnabled=true (RespawnFoods="" = automatic, RespawnFoodsByFrontier=the per-biome table, RespawnFoodCount=1)`, `PullEnabled=true (PullMinDistance=50m, PullFullDistance=1000m)`, `ScaledEnabled=true (ScaledDurationPer100m=0.2)`, local `HintAlpha=0.55`, `HintScale=0.8`
+  The meal you wake up with **matches how far the world has got**, rather than conjuring a Plains
+  loaf for a day-one Meadows death. It is always the best *stamina* food you could actually have
+  cooked by then: honey with no boss down, carrot soup once Eikthyr is dead, turnip stew after the
+  Elder, eyescream after Bonemass, blood pudding after Moder, fish 'n' bread after Yagluth, roasted
+  crust pie after the Queen and Deep North oatmeal after Fader. Every stage is a plain setting you
+  can edit (`RespawnFoodsByFrontier`, `Biome:Prefab|Prefab` — the later entries are fallbacks), and
+  anything missing from your game build is skipped rather than failing. Want one fixed food for
+  everyone instead? Put it in `RespawnFoods` and that wins at every tier.
   The grave marker is an off-screen waypoint: it sits on your corpse while the corpse is on
   screen and slides to the edge of the screen in its direction when it is not, so it only
   points dead ahead when you are actually walking at it. Hold **Delete** for a second and a
@@ -189,7 +209,7 @@ Open **Settings** — from the pause menu in game, or from the main menu — and
 **NoVikingLeftBehind** tab next to Gameplay, Audio and the rest. Everything below is in it: modules
 down the left, grouped by theme with an on/off switch each; the selected module's settings down the
 right, one row apiece with a plain one-line hint under the name and the full explanation on hover.
-A search box at the top finds any of the 235 settings by name, key, hint or description. Section headings
+A search box at the top finds any of the 276 settings by name, key, hint or description. Section headings
 are buttons — click one to jump the list to it.
 
 **Lists are picked, not typed.** Settings like `[Mining] OreNodes` are a list of things in the
@@ -247,7 +267,7 @@ A real excerpt of the cfg:
 CostMultiplier = 0.5
 
 [Regrowth]
-RegrowDays = 7
+RegrowDays = 14
 
 [Slots]
 FoodSlots = 3
@@ -270,7 +290,8 @@ server's console otherwise refuses; it is off by default, so nobody can hand the
 **Players** — install via r2modman or the in-game Thunderstore mod manager (Online tab): search
 **NoVikingLeftBehind** under the Valheim community and install it into your profile. First,
 remove any of the mods it replaces from that profile: `SkillGainModifier`, `SmartSkills`,
-`AzuCraftyBoxes`, `ExtraSlots`, `ConditionalConfigSync`, `YamlDotNet`. Join the server — if
+`AzuCraftyBoxes`, `ExtraSlots` — plus two of their library dependencies that nothing else needs
+once they're gone, `ConditionalConfigSync` and `YamlDotNet`. Join the server — if
 `EnforceClientMod` is on, r2modman keeps you version-matched automatically.
 
 **Server admins** — unzip the whole Thunderstore package contents into

@@ -97,7 +97,7 @@ namespace NoVikingLeftBehind
         // ---- defaults (Matt's picks, docs/BUILD-COSTS-PLAN.md) ------------------------------
 
         internal const string DefaultMaterials =
-            "Wood:0.5,RoundLog:0.5,FineWood:0.5,Stone:0.5,Iron:0.10,Bronze:0.5,Copper:0.5,BlackMetal:0.5";
+            "Wood:0.5,RoundLog:0.5,FineWood:0.5,Stone:0.5,Iron:0.5,Bronze:0.5,Copper:0.5,BlackMetal:0.5";
 
         internal const string DefaultStations =
             "piece_workbench:Wood|RoundLog|FineWood,piece_stonecutter:Stone," +

@@ -58,8 +58,8 @@ namespace NoVikingLeftBehind
     /// Since 0.9.3 [Builders] BuildersGuild plugs into the same composition twice over, and this is
     /// the only place in the mod where a build piece's cost is PER-REQUIREMENT rather than one
     /// factor for the whole piece:
-    ///   - a per-material YARD multiplier (wood is half price near a workbench, iron a tenth near
-    ///     a forge), composed into the same single rounding, with an optional per-material floor
+    ///   - a per-material YARD multiplier (wood and iron both half price near their own station),
+    ///     composed into the same single rounding, with an optional per-material floor
     ///     that may be 0 - a requirement that rounds to 0 disappears from the piece, which vanilla
     ///     handles cleanly at all four call sites (SetupRequirement hides the row, HaveRequirements
     ///     skips m_amount &lt;= 0, ConsumeResources skips num &lt;= 0, DropResources skips dropCount
@@ -246,13 +246,15 @@ namespace NoVikingLeftBehind
                 "Comma-separated StationPrefabName:multiplier pairs. Every recipe crafted at a " +
                 "listed station costs that fraction of its normal ingredients, at every quality " +
                 "level, whatever its tier - use it to re-price another mod's recipes when that " +
-                "mod's own cost settings do not stick (CookingAdditions rewrites its \"Crafting " +
-                "Costs\" back to defaults on every server boot, which is why BCA_CookingPot is " +
-                "the default entry). The name is the STATION PREFAB name, not its displayed " +
-                "name. Recipes with no crafting station, and build pieces, are never matched. " +
-                "Multipliers are clamped to 0.01..1: this module never makes anything more " +
-                "expensive. Composes with the tier discount above by multiplication, and the " +
-                "result still respects MinAmount. Empty = off.",
+                "mod's own cost settings do not stick (e.g. CookingAdditions rewrites its " +
+                "\"Crafting Costs\" back to defaults on every server boot). Format: " +
+                "StationPrefabName:multiplier, e.g. \"BCA_CookingPot:0.75\" for 3/4 price at " +
+                "CookingAdditions' cooking pot. The name is the STATION PREFAB name, not its " +
+                "displayed name. Recipes with no crafting station, and build pieces, are never " +
+                "matched. Multipliers are clamped to 0.01..1: this module never makes anything " +
+                "more expensive. Composes with the tier discount above by multiplication, and " +
+                "the result still respects MinAmount. Empty = off (the default - this only does " +
+                "something if you also run the other mod).",
                 Opt.T("Extra per-station cost discounts, e.g. for another mod's recipes")
                     .Pick(new PickerSpec(PickerSource.Stations,
                         new PickerField("Multiplier", 0.01, 1.0, 0.75, false))));
@@ -260,8 +262,9 @@ namespace NoVikingLeftBehind
             ParseStations();
         }
 
-        /// <summary>CookingAdditions' custom cooking pot at 3/4 price - see StationMultipliers.</summary>
-        internal const string DefaultStationMultipliers = "BCA_CookingPot:0.75";
+        /// <summary>Off by default - a per-station discount only makes sense if you know which
+        /// other mod's station you are re-pricing. See StationMultipliers.</summary>
+        internal const string DefaultStationMultipliers = "";
 
         protected override void ApplyPatches()
         {

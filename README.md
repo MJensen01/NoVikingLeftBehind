@@ -1,5 +1,15 @@
 # NoVikingLeftBehind — the ultimate Valheim quality-of-life mod
 
+> **Actively maintained for Valheim 1.0.** Rebuilt for 1.0.7 on launch day and kept current as patches land;
+> version 1.x of the mod is in the works. Bugs and ideas: [GitHub issues](https://github.com/MJensen01/NoVikingLeftBehind/issues).
+>
+> **Who it's for:** Vikings coming back to Valheim who already put in their hundreds of hours and want a more
+> streamlined run this time, without cheating the game. Nothing here hands you gear or skips a boss; it removes
+> the busywork between you and the game you already know.
+>
+> Designed and thought up by **Nosferatu** from real pain points hit in-game with a co-op crew.
+> Coded using Claude, tested by humans.
+
 A BepInEx 5 mod for Valheim 1.0, built and maintained for a small dedicated-server group
 and released here for anyone to use. MIT licensed.
 
@@ -51,7 +61,8 @@ easier — the newest tier is never touched.
 - **FastMining** `[Mining]` — behind-the-frontier ore mines faster, optionally ignores the
   tool-tier gate (`SpeedMultiplier=3.0`, `DropMultiplier=1.0`, `IgnoreToolTier=false`).
 - **OreRegrowth** `[Regrowth]` — mined-out nodes behind the frontier respawn after a cooldown
-  when nobody's nearby (`RegrowDays=7`, `MinPlayerDistance=64m`, `MaxPerTick=5`).
+  when nobody's nearby (`RegrowDays=14`, `MinPlayerDistance=64m`, `MaxPerTick=5`). Set
+  `[Regrowth] Enabled=false` to turn ore regrowth off entirely.
 - **TraderStock** `[Trader]` — Haldor sells bars of behind-the-frontier metals, boss-key gated
   (`Items="Bronze:5:60,Iron:5:80,Silver:5:120,BlackMetal:5:150"`).
 - **PortalTrail** `[Portals]` — normally non-teleportable materials behind the frontier go
@@ -73,7 +84,7 @@ easier — the newest tier is never touched.
   (local `RoundIcons=true`, `CooldownRing=true`, `RingThickness=4`, `RingColor="E6C88AD9"`,
   `RingTrackColor="00000066"`).
 - **CombatRecharge** `[Recharge]` — dealing/taking damage shaves seconds off power cooldowns,
-  rate-capped (`SecondsPerHitDealt=2`, `SecondsPerHitTaken=3`, `MaxPerSecond=10`); each hit visibly
+  rate-capped (`SecondsPerHitDealt=2`, `SecondsPerHitTaken=3`, `MaxPerSecond=5`); each hit visibly
   jumps the charge ring forward.
 - **FistsAndShields** `[Fists]` — fist weapons stop being two-handed, so Flesh Rippers or Hugo's
   Armory knuckles go in one hand and a shield in the other (`ExtraPrefabs=""`,
@@ -131,7 +142,7 @@ easier — the newest tier is never touched.
 - **BuildersGuild** `[Builders]` — cheap building at your base. **The yard**: each material costs
   its `Materials` fraction of vanilla while its own home station is within `YardRadius` (`80` m) —
   wood/core wood/fine wood at a workbench `0.5`, stone at a stonecutter `0.5`, iron at a forge
-  `0.10`, bronze/copper `0.5`, black metal at a black forge `0.5`; outside every yard, vanilla.
+  `0.5`, bronze/copper `0.5`, black metal at a black forge `0.5`; outside every yard, vanilla.
   **The framing rule**: every beam and pole (auto-discovered from the hammer's piece table) costs
   `StructuralFirstCost` (`1`) of each material free-standing and `StructuralAttachedCost` (`0`)
   when snapped onto another beam — so a 5-high iron support tower is 1 iron + 1 wood, and framing
@@ -154,10 +165,13 @@ easier — the newest tier is never touched.
   linearly (`KeepFraction=1.0`, `HidePulse=true`).
 - **LongFires** `[Fires]` — fireplace fuel and hand torches last much longer
   (`FuelDurationMultiplier=5`, `HandTorchDurabilityMultiplier=5`).
-- **CorpseRunPlus** `[CorpseRun]` — grave compass, respawn fed (Bread) + Rested
+- **CorpseRunPlus** `[CorpseRun]` — grave compass, respawn fed + Rested
   (`RestedMinutes=10`), Grave Pull stamina boost that fades as you near your grave
   (`PullMinDistance=50m`, `PullFullDistance=1000m`), and the vanilla Corpse Run buff scaled by
-  distance grave-to-home (`ScaledDurationPer100m=0.2`).
+  distance grave-to-home (`ScaledDurationPer100m=0.2`). The respawn meal follows the frontier
+  (`RespawnFoodsByFrontier`): honey in a boss-free Meadows world, carrot soup after Eikthyr, turnip
+  stew after the Elder, up to Deep North oatmeal after Fader. `RespawnFoods` is empty by default and
+  is the admin override that pins one food at every tier.
 
 ### On the water
 
@@ -186,7 +200,7 @@ easier — the newest tier is never touched.
 ### In-game settings menu
 
 `SettingsMenu` `[SettingsMenu]` adds a **NoVikingLeftBehind** tab to Valheim's own Settings screen —
-from the pause menu in game and from the main menu — listing all 235 settings: modules by theme down
+from the pause menu in game and from the main menu — listing all 276 settings: modules by theme down
 the left with their `Enabled` toggles, the selected module's rows down the right with a one-line
 hint under each name, the full description on hover, a reset-to-default button, and a search box
 across name, key, hint and description.
@@ -203,7 +217,7 @@ mod ships no UI assets.
 
 ## Mods this replaces
 
-Uninstall these before installing NoVikingLeftBehind — same ground, one DLL instead of six:
+Uninstall these before installing NoVikingLeftBehind — same ground, one DLL instead of four mods and their two libraries:
 [SkillGainModifier](https://valheim.thunderstore.io/package/JuJuz1/SkillGainModifier/) (`ServerKeys`),
 [SmartSkills](https://valheim.thunderstore.io/package/Smoothbrain/SmartSkills/) (`ServerKeys`/`GroupSkillCatchup`),
 [AzuCraftyBoxes](https://valheim.thunderstore.io/package/Azumatt/AzuCraftyBoxes/) (`CraftFromChests`),

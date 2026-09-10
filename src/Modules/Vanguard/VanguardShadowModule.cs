@@ -101,7 +101,7 @@ namespace NoVikingLeftBehind
             _staminaRegen = BindSynced("StaminaRegen", 0.2f,
                 "Extra stamina regeneration while the buff is up (0.2 = +20%). 0 disables it.",
                 Opt.N("Extra stamina regeneration while the buff is active", 0, 2, 0.05));
-            _requireBehindFrontier = BindSynced("RequireBehindFrontier", false,
+            _requireBehindFrontier = BindSynced("RequireBehindFrontier", true,
                 "Also require the player's own gear tier to be behind the world's frontier " +
                 "([Frontier] WorldTier minus TiersBehind). False = proximity and the tier gap " +
                 "are the only conditions.",
