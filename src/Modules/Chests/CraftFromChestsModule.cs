@@ -72,6 +72,9 @@ namespace NoVikingLeftBehind
         private static ConfigEntry<string> _excludedContainers;
         private static ConfigEntry<string> _excludedItems;
         private static ConfigEntry<bool> _showNearbyCount;
+        private static ConfigEntry<bool> _diag;
+        private static string _lastDiag;
+        private static float _lastDiagAt;
         private static ConfigEntry<string> _toggleKey;
 
         /// <summary>Per-player kill switch behind ToggleKey. Never synced, never persisted.</summary>
@@ -206,6 +209,11 @@ namespace NoVikingLeftBehind
                 "Show the requirement rows in the crafting and build UI as have/needed, where " +
                 "'have' includes nearby containers, instead of just the required number.",
                 Opt.B("Show have/needed counts that include nearby containers"));
+            _diag = BindLocal("Diagnostics", false,
+                "Machine-local. Log why the crafting menu's 'can I craft this' check accepted or refused " +
+                "each recipe when it looked at nearby containers (one line per change, throttled). " +
+                "Turn on only while chasing a 'craft button is grey' report; noisy otherwise.",
+                Opt.B("Log the crafting-from-chests decisions"));
 
             _toggleKey = BindLocal("ToggleKey", "LeftAlt+O",
                 "MACHINE-LOCAL. Key combination that turns this player's own container pulling on " +
@@ -388,43 +396,74 @@ namespace NoVikingLeftBehind
 
         // ---- crafting: can I make this? -----------------------------------------------------------------
 
+        /// <summary>Diagnostics only: one line per distinct message, at most every 2 s.</summary>
+        private static void Diag(Recipe recipe, string why)
+        {
+            if (_diag == null || !_diag.Value) return;
+            string name = recipe != null && recipe.m_item != null ? recipe.m_item.name : "?";
+            string msg = "[Chests] craft check " + name + ": " + why;
+            if (msg == _lastDiag && Time.realtimeSinceStartup - _lastDiagAt < 2f) return;
+            _lastDiag = msg; _lastDiagAt = Time.realtimeSinceStartup;
+            Log.LogInfo(msg);
+        }
+
         private static void HaveRecipePost(Player __instance, Recipe recipe, bool discover,
                                            int qualityLevel, int amount, ref bool __result)
         {
-            if (__result || discover) return;
-            if (!Live() || !_pullCrafting.Value) return;
-            if (__instance != Player.m_localPlayer) return;
+            if (__result) return;
+            if (discover) return;
+            if (!Live() || !_pullCrafting.Value) { Diag(recipe, "module off or PullForCrafting=false"); return; }
+            if (__instance != Player.m_localPlayer) { Diag(recipe, "not the local player"); return; }
             if (recipe == null || recipe.m_resources == null || recipe.m_item == null) return;
 
             // "Only one ingredient" recipes pick a concrete ItemData in Player.GetFirstRequiredItem
             // and DoCrafting silently does nothing when that comes back null. Saying "yes you can"
             // here without also producing that item would give a dead craft button, so these stay
             // vanilla: they craft from the player's own inventory only.
-            if (recipe.m_requireOnlyOneIngredient) return;
+            if (recipe.m_requireOnlyOneIngredient) { Diag(recipe, "requireOnlyOneIngredient -> vanilla"); return; }
 
             try
             {
                 // Vanilla returned false; it may have been the station or the DLC, not the items.
-                if (!__instance.RequiredCraftingStation(recipe, qualityLevel, true)) return;
+                if (!__instance.RequiredCraftingStation(recipe, qualityLevel, true))
+                {
+                    var cs = __instance.GetCurrentCraftingStation();
+                    Diag(recipe, "RequiredCraftingStation=false (current station=" + (cs ? cs.m_name + " L" + cs.GetLevel() : "none") +
+                                 ", quality=" + qualityLevel + ")");
+                    return;
+                }
                 var dlc = recipe.m_item.m_itemData.m_shared.m_dlc;
-                if (dlc.Length > 0 && !DLCMan.instance.IsDLCInstalled(dlc)) return;
+                if (dlc.Length > 0 && !DLCMan.instance.IsDLCInstalled(dlc)) { Diag(recipe, "DLC missing"); return; }
 
                 var boxes = ChestSource.Nearby(__instance.transform.position);
-                if (boxes.Count == 0) return;
+                if (boxes.Count == 0) { Diag(recipe, "no containers in range"); return; }
 
+                var sb = _diag != null && _diag.Value ? new StringBuilder() : null;
                 foreach (var req in recipe.m_resources)
                 {
                     if (req == null || !req.m_resItem) continue;
                     int need = req.GetAmount(qualityLevel) * amount;
                     if (need <= 0) continue;
-                    if (Available(__instance, req, need, boxes) < need) return;
+                    int have = Available(__instance, req, need, boxes);
+                    if (sb != null) sb.Append(req.m_resItem.m_itemData.m_shared.m_name).Append(' ').Append(have).Append('/').Append(need).Append(' ');
+                    if (have < need)
+                    {
+                        Diag(recipe, "short: " + sb + "(boxes=" + boxes.Count + ", bag=" +
+                                     __instance.m_inventory.CountItems(req.m_resItem.m_itemData.m_shared.m_name) +
+                                     ", chests q-1=" + ChestSource.Count(req.m_resItem.m_itemData.m_shared.m_name, boxes) +
+                                     ", chests q1=" + ChestSource.Count(req.m_resItem.m_itemData.m_shared.m_name, boxes, 1) +
+                                     ", maxQ=" + req.m_resItem.m_itemData.m_shared.m_maxQuality + ")");
+                        return;
+                    }
                 }
 
                 __result = true;
+                Diag(recipe, "OK from containers: " + sb);
             }
             catch (Exception e)
             {
                 Log.LogWarning("[Chests] HaveRequirements(Recipe) postfix: " + e.Message);
+                Diag(recipe, "exception " + e.GetType().Name);
             }
         }
 
