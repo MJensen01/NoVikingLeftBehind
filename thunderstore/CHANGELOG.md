@@ -1,7 +1,12 @@
 
 # Changelog — NoVikingLeftBehind
 
-## 0.10.1 (unreleased)
+## 0.10.1
+
+Fixes
+* **Crafting from chests works on Valheim 1.0 again.** 1.0 added hidden "upgrader" requirements that ordinary stations skip; the craft check still counted them, so every upgradable recipe (tools, helmets, shields...) showed a grey Craft button while every visible row was satisfied. The consume step had the same gap. Building from chests was never affected.
+* **Smelter ore pulled from a chest now actually arrives.** 1.0 changed `RPC_AddOre` to take a second argument; the chest path sent only the name, so the ore left the chest and was dropped by the receiver.
+* `[Chests] Diagnostics` (local, off) logs why the craft check accepted or refused each recipe.
 
 New module **AmmoHud** `[AmmoHud]` — a quiet readout of your ammo slots in the bottom-left corner. Icon and count
 for every non-empty ammo slot, so you never have to open the bag mid-fight to find out how many arrows are left.
