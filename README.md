@@ -3,7 +3,7 @@
 A BepInEx 5 mod for Valheim 1.0, built and maintained for a small dedicated-server group
 and released here for anyone to use. MIT licensed.
 
-All-in-one, server-enforced quality-of-life and catch-up mechanics: 38 modules covering inventory,
+All-in-one, server-enforced quality-of-life and catch-up mechanics: 39 modules covering inventory,
 loadouts, combat (fists + shield), crafting from chests, building and gathering, food, corpse
 runs, guardian powers, ore regrowth, portals and a frontier-based catch-up system. One DLL, installed on the server and by
 every player. The server enforces every setting (via [ServerSync](https://github.com/blaxxun-boop/ServerSync)),
@@ -33,8 +33,8 @@ For servers held on the `default_pre1_0` branch (0.221.12) use 0.8.8.
 
 ## Config overview
 
-38 modules, each with its own `[Section] Enabled` toggle, plus `Tiers` (shared config, always on,
-no toggle of its own) — 39 rows in `docs/MODULES.md`, the full per-module table (side, section,
+39 modules, each with its own `[Section] Enabled` toggle, plus `Tiers` (shared config, always on,
+no toggle of its own) — 40 rows in `docs/MODULES.md`, the full per-module table (side, section,
 settings, defaults, hot-reload). Every gameplay number is server-synced and hot-reloads (edit the
 cfg, it applies within a second — `Enabled` toggles need a restart to turn *on*, off is instant);
 hotkeys and HUD offsets (`ExtraSlots`, `Loadouts`, `CorpseRunPlus`) are per-player, local settings.
@@ -148,6 +148,13 @@ easier — the newest tier is never touched.
   composed with the tier and settlement discounts into one rounding, so the cost shown, checked,
   consumed and refunded are the same number.
 
+- **StackInsert** `[StackInsert]` — hold **Shift** and use a smelter, blast furnace, charcoal
+  kiln, spinning wheel, windmill or eitr refinery and the whole stack goes in, ore or fuel, up to
+  what the station can hold (`Modifier="LeftShift"`, machine-local, `None` to switch it off;
+  `MaxPerPress=0` = no limit). Plain E is untouched — one item, exactly vanilla. With
+  `CraftFromChests` on, the bag is spent first and the rest comes out of the nearby containers, so
+  Shift+E fills the smelter straight from the storage wall. One message and one log line per press.
+
 ### Survival & world
 
 - **FoodNoDecay** `[Food]` — food holds its full value until it expires instead of decaying
@@ -186,7 +193,7 @@ easier — the newest tier is never touched.
 ### In-game settings menu
 
 `SettingsMenu` `[SettingsMenu]` adds a **NoVikingLeftBehind** tab to Valheim's own Settings screen —
-from the pause menu in game and from the main menu — listing all 235 settings: modules by theme down
+from the pause menu in game and from the main menu — listing all 239 settings: modules by theme down
 the left with their `Enabled` toggles, the selected module's rows down the right with a one-line
 hint under each name, the full description on hover, a reset-to-default button, and a search box
 across name, key, hint and description.
