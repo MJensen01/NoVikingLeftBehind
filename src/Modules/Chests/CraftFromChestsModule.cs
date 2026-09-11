@@ -442,6 +442,11 @@ namespace NoVikingLeftBehind
                 foreach (var req in recipe.m_resources)
                 {
                     if (req == null || !req.m_resItem) continue;
+                    if (SkipForStation(__instance, req))
+                    {
+                        if (sb != null) sb.Append("[skip upgrader ").Append(req.m_resItem.m_itemData.m_shared.m_name).Append("] ");
+                        continue;
+                    }
                     int need = req.GetAmount(qualityLevel) * amount;
                     if (need <= 0) continue;
                     int have = Available(__instance, req, need, boxes);
@@ -465,6 +470,20 @@ namespace NoVikingLeftBehind
                 Log.LogWarning("[Chests] HaveRequirements(Recipe) postfix: " + e.Message);
                 Diag(recipe, "exception " + e.GetType().Name);
             }
+        }
+
+        /// <summary>
+        /// Valheim 1.0 marks some recipe requirements as "upgrader resources" that only count at an
+        /// upgrader station (and ordinary requirements that don't count at one). Vanilla skips the
+        /// mismatched ones in HaveRequirementItems, ConsumeResources and the requirement rows; this
+        /// is the same test. Without it the craft check demanded a hidden item nobody carries
+        /// (grey Craft button with every visible row satisfied) and the consume postfix pulled it
+        /// out of the chests.
+        /// </summary>
+        private static bool SkipForStation(Player p, Piece.Requirement r)
+        {
+            var cs = p.GetCurrentCraftingStation();
+            return (cs != null && cs.m_upgrader != r.m_upgraderResource) || (cs == null && r.m_upgraderResource);
         }
 
         /// <summary>
@@ -578,6 +597,7 @@ namespace NoVikingLeftBehind
                 {
                     var r = requirements[i];
                     if (r == null || !r.m_resItem) continue;
+                    if (SkipForStation(__instance, r)) continue;
 
                     int need = r.GetAmount(qualityLevel) * multiplier;
                     if (need <= 0) continue;
