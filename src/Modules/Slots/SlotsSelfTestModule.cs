@@ -88,6 +88,7 @@ namespace NoVikingLeftBehind
                 TestStackAllSkipsExtraSlots();
                 TestMigrationRescue();
                 TestLoadoutRoundTrip();
+                TestAmmoHudEnumeration();
             }
             catch (Exception e) { Log.LogError("[SlotsSelfTest] threw: " + e); _fail++; }
             Log.LogInfo("[SlotsSelfTest] --- end --- " + _pass + " passed, " + _fail + " FAILED");
@@ -832,6 +833,58 @@ namespace NoVikingLeftBehind
                   "empty off-hand round trip: '" + s2 + "'");
             Check(LoadoutsModule.Decode("garbage") == null, "a corrupt loadout string decodes to null, not an exception");
             Check(LoadoutsModule.Decode(null) == null, "a missing loadout string decodes to null");
+        }
+
+        // ---- test 4: the ammo readout's slot enumeration -------------------------------------------
+
+        /// <summary>
+        /// AmmoHud is a client-only HUD, but the question it actually asks - "which ammo slots hold
+        /// something, in slot order" - is pure: an Inventory and SlotLayout, both of which exist on
+        /// a dedicated server. <see cref="AmmoHudView.Collect"/> is that question and nothing else,
+        /// so it can be proved here with no Hud, no HotkeyBar and no player.
+        /// </summary>
+        private static void TestAmmoHudEnumeration()
+        {
+            if (ObjectDB.instance == null) { Log.LogWarning("[SlotsSelfTest] ObjectDB not ready - test 4 skipped"); return; }
+            if (SlotLayout.AmmoCount < 2)
+            {
+                Log.LogWarning("[SlotsSelfTest] [Slots] AmmoSlots = " + SlotLayout.AmmoCount +
+                               " - test 4 needs at least 2, skipped");
+                return;
+            }
+
+            var inv = new Inventory("nvlb-ammohud-selftest", null, SlotLayout.VanillaWidth, SlotLayout.VanillaHeight);
+            SlotStore.SetHeight(inv, SlotLayout.TotalHeight);
+            var found = new ItemDrop.ItemData[SlotLayout.AmmoCount];
+
+            Check(AmmoHudView.Collect(inv, found) == 0, "empty ammo slots enumerate as 0 filled");
+            Check(AmmoHudView.Collect(null, found) == 0, "a null inventory enumerates as 0 filled, not an exception");
+
+            // Second slot only, so the test would fail if Collect ever compacted the list instead of
+            // answering per slot - the tiles have to line up with the slots, not with each other.
+            var slot2 = SlotLayout.ByKey("ammo2");
+            var arrows = Make("ArrowWood", 37);
+            if (slot2 == null || arrows == null)
+            {
+                Log.LogWarning("[SlotsSelfTest] no ammo2 slot or no ArrowWood prefab - test 4 skipped");
+                return;
+            }
+            Check(SlotLayout.Accepts(slot2, arrows), "an arrow stack is accepted by the ammo2 slot");
+            Check(SlotStore.PlaceRaw(inv, arrows, slot2.Pos),
+                  "placed 37 ArrowWood into ammo2 at " + slot2.Pos.x + "," + slot2.Pos.y);
+
+            int filled = AmmoHudView.Collect(inv, found);
+            Check(filled == 1, "one filled ammo slot seen, got " + filled);
+            Check(found[0] == null, "ammo1 is still reported empty (the list is per slot, not compacted)");
+            Check(found[1] != null && ReferenceEquals(found[1], arrows) && found[1].m_stack == 37,
+                  "ammo2 reports the same 37-arrow stack that was put there");
+
+            // A buffer shorter than the layout must not run off the end of either.
+            var shortBuf = new ItemDrop.ItemData[1];
+            Check(AmmoHudView.Collect(inv, shortBuf) == 0,
+                  "a 1-entry buffer sees only ammo1 (empty) and does not overrun");
+            Check(AmmoHudView.Collect(inv, new ItemDrop.ItemData[SlotLayout.AmmoCount + 3]) == 1,
+                  "a buffer longer than the layout is padded with nulls, not read past the last slot");
         }
 
         public override string StatusDetail()
