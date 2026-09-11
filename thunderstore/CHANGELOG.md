@@ -1,6 +1,29 @@
 
 # Changelog — NoVikingLeftBehind
 
+## 0.10.1 (unreleased)
+
+New module **AmmoHud** `[AmmoHud]` — a quiet readout of your ammo slots in the bottom-left corner (39th module). Icon and count
+for every non-empty ammo slot, so you never have to open the bag mid-fight to find out how many arrows are left.
+* Ships **no art**. Each tile is a clone of Valheim's own hotbar element (`HotkeyBar.m_elementPrefab`) with its leaves found by
+  the same names vanilla uses, so it has the game's slot sprite, font, size and opacity — and keeps them through a reskin or a
+  game update. The hotbar number, the equip-queue/selection markers and the durability bar are switched off, and the tile takes
+  no clicks.
+* The quiver you have equipped is marked with vanilla's **own** equipped marker — the same one the hotbar lights up — plus a
+  small alpha lift. The count is vanilla's own `37 / 100` format.
+* **Position is measured, not guessed**: at start-up the readout measures vanilla's own bottom-left HUD widgets
+  (`Hud.m_healthPanel`, `m_foodBarRoot`, `m_gpRoot`) and sits flush with their left edge, 14 px above the highest of them — so it
+  cannot overlap the health bar, the food icons, the status effects or the minimap at any UI scale or resolution. Every widget it
+  measured, the anchor it worked out and the screen rect it landed on are written to the log once.
+* Hidden when no ammo slot holds anything, with the inventory open, on the map, in a store or menu, in a cutscene and whenever
+  the HUD is toggled off — the same gate vanilla's own hotbar uses.
+* Costs nothing per frame: the inventory is re-read only when it changes, and a quiet frame compares a handful of numbers and
+  allocates nothing at all.
+* Local `OffsetX` / `OffsetY` (px), `Scale` (0.4–2.5) and `Alpha` (0.1–1) nudge it from the in-game settings tab with no restart
+  and no rebuild; the synced `Enabled` switches it off for a whole server.
+* Every UI build step logs an `[AmmoHud]` line naming the step, so a failure says which one broke instead of just not appearing.
+  `[Slots] SelfTest` now also proves the ammo-slot enumeration headlessly.
+
 ## 0.10.0 (2026-09-09) — BuildersGuild: cheaper building at the base (38th module)
 
 New module **BuildersGuild** `[Builders]` — build big at your base without turning costs off. Three factors, all live-editable,

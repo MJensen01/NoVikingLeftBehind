@@ -3,7 +3,7 @@
 A BepInEx 5 mod for Valheim 1.0, built and maintained for a small dedicated-server group
 and released here for anyone to use. MIT licensed.
 
-All-in-one, server-enforced quality-of-life and catch-up mechanics: 38 modules covering inventory,
+All-in-one, server-enforced quality-of-life and catch-up mechanics: 39 modules covering inventory,
 loadouts, combat (fists + shield), crafting from chests, building and gathering, food, corpse
 runs, guardian powers, ore regrowth, portals and a frontier-based catch-up system. One DLL, installed on the server and by
 every player. The server enforces every setting (via [ServerSync](https://github.com/blaxxun-boop/ServerSync)),
@@ -33,11 +33,11 @@ For servers held on the `default_pre1_0` branch (0.221.12) use 0.8.8.
 
 ## Config overview
 
-38 modules, each with its own `[Section] Enabled` toggle, plus `Tiers` (shared config, always on,
-no toggle of its own) — 39 rows in `docs/MODULES.md`, the full per-module table (side, section,
+39 modules, each with its own `[Section] Enabled` toggle, plus `Tiers` (shared config, always on,
+no toggle of its own) — 40 rows in `docs/MODULES.md`, the full per-module table (side, section,
 settings, defaults, hot-reload). Every gameplay number is server-synced and hot-reloads (edit the
 cfg, it applies within a second — `Enabled` toggles need a restart to turn *on*, off is instant);
-hotkeys and HUD offsets (`ExtraSlots`, `Loadouts`, `CorpseRunPlus`) are per-player, local settings.
+hotkeys and HUD offsets (`ExtraSlots`, `AmmoHud`, `Loadouts`, `CorpseRunPlus`) are per-player, local settings.
 
 ### Catching up
 
@@ -86,6 +86,13 @@ easier — the newest tier is never touched.
   can't delete them (`QuickSlots` defaults to 0; raise it to swap the generic slots for a
   hotkeyed row instead). 3 rolling backups + `nvlb.slots.restore`; rescues items left behind by
   shudnal's ExtraSlots.
+- **AmmoHud** `[AmmoHud]` — a quiet readout of your ammo slots in the bottom-left corner:
+  icon and count per non-empty slot, with the quiver you have equipped marked the way vanilla
+  marks the equipped hotbar item. Every tile is a clone of vanilla's own hotbar element and the
+  row is anchored by measuring vanilla's own bottom-left HUD widgets, so it matches the game's
+  sprite, font, size and opacity and cannot overlap the health bar, the food icons, the status
+  effects or the minimap. Hidden with the bag open, with the HUD hidden, on the map and in a
+  cutscene. Local `OffsetX`/`OffsetY`/`Scale`/`Alpha` nudge it from the in-game settings tab.
 - **SafeSlots** `[SafeSlots]` — the safety net under ExtraSlots: your character's `.fch` is copied
   into `characters_local\nvlb-backups\` on its first login with the mod and again whenever items are
   rescued from an older extra-slots mod (local `CharacterBackup=true`, `KeepBackups=3`); one on-screen
@@ -186,7 +193,7 @@ easier — the newest tier is never touched.
 ### In-game settings menu
 
 `SettingsMenu` `[SettingsMenu]` adds a **NoVikingLeftBehind** tab to Valheim's own Settings screen —
-from the pause menu in game and from the main menu — listing all 235 settings: modules by theme down
+from the pause menu in game and from the main menu — listing all 240 settings: modules by theme down
 the left with their `Enabled` toggles, the selected module's rows down the right with a one-line
 hint under each name, the full description on hover, a reset-to-default button, and a search box
 across name, key, hint and description.
