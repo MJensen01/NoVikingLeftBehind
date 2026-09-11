@@ -3,7 +3,7 @@
 
 ## 0.10.1 (unreleased)
 
-New module **AmmoHud** `[AmmoHud]` — a quiet readout of your ammo slots in the bottom-left corner (39th module). Icon and count
+New module **AmmoHud** `[AmmoHud]` — a quiet readout of your ammo slots in the bottom-left corner. Icon and count
 for every non-empty ammo slot, so you never have to open the bag mid-fight to find out how many arrows are left.
 * Ships **no art**. Each tile is a clone of Valheim's own hotbar element (`HotkeyBar.m_elementPrefab`) with its leaves found by
   the same names vanilla uses, so it has the game's slot sprite, font, size and opacity — and keeps them through a reskin or a
@@ -23,6 +23,29 @@ for every non-empty ammo slot, so you never have to open the bag mid-fight to fi
   and no rebuild; the synced `Enabled` switches it off for a whole server.
 * Every UI build step logs an `[AmmoHud]` line naming the step, so a failure says which one broke instead of just not appearing.
   `[Slots] SelfTest` now also proves the ammo-slot enumeration headlessly.
+New module **StackInsert** `[StackInsert]` — **hold Shift and use a smelter and the whole stack goes in.** Ore or fuel, on every
+`Smelter` station: charcoal kiln, smelter, blast furnace, spinning wheel, windmill, eitr refinery. Plain E is untouched and stays
+exactly vanilla, one item and one message.
+* It inserts `min(what you carry, what the station can still hold)`, capped by `MaxPerPress` (0 = no limit, and it counts vanilla's
+  own first item, so 1 means "exactly vanilla"). The free capacity is read **once, before vanilla's insert**, and counted down
+  locally — on a client that does not own the station `GetQueueSize()`/`GetFuel()` do not move until the RPC has been round-tripped,
+  so anything that re-read them mid-burst would cheerfully overfill and the surplus would be dropped on the floor.
+* Vanilla does the first insert; we repeat its own `RemoveItem` + RPC pair for the rest, from a postfix that only runs when the
+  original said yes. Every removal from your bag is measured and an RPC is sent only for an item that really left it, so an ore can
+  never be eaten without arriving.
+* **With CraftFromChests on, it fills from the chests.** Your bag is spent first, and the shortfall comes out of nearby containers
+  through the same `ChestSource` path the rest of that module uses — same range, same exclusions, same LeaveOne rule, same
+  ownership claim — so Shift+E at the smelter empties the storage wall into it. Turn `[Chests] PullForSmelters` off (or the module
+  off) and it fills from the bag alone.
+* The ore and fuel hover text gains a `[Shift + E] Add stack` line in vanilla's own shape, with your real modifier name.
+* Settings: local `Modifier="LeftShift"` (any Unity KeyCode name, `None` to switch it off; left/right twins both count — it is not on
+  Valheim's Keyboard & Mouse page, which binds one key per action and knows nothing about a key you hold), synced `MaxPerPress=0`,
+  local `SelfTest=false` (16 checks over the capacity arithmetic at world load).
+
+* **Fixed, found while building the above: feeding a smelter from a chest ate the ore and added nothing.** Valheim 1.0 registers
+  `RPC_AddOre` as `Register<string, bool>` and vanilla sends `item.m_cheated` with it; `CraftFromChests` still sent only the prefab
+  name, so the receiving side read a bool off the end of the package and threw inside the RPC handler — the container had already
+  been debited. It now sends the second argument (`false`: nothing out of a chest is a debug-spawned item).
 
 ## 0.10.0 (2026-09-09) — BuildersGuild: cheaper building at the base (38th module)
 

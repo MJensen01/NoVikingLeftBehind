@@ -86,6 +86,16 @@ namespace NoVikingLeftBehind
         /// <summary>Parsed OvenPrefabs, case-insensitive. Rebuilt by PushSettings on every change.</summary>
         private static HashSet<string> _ovenSet = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
 
+        /// <summary>
+        /// May this module feed a smelter family station from nearby containers right now? Read by
+        /// StackInsert, which continues a Shift+E burst out of the same containers on the same
+        /// terms, so "the chests are off" is one answer in one place rather than two.
+        /// </summary>
+        internal static bool SmelterPullLive
+        {
+            get { return _pullSmelters != null && _pullSmelters.Value && Live(); }
+        }
+
         internal static bool PullCooking => _pullCooking != null && _pullCooking.Value;
         internal static bool PullOvens => _pullOvens != null && _pullOvens.Value;
         internal static HashSet<string> OvenPrefabs => _ovenSet;
@@ -696,7 +706,13 @@ namespace NoVikingLeftBehind
                     if (ChestSource.Consume(shared, 1, -1, boxes) != 1) continue;
 
                     user.Message(MessageHud.MessageType.Center, "$msg_added " + shared);
-                    nview.InvokeRPC("RPC_AddOre", prefab);
+                    // Valheim 1.0 registers this as Register<string, bool>("RPC_AddOre", ...)
+                    // (Smelter.cs:115) and vanilla sends item.m_cheated as the second argument
+                    // (Smelter.cs:225). Sending only the name leaves the receiving side reading a
+                    // bool off the end of the package, which throws INSIDE the RPC handler - so the
+                    // ore never reaches the queue while the container has already been debited.
+                    // Nothing pulled out of a chest is ever a cheated (debug-spawned) item.
+                    nview.InvokeRPC("RPC_AddOre", prefab, false);
                     __result = true;
                     return false;
                 }
