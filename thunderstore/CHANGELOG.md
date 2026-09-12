@@ -4,6 +4,23 @@
 ## 0.10.1
 
 Fixes
+* **The ammo readout is no longer a pair of bright grey blocks.** The dark, translucent look of a hotbar slot is not in
+  Valheim's sprite — it is the slot Button's colour tint. Switching that Button off (which the readout must, so it can never
+  swallow a click) runs Unity's `Selectable.InstantClearState()`, which resets the tint to **pure white**, and the copied tile
+  drew the sprite at full strength. The readout now paints its own background: a dark translucent colour under its own knob,
+  with the renderer tint pinned so the result is exactly what was asked for. The icon and the count are untouched on top.
+* **`[AmmoHud] BackgroundAlpha`** (local, 0–1, default 0.45) fades just the dark square behind the icon; 0 leaves the icon and
+  the number floating with no tile at all. **Defaults lowered to match:** `Alpha` 0.9 → **0.65** and `Scale` 1 → **0.8**, and the
+  non-equipped tile now sits at 0.7 of the equipped one rather than 0.78. A cfg still holding exactly the old default is moved
+  to the new one (and says so in the log); a value you set yourself is left alone. The build log names the background image it
+  found and the exact colour it painted.
+* **Shift+E fills a smelter or kiln to the last slot, not one short.** When `CraftFromChests` fed a press out of a container it
+  took the press over and skipped our prefix, so the free capacity was never measured and the postfix had to rebuild it from a
+  queue reading that may not have caught up yet — deliberately one slot short, which is why a 20-slot station stopped at 19.
+  Our two prefixes now register at `Priority.High` against that module's default priority, so ours always runs first and the
+  capacity is captured before any insert, on every path. The conservative fallback is gone: if something ever does get in front
+  of us we log it once and leave the press as a single item rather than risk an RPC the station would drop. The ore and fuel
+  capacity formulas are now pure functions checked against vanilla's own gates by the self-test (27 checks, was 16).
 * **Crafting from chests works on Valheim 1.0 again.** 1.0 added hidden "upgrader" requirements that ordinary stations skip; the craft check still counted them, so every upgradable recipe (tools, helmets, shields...) showed a grey Craft button while every visible row was satisfied. The consume step had the same gap. Building from chests was never affected.
 * **Smelter ore pulled from a chest now actually arrives.** 1.0 changed `RPC_AddOre` to take a second argument; the chest path sent only the name, so the ore left the chest and was dropped by the receiver.
 * `[Chests] Diagnostics` (local, off) logs why the craft check accepted or refused each recipe.
@@ -24,8 +41,9 @@ for every non-empty ammo slot, so you never have to open the bag mid-fight to fi
   the HUD is toggled off — the same gate vanilla's own hotbar uses.
 * Costs nothing per frame: the inventory is re-read only when it changes, and a quiet frame compares a handful of numbers and
   allocates nothing at all.
-* Local `OffsetX` / `OffsetY` (px), `Scale` (0.4–2.5) and `Alpha` (0.1–1) nudge it from the in-game settings tab with no restart
-  and no rebuild; the synced `Enabled` switches it off for a whole server.
+* Local `OffsetX` / `OffsetY` (px), `Scale` (0.4–2.5, default 0.8), `Alpha` (0.1–1, default 0.65) and `BackgroundAlpha`
+  (0–1, default 0.45) nudge and fade it from the in-game settings tab with no restart and no rebuild; the synced `Enabled`
+  switches it off for a whole server.
 * Every UI build step logs an `[AmmoHud]` line naming the step, so a failure says which one broke instead of just not appearing.
   `[Slots] SelfTest` now also proves the ammo-slot enumeration headlessly.
 New module **StackInsert** `[StackInsert]` — **hold Shift and use a smelter and the whole stack goes in.** Ore or fuel, on every
@@ -45,7 +63,7 @@ exactly vanilla, one item and one message.
 * The ore and fuel hover text gains a `[Shift + E] Add stack` line in vanilla's own shape, with your real modifier name.
 * Settings: local `Modifier="LeftShift"` (any Unity KeyCode name, `None` to switch it off; left/right twins both count — it is not on
   Valheim's Keyboard & Mouse page, which binds one key per action and knows nothing about a key you hold), synced `MaxPerPress=0`,
-  local `SelfTest=false` (16 checks over the capacity arithmetic at world load).
+  local `SelfTest=false` (27 checks over the capacity arithmetic at world load).
 
 * **Fixed, found while building the above: feeding a smelter from a chest ate the ore and added nothing.** Valheim 1.0 registers
   `RPC_AddOre` as `Register<string, bool>` and vanilla sends `item.m_cheated` with it; `CraftFromChests` still sent only the prefab

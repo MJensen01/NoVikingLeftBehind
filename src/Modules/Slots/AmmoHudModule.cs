@@ -31,9 +31,9 @@ namespace NoVikingLeftBehind
     ///
     /// Side is Client: a dedicated server has no Hud at all. The synced <c>[AmmoHud] Enabled</c> is
     /// still bound on the server (FeatureModule.Configure runs regardless of Side), so the readout
-    /// can be switched off server-wide for everyone; the offset, scale and opacity knobs are
-    /// <c>BindLocal</c>, so each player positions it to taste from the in-game settings tab with no
-    /// rebuild and no restart.
+    /// can be switched off server-wide for everyone; the offset, scale, opacity and background-opacity
+    /// knobs are <c>BindLocal</c>, so each player positions and fades it to taste from the in-game
+    /// settings tab with no rebuild and no restart.
     /// </summary>
     internal sealed class AmmoHudModule : FeatureModule
     {
@@ -50,6 +50,16 @@ namespace NoVikingLeftBehind
         private ConfigEntry<float> _offsetY;
         private ConfigEntry<float> _scale;
         private ConfigEntry<float> _alpha;
+        private ConfigEntry<float> _bgAlpha;
+
+        /// <summary>Alpha's default in 0.10.0 - the one value that is moved to the new default.</summary>
+        private const float OldAlphaDefault = 0.9f;
+
+        /// <summary>Scale's default in 0.10.0 - the one value that is moved to the new default.</summary>
+        private const float OldScaleDefault = 1f;
+
+        private static bool _alphaMigrationLogged;
+        private static bool _scaleMigrationLogged;
 
         // ---- config ----------------------------------------------------------------------
 
@@ -65,23 +75,68 @@ namespace NoVikingLeftBehind
                 "whatever vanilla already draws in the bottom-left corner, so it cannot overlap the " +
                 "health bar, the food icons, the status effects or the minimap. Positive moves up.",
                 Opt.N("Nudge the ammo readout up or down, in pixels", -600, 600, 1));
-            _scale = BindLocal("Scale", 1f,
+            _scale = BindLocal("Scale", 0.8f,
                 "Machine-local. Size of the ammo readout relative to the hotbar (0.4-2.5). 1 draws " +
-                "the tiles exactly the size of a hotbar slot, which is what makes it look native.",
+                "the tiles exactly the size of a hotbar slot; the default 0.8 makes them a little " +
+                "smaller than the hotbar, which is what keeps a passive readout out of the way. " +
+                "(Was 1 up to 0.10.0.)",
                 Opt.N("Size of the ammo readout, 1 matches the hotbar", 0.4, 2.5, 0.05));
-            _alpha = BindLocal("Alpha", 0.9f,
-                "Machine-local. Opacity of the ammo readout (0.1-1). The default sits it a touch " +
-                "behind the hotbar so it reads as background information; the quiver you have " +
-                "equipped is always drawn at full strength within that.",
+            _alpha = BindLocal("Alpha", 0.65f,
+                "Machine-local. Opacity of the WHOLE readout, icon and count included (0.1-1). The " +
+                "default sits it well behind the hotbar so it reads as background information; the " +
+                "quiver you have equipped is drawn at full strength within that and the others at " +
+                "0.7 of it. (Was 0.9 up to 0.10.0.)",
                 Opt.N("Opacity of the ammo readout", 0.1, 1.0, 0.05));
+            _bgAlpha = BindLocal("BackgroundAlpha", 0.45f,
+                "Machine-local. Opacity of the tile BACKGROUND only (0-1), inside the readout's own " +
+                "Alpha - so the dark square can be faded right back while the icon and the count " +
+                "stay readable on top of it. 0 draws no square at all, just the icon and the number; " +
+                "1 is a solid black tile. New in 0.10.1: before it, the copied hotbar slot lost " +
+                "Valheim's own button tint and drew as a bright, near-opaque grey block.",
+                Opt.N("Opacity of the ammo tile's dark background", 0.0, 1.0, 0.05));
+
+            MigrateAlphaDefault();
+            MigrateScaleDefault();
 
             _inst = this;
             Push();
         }
 
+        /// <summary>
+        /// 0.10.0 shipped Alpha=0.9 and Scale=1 against a tile that was accidentally drawn at full
+        /// brightness (see <see cref="AmmoHudView"/>), which made the readout a pair of bright grey
+        /// blocks. 0.10.1 fixes the tile and lowers both defaults to suit it. A cfg still holding
+        /// exactly the old default is moved to the new one; anything a player set themselves -
+        /// including a deliberate 0.9 typed after this release - is left alone, because "identical
+        /// to the old default" is the only thing we can tell apart. Same convention as
+        /// <c>LoadoutsModule.MigrateLoadout2Key</c>.
+        /// </summary>
+        private void MigrateAlphaDefault()
+        {
+            if (_alpha == null || !Mathf.Approximately(_alpha.Value, OldAlphaDefault)) return;
+            _alpha.Value = (float)_alpha.DefaultValue;
+            if (_alphaMigrationLogged) return;
+            _alphaMigrationLogged = true;
+            Log.LogWarning("[AmmoHud] Alpha was still the old default " + OldAlphaDefault +
+                           " - moved to " + _alpha.Value + " (0.10.1 tones the readout down; set it " +
+                           "back in [AmmoHud] Alpha if you want the old brightness).");
+        }
+
+        private void MigrateScaleDefault()
+        {
+            if (_scale == null || !Mathf.Approximately(_scale.Value, OldScaleDefault)) return;
+            _scale.Value = (float)_scale.DefaultValue;
+            if (_scaleMigrationLogged) return;
+            _scaleMigrationLogged = true;
+            Log.LogWarning("[AmmoHud] Scale was still the old default " + OldScaleDefault +
+                           " - moved to " + _scale.Value + " (0.10.1 shrinks the readout; set it " +
+                           "back in [AmmoHud] Scale if you want hotbar-sized tiles).");
+        }
+
         private void Push()
         {
-            AmmoHudView.Configure(new Vector2(_offsetX.Value, _offsetY.Value), _scale.Value, _alpha.Value);
+            AmmoHudView.Configure(new Vector2(_offsetX.Value, _offsetY.Value),
+                                  _scale.Value, _alpha.Value, _bgAlpha.Value);
         }
 
         public override void OnConfigChanged(ConfigEntryBase entry)
@@ -127,6 +182,7 @@ namespace NoVikingLeftBehind
                         " offset=" + _offsetX.Value.ToString("0") + "," + _offsetY.Value.ToString("0") +
                         " scale=" + _scale.Value.ToString("0.##") +
                         " alpha=" + _alpha.Value.ToString("0.##") +
+                        " backgroundAlpha=" + _bgAlpha.Value.ToString("0.##") +
                         " (the 'built N tile(s)' line follows once the HUD lays out)");
         }
 

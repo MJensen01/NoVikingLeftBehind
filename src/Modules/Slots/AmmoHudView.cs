@@ -25,6 +25,20 @@ namespace NoVikingLeftBehind
     ///   * the prefab's <c>Button</c> (HotkeyBar.cs:104) and every raycast target, so the readout
     ///     can never swallow a click meant for the world behind it.
     ///
+    /// WHY THE BACKGROUND IS PAINTED BY US (0.10.1)
+    /// --------------------------------------------
+    /// The slot's dark, translucent look is NOT in the sprite - it is the <c>Button</c>'s colour
+    /// tint, which Unity writes onto the background graphic's <c>CanvasRenderer</c>. Disabling that
+    /// Button (which we must, so the readout takes no clicks) runs
+    /// <c>Selectable.OnDisable -&gt; InstantClearState()</c>, and for a <c>ColorTint</c> transition
+    /// that resets the renderer colour to <b>pure white</b>. The clone therefore lost vanilla's
+    /// tint and drew the slot sprite at full strength: a light grey, near-opaque square, far
+    /// brighter than the hotbar it was copied from. So we stop depending on the Button's tint
+    /// altogether: the background <see cref="Image"/> is found once, its renderer tint is pinned to
+    /// white, and its own colour is set to a dark translucent one we control
+    /// (<see cref="BackgroundTint"/> at <c>[AmmoHud] BackgroundAlpha</c>). The icon and the count
+    /// are left alone, so the tile reads as a shadow with a bright icon on it.
+    ///
     /// The equipped stack is marked with vanilla's OWN marker - the <c>equiped</c> child, which is
     /// exactly what <c>HotkeyBar.UpdateIcons</c> lights up for the equipped hotbar item
     /// (<c>elementData2.m_equiped.SetActive(itemData.m_equipped)</c>, HotkeyBar.cs:150) - plus a
@@ -47,13 +61,23 @@ namespace NoVikingLeftBehind
         public static Vector2 Offset = Vector2.zero;
 
         /// <summary>Size relative to vanilla's hotbar tile. 1 = exactly the hotbar's size.</summary>
-        public static float Scale = 1f;
+        public static float Scale = 0.8f;
 
         /// <summary>Opacity of the whole readout. [AmmoHud] Alpha.</summary>
-        public static float Alpha = 0.9f;
+        public static float Alpha = 0.65f;
+
+        /// <summary>Opacity of the tile BACKGROUND only, within the readout. [AmmoHud] BackgroundAlpha.</summary>
+        public static float BackgroundAlpha = 0.45f;
 
         /// <summary>Opacity of a tile that is NOT the equipped ammo, relative to the tile itself.</summary>
-        private const float DimAlpha = 0.78f;
+        private const float DimAlpha = 0.7f;
+
+        /// <summary>
+        /// The colour the tile background is painted, before <see cref="BackgroundAlpha"/> is put in
+        /// its alpha. Not pure black: a hair of grey keeps the slot sprite's own frame just visible,
+        /// which is what makes the tile read as one of the game's own squares rather than a hole.
+        /// </summary>
+        private static readonly Color BackgroundTint = new Color(0.07f, 0.07f, 0.08f, 1f);
 
         /// <summary>Pixels kept between our row and whatever vanilla widget it sits above.</summary>
         private const float Gap = 14f;
@@ -66,6 +90,7 @@ namespace NoVikingLeftBehind
             public GameObject Go;
             public CanvasGroup Group;
             public Image Icon;
+            public Image Background;
             public TMP_Text Amount;
             public GameObject Equipped;
 
@@ -79,6 +104,7 @@ namespace NoVikingLeftBehind
             public bool ShownAmountOn;
             public float ShownAlpha = -1f;
             public bool ShownActive = true;
+            public float ShownBgAlpha = -1f;
         }
 
         private static Hud _hud;
@@ -105,11 +131,12 @@ namespace NoVikingLeftBehind
         public static void Invalidate() { _dirty = true; }
 
         /// <summary>Push the live config values. Cheap and idempotent; safe before the build.</summary>
-        public static void Configure(Vector2 offset, float scale, float alpha)
+        public static void Configure(Vector2 offset, float scale, float alpha, float backgroundAlpha)
         {
             Offset = offset;
             Scale = Mathf.Clamp(scale, 0.2f, 4f);
             Alpha = Mathf.Clamp01(alpha);
+            BackgroundAlpha = Mathf.Clamp01(backgroundAlpha);
             try { ApplyLayout(); }
             catch (Exception e) { Warn("could not apply the new offset/scale/alpha: " + e.Message); }
         }
@@ -360,6 +387,17 @@ namespace NoVikingLeftBehind
                  " offset=" + Offset.x.ToString("0") + "," + Offset.y.ToString("0") +
                  " scale=" + Scale.ToString("0.##") + " alpha=" + Alpha.ToString("0.##") +
                  "  rect " + UiKit.ScreenRect(_rootRt));
+
+            // The one line that says how dark the tiles ended up, and on which image.
+            var bg = _tiles.Length > 0 && _tiles[0] != null ? _tiles[0].Background : null;
+            var c = BackgroundColour();
+            Info("tile background: " + (bg != null ? "'" + bg.gameObject.name + "' (" +
+                    (bg.sprite != null ? bg.sprite.name : "no sprite") + ")" : "NOT FOUND") +
+                 " painted rgba(" + c.r.ToString("0.##") + "," + c.g.ToString("0.##") + "," +
+                 c.b.ToString("0.##") + "," + c.a.ToString("0.##") + ")" +
+                 " [AmmoHud] BackgroundAlpha=" + BackgroundAlpha.ToString("0.##") +
+                 ", equipped tile alpha 1, others " + DimAlpha.ToString("0.##") +
+                 ", all of it inside the readout's own alpha " + Alpha.ToString("0.##"));
             return true;
         }
 
@@ -421,14 +459,28 @@ namespace NoVikingLeftBehind
             // A readout must never take a click. The prefab is a Button (HotkeyBar.cs:104) whose
             // persistent listeners survive Instantiate, and every graphic on it is a raycast target.
             var button = go.GetComponent<Button>();
+
+            // Grab the background BEFORE the Button goes, because the Button is what points at it.
+            tile.Background = FindBackground(go, button);
+            if (tile.Background == null)
+                Warn("tile " + (index + 1) + ": no background image found on vanilla's hotbar " +
+                     "element - the tile will be drawn at whatever brightness the game's own sprite " +
+                     "has ([AmmoHud] BackgroundAlpha will do nothing)");
+
             if (button != null)
             {
                 button.onClick = new Button.ButtonClickedEvent();
                 button.interactable = false;
+                // Selectable.OnDisable -> InstantClearState() resets the target graphic's
+                // CanvasRenderer tint to WHITE for a ColorTint transition. That is what made the
+                // clone light grey where vanilla's hotbar slot is dark: the darkness lives in the
+                // Button's tint, not in the sprite. We paint the background ourselves below.
                 button.enabled = false;
             }
             foreach (var g in go.GetComponentsInChildren<Graphic>(true)) g.raycastTarget = false;
             foreach (var t in go.GetComponentsInChildren<UITooltip>(true)) UnityEngine.Object.DestroyImmediate(t);
+
+            PaintBackground(tile);
 
             tile.Group = go.GetComponent<CanvasGroup>();
             if (tile.Group == null) tile.Group = go.AddComponent<CanvasGroup>();
@@ -538,6 +590,62 @@ namespace NoVikingLeftBehind
                 _rootRt.localScale = new Vector3(Scale, Scale, 1f);
             }
             if (_rootGroup != null) _rootGroup.alpha = Alpha;
+            for (int i = 0; i < _tiles.Length; i++) PaintBackground(_tiles[i]);
+        }
+
+        // ---- the tile background -------------------------------------------------------------------
+
+        /// <summary>The colour actually written onto a tile's background image.</summary>
+        private static Color BackgroundColour()
+        {
+            return new Color(BackgroundTint.r, BackgroundTint.g, BackgroundTint.b,
+                             Mathf.Clamp01(BackgroundAlpha));
+        }
+
+        /// <summary>
+        /// Paint one tile's background, and pin its <c>CanvasRenderer</c> tint to white so the
+        /// colour we set is the colour that is drawn. See the class comment: disabling the prefab's
+        /// Button is what blew that tint out to white in the first place, and leaving it white and
+        /// doing the darkening ourselves is what makes the result independent of Unity's
+        /// Selectable state machine. No-ops when nothing changed.
+        /// </summary>
+        private static void PaintBackground(Tile tile)
+        {
+            if (tile == null || tile.Background == null) return;
+            float a = Mathf.Clamp01(BackgroundAlpha);
+            if (Mathf.Approximately(tile.ShownBgAlpha, a)) return;
+            tile.ShownBgAlpha = a;
+            tile.Background.color = BackgroundColour();
+            var cr = tile.Background.canvasRenderer;
+            if (cr != null) cr.SetColor(Color.white);
+        }
+
+        /// <summary>
+        /// The tile's background/frame graphic. It is the Button's own <c>targetGraphic</c> - the
+        /// thing Unity was tinting - which on vanilla's HotKeyElement is an <see cref="Image"/> on
+        /// the root. The two fallbacks cover a reskin that moved it: an Image on the root, then the
+        /// first Image that is not one of the leaves vanilla finds by name (HotkeyBar.cs:110-118).
+        /// </summary>
+        private static Image FindBackground(GameObject go, Button button)
+        {
+            if (button != null)
+            {
+                var target = button.targetGraphic as Image;
+                if (target != null) return target;
+            }
+            var own = go.GetComponent<Image>();
+            if (own != null) return own;
+
+            for (int i = 0; i < go.transform.childCount; i++)      // direct children only: a
+            {                                                       // durability GuiBar has Images
+                var child = go.transform.GetChild(i);               // of its own, several layers down
+                string n = child.name;
+                if (n == "icon" || n == "durability" || n == "amount" || n == "equiped" ||
+                    n == "queued" || n == "selected" || n == "binding") continue;
+                var img = child.GetComponent<Image>();
+                if (img != null) return img;
+            }
+            return null;
         }
 
         // ---- teardown --------------------------------------------------------------------------------
@@ -574,7 +682,8 @@ namespace NoVikingLeftBehind
                    " tiles=" + _tiles.Length + " showing=" + _filled +
                    " anchor=" + _anchor.x.ToString("0") + "," + _anchor.y.ToString("0") +
                    " offset=" + Offset.x.ToString("0") + "," + Offset.y.ToString("0") +
-                   " scale=" + Scale.ToString("0.##") + " alpha=" + Alpha.ToString("0.##");
+                   " scale=" + Scale.ToString("0.##") + " alpha=" + Alpha.ToString("0.##") +
+                   " bgAlpha=" + BackgroundAlpha.ToString("0.##");
         }
     }
 }

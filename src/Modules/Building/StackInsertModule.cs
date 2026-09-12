@@ -32,15 +32,30 @@ namespace NoVikingLeftBehind
     /// capacity is measured ONCE, in our prefix, BEFORE vanilla's own insert, and the burst counts
     /// down against that local number. See <see cref="Plan"/>, which is pure and self-tested.
     ///
-    /// HOW IT COMPOSES WITH CraftFromChests
-    /// ------------------------------------
-    /// That module prefixes the same two methods (<c>SmelterAddOrePre</c> / <c>SmelterAddFuelPre</c>)
-    /// and takes the press over - returning false - in exactly one case: the player has NONE of the
-    /// item and a nearby container does. Harmony skips the remaining prefixes when one returns
-    /// false, so in that case OUR prefix never runs and <c>__state</c> arrives null; the postfix
-    /// recognises that and reconstructs both the item chosen and the capacity (one slot more
-    /// conservatively, since it can no longer see the pre-insert queue). In every other case our
-    /// prefix ran and the numbers are exact.
+    /// HOW IT COMPOSES WITH CraftFromChests, AND WHY WE RUN FIRST (0.10.1)
+    /// -------------------------------------------------------------------
+    /// That module prefixes the same two methods and takes the press over - returning false - in
+    /// exactly one case: the player has NONE of the item and a nearby container does. Harmony skips
+    /// the remaining prefixes once one returns false, so whoever runs second loses.
+    ///
+    /// It registers its two prefixes at Harmony's DEFAULT priority, with nothing to reorder them:
+    ///     Harmony.Patch(m, prefix: M(nameof(SmelterAddOrePre)));      // CraftFromChestsModule.cs:342
+    ///     Harmony.Patch(m, prefix: M(nameof(SmelterAddFuelPre)));     // CraftFromChestsModule.cs:346
+    /// where that module's own helper is
+    ///     private static HarmonyMethod M(string name)                 // CraftFromChestsModule.cs:293
+    ///     { return new HarmonyMethod(typeof(CraftFromChestsModule), name); }
+    /// - no <c>priority</c>, no <c>before</c>/<c>after</c>, and no <c>[HarmonyPriority]</c> on
+    /// either method, so both sit at <c>Priority.Normal</c> (400). Ours are registered with
+    /// <c>priority = Priority.High</c> (600) and Harmony sorts prefixes by priority DESCENDING, so
+    /// ours always runs first. That is safe precisely because our prefix never returns false and
+    /// never touches an argument: it only measures.
+    ///
+    /// Before 0.10.1 we ran second, so a chest-fed press skipped us, <c>__state</c> arrived null and
+    /// the postfix had to rebuild the capacity from a <c>GetQueueSize()</c>/<c>GetFuel()</c> that may
+    /// or may not have caught up with the insert that just happened - which it did "one slot more
+    /// conservatively", and that is why Shift+E filled a 20-slot station to 19. Running first
+    /// removes the guess: the capacity is captured before ANY insert, every time, so the count is
+    /// exact on both paths and the conservative fallback is gone.
     ///
     /// Within a burst the bag is spent first and the shortfall comes out of nearby containers
     /// through <see cref="ChestSource"/> - the same API, the same exclusions, the same LeaveOne
@@ -163,6 +178,16 @@ namespace NoVikingLeftBehind
             return new HarmonyMethod(typeof(StackInsertModule), name);
         }
 
+        /// <summary>
+        /// A prefix that must run before every other prefix on the same method - see the ordering
+        /// argument in the class comment. <c>Priority.High</c> is 600 against the default 400, and
+        /// Harmony runs prefixes in descending priority order.
+        /// </summary>
+        private static HarmonyMethod First(string name)
+        {
+            return new HarmonyMethod(typeof(StackInsertModule), name) { priority = Priority.High };
+        }
+
         private void Need(ref System.Reflection.MethodInfo slot, Type t, string name, Type[] args, string label)
         {
             slot = args == null ? AccessTools.DeclaredMethod(t, name) : AccessTools.DeclaredMethod(t, name, args);
@@ -175,11 +200,11 @@ namespace NoVikingLeftBehind
 
             Need(ref m, typeof(Smelter), "OnAddOre",
                  new[] { typeof(Switch), typeof(Humanoid), typeof(ItemDrop.ItemData) }, "Smelter.OnAddOre");
-            Harmony.Patch(m, prefix: M(nameof(AddOrePre)), postfix: M(nameof(AddOrePost)));
+            Harmony.Patch(m, prefix: First(nameof(AddOrePre)), postfix: M(nameof(AddOrePost)));
 
             Need(ref m, typeof(Smelter), "OnAddFuel",
                  new[] { typeof(Switch), typeof(Humanoid), typeof(ItemDrop.ItemData) }, "Smelter.OnAddFuel");
-            Harmony.Patch(m, prefix: M(nameof(AddFuelPre)), postfix: M(nameof(AddFuelPost)));
+            Harmony.Patch(m, prefix: First(nameof(AddFuelPre)), postfix: M(nameof(AddFuelPost)));
 
             // The two hover callbacks are PRIVATE instance methods assigned as Switch.TooltipCallback
             // delegates in Smelter.Awake (Smelter.cs:100 / 106). A delegate calls the method, and the
@@ -275,8 +300,14 @@ namespace NoVikingLeftBehind
 
         /// <summary>
         /// What the postfix needs to know and can only learn BEFORE the insert: which item this
-        /// press is about, and how much room the station had. Null when this is not a burst, or
-        /// when another prefix took the press over and skipped us.
+        /// press is about, and how much room the station had.
+        ///
+        /// <see cref="Free"/> is always filled - it is the whole reason the prefix runs first, and
+        /// the one number that cannot be recovered afterwards. <see cref="Shared"/> may still be
+        /// null for ore: when the bag holds none of the station's inputs there is nothing to name
+        /// yet, and the item is whatever CraftFromChests then pulls out of a container, which the
+        /// postfix works out from the containers themselves (<see cref="ResolveChestOre"/>).
+        /// Null <c>__state</c> means we were skipped entirely and no burst happens.
         /// </summary>
         private sealed class Burst
         {
@@ -284,6 +315,20 @@ namespace NoVikingLeftBehind
             public string Prefab;       // what RPC_AddOre names; unused for fuel
             public bool Cheated;        // vanilla passes item.m_cheated straight through
             public int Free;            // items the station could still take, vanilla's own included
+        }
+
+        /// <summary>
+        /// Ore capacity, exactly as vanilla gates it: <c>OnAddOre</c> refuses at
+        /// <c>GetQueueSize() &gt;= m_maxOre</c> (Smelter.cs:216) and each accepted press queues one,
+        /// so the number of legal adds from a queue of <paramref name="queued"/> is
+        /// <c>m_maxOre - queued</c>. A charcoal kiln is a <c>Smelter</c> whose <c>m_maxFuel</c> is 0
+        /// and whose <c>m_maxOre</c> is its wood capacity, so the kiln goes down THIS path, not the
+        /// fuel one. Pure, so the self-test can hold it to the vanilla numbers.
+        /// </summary>
+        internal static int FreeOreSlots(int maxOre, int queued)
+        {
+            int free = maxOre - queued;
+            return free < 0 ? 0 : free;
         }
 
         private static void AddOrePre(Smelter __instance, Humanoid user, ItemDrop.ItemData item,
@@ -296,18 +341,23 @@ namespace NoVikingLeftBehind
                 var inv = user.GetInventory();
                 if (inv == null || __instance == null) return;
 
+                // The capacity is captured unconditionally, BEFORE anyone inserts anything - ours is
+                // the first prefix on this method (see the class comment), so this is the station's
+                // true free room for this press whether vanilla, CraftFromChests or we fill it.
+                var b = new Burst { Free = FreeOreSlots(__instance.m_maxOre, __instance.GetQueueSize()) };
+
                 // Exactly what vanilla is about to use: the argument when the player picked an item,
                 // otherwise the first conversion input they are carrying (Smelter.FindCookableItem).
+                // Carrying none of them is not a failure - it is the chest-fed press, and the
+                // postfix names the item once it knows the chests were used.
                 var chosen = item ?? FindCookable(__instance, inv);
-                if (chosen == null || chosen.m_dropPrefab == null || chosen.m_shared == null) return;
-
-                __state = new Burst
+                if (chosen != null && chosen.m_dropPrefab != null && chosen.m_shared != null)
                 {
-                    Shared = chosen.m_shared.m_name,
-                    Prefab = chosen.m_dropPrefab.name,
-                    Cheated = chosen.m_cheated,
-                    Free = __instance.m_maxOre - __instance.GetQueueSize()
-                };
+                    b.Shared = chosen.m_shared.m_name;
+                    b.Prefab = chosen.m_dropPrefab.name;
+                    b.Cheated = chosen.m_cheated;
+                }
+                __state = b;
             }
             catch (Exception e)
             {
@@ -328,8 +378,9 @@ namespace NoVikingLeftBehind
                 var nview = __instance != null ? __instance.m_nview : null;
                 if (inv == null || nview == null || !nview.IsValid()) return;
 
-                var b = __state ?? AfterChestInsert(__instance, inv);
-                if (b == null) return;
+                var b = __state;
+                if (b == null) { SkippedPrefix("ore"); return; }
+                if (b.Shared == null && !ResolveChestOre(__instance, b)) return;
 
                 Run(__instance, user, inv, nview, b, "ore", delegate(string prefab, bool cheated)
                 {
@@ -358,30 +409,23 @@ namespace NoVikingLeftBehind
         }
 
         /// <summary>
-        /// Our prefix did not run, which (given <c>__result</c> is true) means another prefix
-        /// returned false and handled the press itself. In this build that is CraftFromChests'
-        /// <c>SmelterAddOrePre</c>, whose one branch is "the player has none of any conversion input
-        /// and a container could give one". Reproduce its choice - first conversion, in the
-        /// station's own order, not on the excluded-items list, that containers can still supply -
-        /// and be one slot more conservative about capacity, because <c>GetQueueSize()</c> may or
-        /// may not have caught up with the insert that just happened (it has on the owner, it has
-        /// not on anyone else). Returns null when nothing else patched us, or when we cannot say
-        /// which item went in - in which case the burst simply does not happen.
+        /// The bag held none of the station's inputs when the press arrived, yet the press
+        /// succeeded - so CraftFromChests' <c>SmelterAddOrePre</c> fed it from a container. Only the
+        /// ITEM is unknown; the capacity is already in <paramref name="b"/>, measured before the
+        /// insert. Reproduce that module's choice exactly: the first conversion, in the station's own
+        /// order, not on the excluded-items list, that a nearby container can still supply. Returns
+        /// false when we cannot say which item went in, in which case the burst simply does not
+        /// happen - we never guess an item and never guess a capacity. (There is no need to re-check
+        /// that the bag is empty: <c>b.Shared</c> is null precisely because <c>FindCookable</c> found
+        /// nothing in it at prefix time, which is that module's own entry condition.)
         /// </summary>
-        private static Burst AfterChestInsert(Smelter s, Inventory inv)
+        private static bool ResolveChestOre(Smelter s, Burst b)
         {
-            if (s == null || s.m_conversion == null) return null;
-            if (!CraftFromChestsModule.SmelterPullLive) return null;
-
-            // The branch we are reconstructing only fires when the bag is empty of every input.
-            foreach (var conv in s.m_conversion)
-            {
-                if (conv == null || conv.m_from == null) continue;
-                if (inv.HaveItem(conv.m_from.m_itemData.m_shared.m_name)) return null;
-            }
+            if (s == null || s.m_conversion == null || b == null) return false;
+            if (!CraftFromChestsModule.SmelterPullLive) return false;
 
             var boxes = ChestSource.Nearby(s.transform.position);
-            if (boxes.Count == 0) return null;
+            if (boxes.Count == 0) return false;
 
             foreach (var conv in s.m_conversion)
             {
@@ -390,16 +434,32 @@ namespace NoVikingLeftBehind
                 string prefab = Utils.GetPrefabName(conv.m_from.gameObject);
                 if (ChestSource.ItemBlocked(prefab, shared)) continue;
                 if (ChestSource.Count(shared, boxes) <= 0) continue;
-                return new Burst
-                {
-                    Shared = shared,
-                    Prefab = prefab,
-                    Cheated = false,
-                    Free = s.m_maxOre - s.GetQueueSize() - 1
-                };
+                b.Shared = shared;
+                b.Prefab = prefab;
+                b.Cheated = false;      // nothing out of a chest is a debug-spawned item
+                return true;
             }
-            return null;
+            return false;
         }
+
+        /// <summary>
+        /// Something with a priority above ours returned false and skipped our prefix, so the free
+        /// capacity was never measured. We will NOT guess it: over-guessing by one sends an RPC the
+        /// owner silently drops, which eats an item. Log it once per session per switch and leave
+        /// the press exactly as vanilla (plus whoever handled it) left it.
+        /// </summary>
+        private static void SkippedPrefix(string what)
+        {
+            if (what == "ore") { if (_skipLoggedOre) return; _skipLoggedOre = true; }
+            else { if (_skipLoggedFuel) return; _skipLoggedFuel = true; }
+            Log.LogWarning("[StackInsert] another mod's " + what + " prefix skipped ours, so the " +
+                           "station's free capacity could not be measured - that press stays a " +
+                           "single item rather than risk overfilling. (Ours runs at Priority.High; " +
+                           "only a prefix above that can get in front of it.)");
+        }
+
+        private static bool _skipLoggedOre;
+        private static bool _skipLoggedFuel;
 
         // ---- fuel -----------------------------------------------------------------------------
 
@@ -442,20 +502,10 @@ namespace NoVikingLeftBehind
                 if (inv == null || nview == null || !nview.IsValid()) return;
                 if (__instance.m_fuelItem == null) return;
 
+                // A station has exactly one fuel, so the fuel prefix always knows the item and
+                // always fills __state - unless it was skipped outright, and then we do not guess.
                 var b = __state;
-                if (b == null)
-                {
-                    // CraftFromChests fed the fire from a container and skipped our prefix. The item
-                    // is never in doubt here (a station has exactly one fuel), only the capacity.
-                    if (!CraftFromChestsModule.SmelterPullLive) return;
-                    b = new Burst
-                    {
-                        Shared = __instance.m_fuelItem.m_itemData.m_shared.m_name,
-                        Prefab = Utils.GetPrefabName(__instance.m_fuelItem.gameObject),
-                        Cheated = false,
-                        Free = FreeFuel(__instance) - 1
-                    };
-                }
+                if (b == null) { SkippedPrefix("fuel"); return; }
 
                 Run(__instance, user, inv, nview, b, "fuel", delegate(string prefab, bool cheated)
                 {
@@ -469,16 +519,25 @@ namespace NoVikingLeftBehind
         }
 
         /// <summary>
-        /// How many more times fuel may be added. Vanilla refuses at <c>GetFuel() &gt; m_maxFuel - 1</c>
-        /// and each add is +1, so the count of legal adds from fuel f is <c>floor(m_maxFuel - f)</c>,
-        /// which is 0 exactly when vanilla would have said "$msg_itsfull" - including on the charcoal
-        /// kiln, whose <c>m_maxFuel</c> is 0. Fuel burns down continuously, so flooring is also the
-        /// conservative answer for a fractional value.
+        /// How many more times fuel may be added. Vanilla refuses at
+        /// <c>GetFuel() &gt; (float)(m_maxFuel - 1)</c> (Smelter.cs:345) and each accepted add is
+        /// <c>SetFuel(fuel + 1f)</c> (Smelter.cs:357), so from fuel f the k'th add needs
+        /// <c>f + k - 1 &lt;= m_maxFuel - 1</c>, i.e. <c>k &lt;= m_maxFuel - f</c>, i.e.
+        /// <c>floor(m_maxFuel - f)</c> legal adds - 0 exactly when vanilla would have said
+        /// "$msg_itsfull", including on the charcoal kiln, whose <c>m_maxFuel</c> is 0 (a kiln takes
+        /// its wood through the ORE switch instead, see <see cref="FreeOreSlots"/>). Fuel is a float
+        /// that burns down continuously, so flooring is also the conservative answer for a
+        /// fractional value. Pure, so the self-test can hold it to the vanilla numbers.
         /// </summary>
+        internal static int FreeFuelSlots(int maxFuel, float fuel)
+        {
+            int free = Mathf.FloorToInt(maxFuel - fuel);
+            return free < 0 ? 0 : free;
+        }
+
         private static int FreeFuel(Smelter s)
         {
-            int free = Mathf.FloorToInt(s.m_maxFuel - s.GetFuel());
-            return free < 0 ? 0 : free;
+            return FreeFuelSlots(s.m_maxFuel, s.GetFuel());
         }
 
         // ---- the burst itself ------------------------------------------------------------------
@@ -657,6 +716,30 @@ namespace NoVikingLeftBehind
             check("bag alone under the cap",       10,  1,    0,  5,       1,        0);
             check("kiln fuel: no room at all",      0,  9,    9,  0,       0,        0);
             check("two slots free",                 2, 99,   99,  0,       1,        0);
+
+            // The capacity formulas themselves, against vanilla's own gates (Smelter.cs:216 for ore,
+            // :345 + :357 for fuel). These are what the 0.10.1 ordering fix made exact: before it a
+            // chest-fed press reconstructed them one slot short and filled a 20 to 19.
+            Action<string, int, int> cap =
+                delegate (string label, int got, int want)
+                {
+                    bool ok = got == want;
+                    if (ok) pass++; else fail++;
+                    sb.Append("\n  ").Append(ok ? "ok   " : "FAIL ").Append(label)
+                      .Append(" -> ").Append(got).Append(ok ? "" : " (expected " + want + ")");
+                };
+
+            cap("ore: empty smelter m_maxOre=10", FreeOreSlots(10, 0), 10);
+            cap("ore: 7 queued of 10",            FreeOreSlots(10, 7),  3);
+            cap("ore: full",                      FreeOreSlots(10, 10), 0);
+            cap("ore: over-full never negative",  FreeOreSlots(10, 12), 0);
+            cap("ore: kiln m_maxOre=25 empty",    FreeOreSlots(25, 0), 25);
+            cap("fuel: empty smelter maxFuel=20", FreeFuelSlots(20, 0f), 20);
+            cap("fuel: one coal in",              FreeFuelSlots(20, 1f), 19);
+            cap("fuel: half-burnt coal",          FreeFuelSlots(20, 1.4f), 18);
+            cap("fuel: one short of full",        FreeFuelSlots(20, 19f), 1);
+            cap("fuel: full",                     FreeFuelSlots(20, 20f), 0);
+            cap("fuel: kiln maxFuel=0 (ore path)", FreeFuelSlots(0, 0f), 0);
 
             sb.Append("\n  ").Append(pass).Append(" passed, ").Append(fail).Append(" failed");
             sb.Append("\n[SelfTest][StackInsert] --- end ---");
