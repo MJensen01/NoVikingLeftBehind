@@ -102,7 +102,7 @@ all. The mod never makes the leaders' game easier; it only softens the trail beh
   whatever doesn't fit anywhere else — all extra real estate outside your main bag, so it never
   eats into carry space. Stored outside the vanilla save package (a vanilla client or tool can't
   delete them), with 3 rolling backups and a rescue path for characters migrating off shudnal's
-  ExtraSlots. `Tune it:` `[Slots] EquipmentSlots=true`, `UtilitySlots=2`, `FoodSlots=3`, `AmmoSlots=2`, `GenericSlots=2`, `QuickSlots=0`, `AutoEatFromFoodSlots=true`
+  ExtraSlots. `Tune it:` `[Slots] EquipmentSlots=true`, `UtilitySlots=2`, `FoodSlots=3`, `AmmoSlots=3`, `GenericSlots=2`, `QuickSlots=0`, `AutoEatFromFoodSlots=true`
 - **SafeSlots** — your extra-slot items are backed up locally and to the server; nothing to do.
   Your character file is copied aside before this mod first touches it, the items themselves are
   kept on the server after every save, and if you ever come back to an empty set of slots the game

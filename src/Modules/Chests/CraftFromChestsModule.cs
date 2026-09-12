@@ -86,6 +86,16 @@ namespace NoVikingLeftBehind
         /// <summary>Parsed OvenPrefabs, case-insensitive. Rebuilt by PushSettings on every change.</summary>
         private static HashSet<string> _ovenSet = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
 
+        /// <summary>
+        /// May this module feed a smelter family station from nearby containers right now? Read by
+        /// StackInsert, which continues a Shift+E burst out of the same containers on the same
+        /// terms, so "the chests are off" is one answer in one place rather than two.
+        /// </summary>
+        internal static bool SmelterPullLive
+        {
+            get { return _pullSmelters != null && _pullSmelters.Value && Live(); }
+        }
+
         internal static bool PullCooking => _pullCooking != null && _pullCooking.Value;
         internal static bool PullOvens => _pullOvens != null && _pullOvens.Value;
         internal static HashSet<string> OvenPrefabs => _ovenSet;
@@ -442,6 +452,11 @@ namespace NoVikingLeftBehind
                 foreach (var req in recipe.m_resources)
                 {
                     if (req == null || !req.m_resItem) continue;
+                    if (SkipForStation(__instance, req))
+                    {
+                        if (sb != null) sb.Append("[skip upgrader ").Append(req.m_resItem.m_itemData.m_shared.m_name).Append("] ");
+                        continue;
+                    }
                     int need = req.GetAmount(qualityLevel) * amount;
                     if (need <= 0) continue;
                     int have = Available(__instance, req, need, boxes);
@@ -465,6 +480,20 @@ namespace NoVikingLeftBehind
                 Log.LogWarning("[Chests] HaveRequirements(Recipe) postfix: " + e.Message);
                 Diag(recipe, "exception " + e.GetType().Name);
             }
+        }
+
+        /// <summary>
+        /// Valheim 1.0 marks some recipe requirements as "upgrader resources" that only count at an
+        /// upgrader station (and ordinary requirements that don't count at one). Vanilla skips the
+        /// mismatched ones in HaveRequirementItems, ConsumeResources and the requirement rows; this
+        /// is the same test. Without it the craft check demanded a hidden item nobody carries
+        /// (grey Craft button with every visible row satisfied) and the consume postfix pulled it
+        /// out of the chests.
+        /// </summary>
+        private static bool SkipForStation(Player p, Piece.Requirement r)
+        {
+            var cs = p.GetCurrentCraftingStation();
+            return (cs != null && cs.m_upgrader != r.m_upgraderResource) || (cs == null && r.m_upgraderResource);
         }
 
         /// <summary>
@@ -578,6 +607,7 @@ namespace NoVikingLeftBehind
                 {
                     var r = requirements[i];
                     if (r == null || !r.m_resItem) continue;
+                    if (SkipForStation(__instance, r)) continue;
 
                     int need = r.GetAmount(qualityLevel) * multiplier;
                     if (need <= 0) continue;
@@ -676,7 +706,13 @@ namespace NoVikingLeftBehind
                     if (ChestSource.Consume(shared, 1, -1, boxes) != 1) continue;
 
                     user.Message(MessageHud.MessageType.Center, "$msg_added " + shared);
-                    nview.InvokeRPC("RPC_AddOre", prefab);
+                    // Valheim 1.0 registers this as Register<string, bool>("RPC_AddOre", ...)
+                    // (Smelter.cs:115) and vanilla sends item.m_cheated as the second argument
+                    // (Smelter.cs:225). Sending only the name leaves the receiving side reading a
+                    // bool off the end of the package, which throws INSIDE the RPC handler - so the
+                    // ore never reaches the queue while the container has already been debited.
+                    // Nothing pulled out of a chest is ever a cheated (debug-spawned) item.
+                    nview.InvokeRPC("RPC_AddOre", prefab, false);
                     __result = true;
                     return false;
                 }

@@ -20,6 +20,77 @@ repo under `research/`); existing servers keep the values already written in the
 * **Regrowth** — `RegrowDays` 7 → 14; the description and README now say `[Regrowth] Enabled=false` is the full off switch.
 * README: actively-maintained note, who-it's-for, authorship; settings count corrected (276); "replaces six mods" made honest
   (four mods plus their two libraries); module count 38.
+## 0.10.1
+
+Changes
+* **Three ammo slots by default** (`[Slots] AmmoSlots` 2 → 3) — a group request. A server that already has its own value in the cfg keeps it; set it to 3 by hand (or from the settings tab) to match.
+
+Fixes
+* **The ammo readout is no longer a pair of bright grey blocks.** The dark, translucent look of a hotbar slot is not in
+  Valheim's sprite — it is the slot Button's colour tint. Switching that Button off (which the readout must, so it can never
+  swallow a click) runs Unity's `Selectable.InstantClearState()`, which resets the tint to **pure white**, and the copied tile
+  drew the sprite at full strength. The readout now paints its own background: a dark translucent colour under its own knob,
+  with the renderer tint pinned so the result is exactly what was asked for. The icon and the count are untouched on top.
+* **`[AmmoHud] BackgroundAlpha`** (local, 0–1, default 0.45) fades just the dark square behind the icon; 0 leaves the icon and
+  the number floating with no tile at all. **Defaults lowered to match:** `Alpha` 0.9 → **0.65** and `Scale` 1 → **0.8**, and the
+  non-equipped tile now sits at 0.7 of the equipped one rather than 0.78. A cfg still holding exactly the old default is moved
+  to the new one (and says so in the log); a value you set yourself is left alone. The build log names the background image it
+  found and the exact colour it painted.
+* **Shift+E fills a smelter or kiln to the last slot, not one short.** When `CraftFromChests` fed a press out of a container it
+  took the press over and skipped our prefix, so the free capacity was never measured and the postfix had to rebuild it from a
+  queue reading that may not have caught up yet — deliberately one slot short, which is why a 20-slot station stopped at 19.
+  Our two prefixes now register at `Priority.High` against that module's default priority, so ours always runs first and the
+  capacity is captured before any insert, on every path. The conservative fallback is gone: if something ever does get in front
+  of us we log it once and leave the press as a single item rather than risk an RPC the station would drop. The ore and fuel
+  capacity formulas are now pure functions checked against vanilla's own gates by the self-test (27 checks, was 16).
+* **Crafting from chests works on Valheim 1.0 again.** 1.0 added hidden "upgrader" requirements that ordinary stations skip; the craft check still counted them, so every upgradable recipe (tools, helmets, shields...) showed a grey Craft button while every visible row was satisfied. The consume step had the same gap. Building from chests was never affected.
+* **Smelter ore pulled from a chest now actually arrives.** 1.0 changed `RPC_AddOre` to take a second argument; the chest path sent only the name, so the ore left the chest and was dropped by the receiver.
+* `[Chests] Diagnostics` (local, off) logs why the craft check accepted or refused each recipe.
+
+New module **AmmoHud** `[AmmoHud]` — a quiet readout of your ammo slots in the bottom-left corner. Icon and count
+for every non-empty ammo slot, so you never have to open the bag mid-fight to find out how many arrows are left.
+* Ships **no art**. Each tile is a clone of Valheim's own hotbar element (`HotkeyBar.m_elementPrefab`) with its leaves found by
+  the same names vanilla uses, so it has the game's slot sprite, font, size and opacity — and keeps them through a reskin or a
+  game update. The hotbar number, the equip-queue/selection markers and the durability bar are switched off, and the tile takes
+  no clicks.
+* The quiver you have equipped is marked with vanilla's **own** equipped marker — the same one the hotbar lights up — plus a
+  small alpha lift. The count is vanilla's own `37 / 100` format.
+* **Position is measured, not guessed**: at start-up the readout measures vanilla's own bottom-left HUD widgets
+  (`Hud.m_healthPanel`, `m_foodBarRoot`, `m_gpRoot`) and sits flush with their left edge, 14 px above the highest of them — so it
+  cannot overlap the health bar, the food icons, the status effects or the minimap at any UI scale or resolution. Every widget it
+  measured, the anchor it worked out and the screen rect it landed on are written to the log once.
+* Hidden when no ammo slot holds anything, with the inventory open, on the map, in a store or menu, in a cutscene and whenever
+  the HUD is toggled off — the same gate vanilla's own hotbar uses.
+* Costs nothing per frame: the inventory is re-read only when it changes, and a quiet frame compares a handful of numbers and
+  allocates nothing at all.
+* Local `OffsetX` / `OffsetY` (px), `Scale` (0.4–2.5, default 0.8), `Alpha` (0.1–1, default 0.65) and `BackgroundAlpha`
+  (0–1, default 0.45) nudge and fade it from the in-game settings tab with no restart and no rebuild; the synced `Enabled`
+  switches it off for a whole server.
+* Every UI build step logs an `[AmmoHud]` line naming the step, so a failure says which one broke instead of just not appearing.
+  `[Slots] SelfTest` now also proves the ammo-slot enumeration headlessly.
+New module **StackInsert** `[StackInsert]` — **hold Shift and use a smelter and the whole stack goes in.** Ore or fuel, on every
+`Smelter` station: charcoal kiln, smelter, blast furnace, spinning wheel, windmill, eitr refinery. Plain E is untouched and stays
+exactly vanilla, one item and one message.
+* It inserts `min(what you carry, what the station can still hold)`, capped by `MaxPerPress` (0 = no limit, and it counts vanilla's
+  own first item, so 1 means "exactly vanilla"). The free capacity is read **once, before vanilla's insert**, and counted down
+  locally — on a client that does not own the station `GetQueueSize()`/`GetFuel()` do not move until the RPC has been round-tripped,
+  so anything that re-read them mid-burst would cheerfully overfill and the surplus would be dropped on the floor.
+* Vanilla does the first insert; we repeat its own `RemoveItem` + RPC pair for the rest, from a postfix that only runs when the
+  original said yes. Every removal from your bag is measured and an RPC is sent only for an item that really left it, so an ore can
+  never be eaten without arriving.
+* **With CraftFromChests on, it fills from the chests.** Your bag is spent first, and the shortfall comes out of nearby containers
+  through the same `ChestSource` path the rest of that module uses — same range, same exclusions, same LeaveOne rule, same
+  ownership claim — so Shift+E at the smelter empties the storage wall into it. Turn `[Chests] PullForSmelters` off (or the module
+  off) and it fills from the bag alone.
+* The ore and fuel hover text gains a `[Shift + E] Add stack` line in vanilla's own shape, with your real modifier name.
+* Settings: local `Modifier="LeftShift"` (any Unity KeyCode name, `None` to switch it off; left/right twins both count — it is not on
+  Valheim's Keyboard & Mouse page, which binds one key per action and knows nothing about a key you hold), synced `MaxPerPress=0`,
+  local `SelfTest=false` (27 checks over the capacity arithmetic at world load).
+
+* **Fixed, found while building the above: feeding a smelter from a chest ate the ore and added nothing.** Valheim 1.0 registers
+  `RPC_AddOre` as `Register<string, bool>` and vanilla sends `item.m_cheated` with it; `CraftFromChests` still sent only the prefab
+  name, so the receiving side read a bool off the end of the package and threw inside the RPC handler — the container had already
+  been debited. It now sends the second argument (`false`: nothing out of a chest is a debug-spawned item).
 
 ## 0.10.0 (2026-09-09) — BuildersGuild: cheaper building at the base (38th module)
 

@@ -13,13 +13,13 @@
 A BepInEx 5 mod for Valheim 1.0, built and maintained for a small dedicated-server group
 and released here for anyone to use. MIT licensed.
 
-All-in-one, server-enforced quality-of-life and catch-up mechanics: 38 modules covering inventory,
+All-in-one, server-enforced quality-of-life and catch-up mechanics: 40 modules covering inventory,
 loadouts, combat (fists + shield), crafting from chests, building and gathering, food, corpse
 runs, guardian powers, ore regrowth, portals and a frontier-based catch-up system. One DLL, installed on the server and by
 every player. The server enforces every setting (via [ServerSync](https://github.com/blaxxun-boop/ServerSync)),
 so nobody has to agree on config by hand.
 
-0.10.0 is built and tested against Valheim `1.0.7` (network version 39) / BepInEx `5.4.2350`.
+0.10.1 is built and tested against Valheim `1.0.7` (network version 39) / BepInEx `5.4.2350`.
 For servers held on the `default_pre1_0` branch (0.221.12) use 0.8.8.
 
 ## Install (players, via r2modman / Thunderstore)
@@ -43,11 +43,11 @@ For servers held on the `default_pre1_0` branch (0.221.12) use 0.8.8.
 
 ## Config overview
 
-38 modules, each with its own `[Section] Enabled` toggle, plus `Tiers` (shared config, always on,
-no toggle of its own) — 39 rows in `docs/MODULES.md`, the full per-module table (side, section,
+40 modules, each with its own `[Section] Enabled` toggle, plus `Tiers` (shared config, always on,
+no toggle of its own) — 41 rows in `docs/MODULES.md`, the full per-module table (side, section,
 settings, defaults, hot-reload). Every gameplay number is server-synced and hot-reloads (edit the
 cfg, it applies within a second — `Enabled` toggles need a restart to turn *on*, off is instant);
-hotkeys and HUD offsets (`ExtraSlots`, `Loadouts`, `CorpseRunPlus`) are per-player, local settings.
+hotkeys and HUD offsets (`ExtraSlots`, `AmmoHud`, `Loadouts`, `CorpseRunPlus`) are per-player, local settings.
 
 ### Catching up
 
@@ -97,6 +97,13 @@ easier — the newest tier is never touched.
   can't delete them (`QuickSlots` defaults to 0; raise it to swap the generic slots for a
   hotkeyed row instead). 3 rolling backups + `nvlb.slots.restore`; rescues items left behind by
   shudnal's ExtraSlots.
+- **AmmoHud** `[AmmoHud]` — a quiet readout of your ammo slots in the bottom-left corner:
+  icon and count per non-empty slot, with the quiver you have equipped marked the way vanilla
+  marks the equipped hotbar item. Every tile is a clone of vanilla's own hotbar element and the
+  row is anchored by measuring vanilla's own bottom-left HUD widgets, so it matches the game's
+  sprite, font, size and opacity and cannot overlap the health bar, the food icons, the status
+  effects or the minimap. Hidden with the bag open, with the HUD hidden, on the map and in a
+  cutscene. Local `OffsetX`/`OffsetY`/`Scale`/`Alpha` nudge it from the in-game settings tab.
 - **SafeSlots** `[SafeSlots]` — the safety net under ExtraSlots: your character's `.fch` is copied
   into `characters_local\nvlb-backups\` on its first login with the mod and again whenever items are
   rescued from an older extra-slots mod (local `CharacterBackup=true`, `KeepBackups=3`); one on-screen
@@ -159,6 +166,13 @@ easier — the newest tier is never touched.
   composed with the tier and settlement discounts into one rounding, so the cost shown, checked,
   consumed and refunded are the same number.
 
+- **StackInsert** `[StackInsert]` — hold **Shift** and use a smelter, blast furnace, charcoal
+  kiln, spinning wheel, windmill or eitr refinery and the whole stack goes in, ore or fuel, up to
+  what the station can hold (`Modifier="LeftShift"`, machine-local, `None` to switch it off;
+  `MaxPerPress=0` = no limit). Plain E is untouched — one item, exactly vanilla. With
+  `CraftFromChests` on, the bag is spent first and the rest comes out of the nearby containers, so
+  Shift+E fills the smelter straight from the storage wall. One message and one log line per press.
+
 ### Survival & world
 
 - **FoodNoDecay** `[Food]` — food holds its full value until it expires instead of decaying
@@ -200,7 +214,7 @@ easier — the newest tier is never touched.
 ### In-game settings menu
 
 `SettingsMenu` `[SettingsMenu]` adds a **NoVikingLeftBehind** tab to Valheim's own Settings screen —
-from the pause menu in game and from the main menu — listing all 276 settings: modules by theme down
+from the pause menu in game and from the main menu — listing all 286 settings: modules by theme down
 the left with their `Enabled` toggles, the selected module's rows down the right with a one-line
 hint under each name, the full description on hover, a reset-to-default button, and a search box
 across name, key, hint and description.

@@ -73,8 +73,9 @@ namespace NoVikingLeftBehind
             _foodSlots = BindSynced("FoodSlots", 3,
                 "Server: how many food slots (0-3). Only food goes in them.",
                 Opt.N("How many dedicated food slots", 0, 3));
-            _ammoSlots = BindSynced("AmmoSlots", 2,
-                "Server: how many ammo slots (0-4). The equipped ammo stack lives here.",
+            _ammoSlots = BindSynced("AmmoSlots", 3,
+                "Server: how many ammo slots (0-4). The equipped ammo stack lives here. " +
+                "3 since 0.10.1 (was 2) - a group request; existing cfg files keep their own value.",
                 Opt.N("How many dedicated ammo slots", 0, 4));
             _quickSlots = BindSynced("QuickSlots", 0,
                 "Server: how many quick slots (0-8). Anything can go in them; a hotkey uses it. " +
