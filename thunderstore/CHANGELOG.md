@@ -3,6 +3,9 @@
 
 ## 0.10.1
 
+Changes
+* **Three ammo slots by default** (`[Slots] AmmoSlots` 2 → 3) — a group request. A server that already has its own value in the cfg keeps it; set it to 3 by hand (or from the settings tab) to match.
+
 Fixes
 * **The ammo readout is no longer a pair of bright grey blocks.** The dark, translucent look of a hotbar slot is not in
   Valheim's sprite — it is the slot Button's colour tint. Switching that Button off (which the readout must, so it can never
