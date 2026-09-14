@@ -18,6 +18,12 @@ New module **CarryWeight** `[Carry]` — a Viking who can carry a run's worth of
 * Turn `[Carry] Enabled=false` (or uninstall) and every number is vanilla again, to the float.
 
 Fixes
+* **Deconstruct refunds exactly what the piece cost, wherever it was built.** Only beams and poles used to write down what
+  they were actually paid; everything else was refunded by recomputing the price at its cheapest — the right answer for a
+  transient discount like the yard, but the wrong one for a piece that was never in a yard to begin with. It paid the wild
+  price and got the yard price back: a Sap extractor placed out on a Mistlands root cost about 3 black metal and refunded 1.
+  Every piece now records what the hammer actually took. **Pieces built before 0.10.2 keep the old rule** (there is nothing
+  written on them to read), and `[Builders] RecordAllPieces=false` restores the old behaviour outright.
 * **Raw ore can ride a portal again.** `PortalTrail` resolves the carried item's own drop-prefab name, and the tier map only
   listed the *smelted bars* — `Copper`, `Iron`, `Silver`... Bars are already teleportable in vanilla, so the rule had nothing
   to relax: the actual non-teleportable prefabs (`CopperOre`, `TinOre`, `CopperScrap`, `IronScrap`, `SilverOre`,
