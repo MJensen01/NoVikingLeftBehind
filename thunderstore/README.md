@@ -10,7 +10,7 @@
 > Designed and thought up by **Nosferatu** from real pain points hit in-game with a co-op crew.
 > Coded using Claude, tested by humans.
 
-**One install. Thirty-eight modules. Zero arguments about config.** NoVikingLeftBehind is the
+**One install. Forty-one modules. Zero arguments about config.** NoVikingLeftBehind is the
 all-in-one quality-of-life mod for co-op Valheim: extra inventory slots, one-key loadouts, fist
 weapons with a shield, crafting straight from your chests, food that never decays, a compass back
 to your corpse, dual guardian powers, ore that grows back, portals that carry your metal, a
@@ -166,6 +166,10 @@ all. The mod never makes the leaders' game easier; it only softens the trail beh
   stamina right up until it actually runs out, instead of quietly fading the whole time. `Tune it:` `[Food] KeepFraction=1.0`, `HidePulse=true`, `PulseBelowSeconds=0`
 - **LongFires** — load the hearth once and it's still burning hours later; your hand torch
   barely loses any charge on a long cave crawl. `Tune it:` `[Fires] FuelDurationMultiplier=5`, `HandTorchDurabilityMultiplier=5`, `InfiniteFuel=false`
+- **CarryWeight** — you can actually carry a run's worth of ore home, and Megingjord finally earns
+  the belt slot: 450 base instead of 300, and +300 from the belt instead of +150. The belt's own
+  tooltip shows the real number, and a world modifier that makes carrying lighter or heavier still
+  applies. `Tune it:` `[Carry] BaseCarryWeight=450`, `BeltBonus=300`, `BeltItems="BeltStrength"`
 - **CorpseRunPlus** — five things that make dying suck less: a HUD compass points straight at
   your grave so you're never guessing; you respawn with a meal already eaten and Rested already
   running; **Grave Pull** boosts your stamina regen the farther you are from your loot, easing off
