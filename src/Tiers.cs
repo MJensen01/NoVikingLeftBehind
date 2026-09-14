@@ -14,15 +14,24 @@ namespace NoVikingLeftBehind
     {
         public const string Section = "Tiers";
 
+        /// <summary>
+        /// Default material tiers. Includes the RAW ore/scrap prefabs as well as the smelted bars
+        /// (0.10.2): PortalTrail resolves the carried item's own drop-prefab name, and it is the raw
+        /// ore - CopperOre, TinOre, IronScrap, SilverOre, BlackMetalScrap, FlametalOre(New) - that
+        /// vanilla marks non-teleportable, so without a tier of its own it scored 0 and could never
+        /// be "behind the frontier". The bar names were the only ones listed before, and bars are
+        /// already teleportable in vanilla, so the portal rule had nothing to relax.
+        /// </summary>
         public const string DefaultMap =
             "Copper:1,Tin:1,Bronze:1,TrollHide:1,Chitin:1,BronzeNails:1," +
-            "Iron:2,ElderBark:2,Guck:2,IronNails:2,Chain:2," +
-            "Silver:3,WolfPelt:3,WolfHairBundle:3,FreezeGland:3,Obsidian:3," +
-            "BlackMetal:4,LinenThread:4,LoxPelt:4,Needle:4,Tar:4,JuteRed:4," +
+            "CopperOre:1,TinOre:1,CopperScrap:1," +
+            "Iron:2,ElderBark:2,Guck:2,IronNails:2,Chain:2,IronScrap:2," +
+            "Silver:3,WolfPelt:3,WolfHairBundle:3,FreezeGland:3,Obsidian:3,SilverOre:3," +
+            "BlackMetal:4,LinenThread:4,LoxPelt:4,Needle:4,Tar:4,JuteRed:4,BlackMetalScrap:4," +
             "BlackMarble:5,Eitr:5,Carapace:5,Sap:5,ScaleHide:5,YggdrasilWood:5,Mandible:5," +
             "Softtissue:5,JuteBlue:5," +
             "FlametalNew:6,Grausten:6,ProustitePowder:6,CharredCogwheel:6,MorgenSinew:6," +
-            "AskHide:6,CelestialFeather:6,MoltenCore:6";
+            "AskHide:6,CelestialFeather:6,MoltenCore:6,FlametalOre:6,FlametalOreNew:6";
 
         public static ConfigEntry<string> MaterialTiers;
 
