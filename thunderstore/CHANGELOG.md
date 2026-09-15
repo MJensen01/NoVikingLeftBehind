@@ -1,6 +1,13 @@
 
 # Changelog — NoVikingLeftBehind
 
+## 0.10.3 (unreleased)
+
+* **`[Slots]` an item move no longer re-equips what is parked in an equipment slot.** Moving anything in the extra-slot panel
+  re-ran the equipment sync, which wore *everything* it found unequipped in an equipment slot — so a Wisplight switched off but
+  left in a utility slot came straight back on at the next drag. An item is now equipped only when it is newly placed in the
+  slot; a deliberate unequip sticks. New machine-local `[Slots] Diagnostics` logs every equip this module performs and why.
+
 ## 0.10.2
 
 New module **CarryWeight** `[Carry]` — a Viking who can carry a run's worth of ore home, and a Megingjord worth the belt slot.
