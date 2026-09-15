@@ -90,6 +90,24 @@ namespace NoVikingLeftBehind
         private TMP_Text _accessText, _auditText, _statusText;
         private Button _undoButton, _resetButton;
 
+        // ---- the view switch (0.11.0) -----------------------------------------------------------
+        // Two cloned vanilla buttons behaving as one segmented control, and - in Advanced only -
+        // the diagnostics checkbox. Both captions are built with an explicit font size: a cloned
+        // vanilla button auto-sizes its caption to nothing in a short rect (0.7.4).
+        private Button _simpleButton, _advancedButton;
+        private Image _simpleLit, _advancedLit;
+        private Toggle _diagToggle;
+        private TMP_Text _diagLabel;
+
+        /// <summary>The headings the right pane drew last, in order, for <c>nvlb.uidump</c>.</summary>
+        private readonly List<string> _headings = new List<string>();
+
+        /// <summary>Where each Simple group heading landed, so the left pane can jump to it.</summary>
+        private readonly Dictionary<string, float> _groupY = new Dictionary<string, float>();
+
+        /// <summary>The "show everything in this module" glyph, if the font has it.</summary>
+        private string _jumpGlyph = ">";
+
         private readonly List<Row> _rows = new List<Row>();
         private readonly List<ModuleRow> _moduleRows = new List<ModuleRow>();
         private FeatureModule _selected;
@@ -118,8 +136,27 @@ namespace NoVikingLeftBehind
         /// <summary>How much of a row's right-hand side belongs to the control and the reset button.</summary>
         private const float RightInset = 344f;
 
+        /// <summary>
+        /// The same, on the Simple view: every row there carries an extra 34px "show everything in
+        /// this module" button between the control and the reset, so the label has to stop sooner.
+        /// </summary>
+        private const float RightInsetSimple = 384f;
+
+        /// <summary>How far left the control column moves to make room for that button.</summary>
+        private const float JumpButtonW = 34f;
+        private const float JumpShift = 38f;
+
         /// <summary>The control column proper: nothing that only shows text may reach into it.</summary>
         private const float ControlColumnW = 340f;
+
+        /// <summary>Which view is on screen. Machine-local, so this is only ever a read of a cfg entry.</summary>
+        private static bool IsSimple { get { return SettingsMenuModule.View == SettingsView.Simple; } }
+
+        /// <summary>The right inset the rows on screen right now are built with.</summary>
+        private float RowRightInset { get { return SimplePage ? RightInsetSimple : RightInset; } }
+
+        /// <summary>True when the right pane is showing the Simple page itself, not a search.</summary>
+        private bool SimplePage { get { return IsSimple && string.IsNullOrEmpty(_filter); } }
 
         /// <summary>The live tab, for <c>nvlb.uidump</c>. There is only ever one Settings object.</summary>
         internal static NvlbSettingsTab Current;
@@ -348,6 +385,18 @@ namespace NoVikingLeftBehind
 
             try
             {
+                // The view and its headings, first: a text dump has to be able to prove which
+                // page is on screen and what it groups the rows under, without a screenshot.
+                write("[uidump] view=" + SettingsMenuModule.View +
+                      " showDiagnostics=" + SettingsMenuModule.ShowDiagnostics +
+                      " showUnavailable=" + SettingsMenuModule.ShowUnavailable +
+                      " firstRunHintShown=" + SettingsMenuModule.FirstRunHintShown);
+                var heads = new System.Text.StringBuilder();
+                foreach (var h in tab._headings)
+                    heads.Append(heads.Length > 0 ? " | " : "").Append(h);
+                write("[uidump] headings(" + tab._headings.Count + "): " +
+                      (heads.Length == 0 ? "<none>" : heads.ToString()));
+
                 write("[uidump] BaseFontSize=" + UiKit.BaseFontSize.ToString("0.#") +
                       " text=#" + ColorUtility.ToHtmlStringRGBA(UiKit.TextColor) +
                       " hint=#" + ColorUtility.ToHtmlStringRGBA(UiKit.HintColor) +
@@ -721,7 +770,7 @@ namespace NoVikingLeftBehind
             // Give ground on the right inset so the label keeps 120px, but never below the width
             // of the control column itself: a label that reached under the slider would overlap
             // the one thing on the row that must own its own clicks.
-            float right = Mathf.Clamp(RightInset, ControlColumnW, Mathf.Max(ControlColumnW, rw - 12f - 120f));
+            float right = Mathf.Clamp(RowRightInset, ControlColumnW, Mathf.Max(ControlColumnW, rw - 12f - 120f));
 
             foreach (var r in _rows)
             {
@@ -744,6 +793,7 @@ namespace NoVikingLeftBehind
             {
                 var fontAsset = ResolveFont();
                 if (fontAsset != null && fontAsset.HasCharacter('↺')) _resetGlyph = "↺";
+                if (fontAsset != null && fontAsset.HasCharacter('▸')) _jumpGlyph = "▸";
             }
 
             UiKit.Hover.EnsurePanel(_page);
@@ -778,6 +828,8 @@ namespace NoVikingLeftBehind
                     RebuildRight();
                 });
             }
+
+            BuildViewControls(header);
 
             _accessText = UiKit.Label(header, "", UiKit.BaseFontSize * 0.85f,
                                       TextAlignmentOptions.MidlineLeft, UiKit.HintColor);
@@ -894,11 +946,189 @@ namespace NoVikingLeftBehind
             TweakDoor.Result += OnDoorResult;
             TweakDoor.AuditChanged += OnAuditChanged;
 
-            BuildModuleList();
-            if (_selected == null && _moduleRows.Count > 0) _selected = _moduleRows[0].Module;
+            BuildLeft();
             RebuildRight();
             RefreshHeader();
             RefreshFooter();
+        }
+
+        // ---- the view switch ---------------------------------------------------------------------------
+
+        /// <summary>
+        /// The header's segmented control - Simple | Advanced - and, in Advanced only, the
+        /// "Show diagnostics" checkbox. Both buttons are cloned vanilla ones, so both are built
+        /// with an **explicit font size**: left to auto-size in a 26px rect a cloned caption draws
+        /// blank, which is the 0.7.4 bug and has caught this page twice.
+        ///
+        /// The lit half is a faint <see cref="SelectedBarColor"/> fill inside the button, put at
+        /// the front of its children so it draws over the donor's background and under the
+        /// caption. <see cref="UiKit.Fill"/> leaves raycastTarget off, so it cannot swallow the
+        /// click the way a raycast target over a control did in 0.8.3.
+        /// </summary>
+        private void BuildViewControls(RectTransform header)
+        {
+            try
+            {
+                _simpleButton = UiKit.Button(header, "Simple", UiKit.BaseFontSize * 0.85f);
+                if (_simpleButton != null)
+                {
+                    UiKit.Place((RectTransform)_simpleButton.transform, 392f, 6f, 86f, 26f);
+                    _simpleLit = LitBar(_simpleButton);
+                    _simpleButton.onClick.AddListener(delegate { SwitchView(SettingsView.Simple); });
+                    UiKit.Tip(_simpleButton.gameObject,
+                        "One page of the settings most groups actually change, under plain-language " +
+                        "headings. Nothing is lost: Advanced still has every setting, and the search " +
+                        "box finds settings in both.");
+                }
+
+                _advancedButton = UiKit.Button(header, "Advanced", UiKit.BaseFontSize * 0.85f);
+                if (_advancedButton != null)
+                {
+                    UiKit.Place((RectTransform)_advancedButton.transform, 482f, 6f, 100f, 26f);
+                    _advancedLit = LitBar(_advancedButton);
+                    _advancedButton.onClick.AddListener(delegate { SwitchView(SettingsView.Advanced); });
+                    UiKit.Tip(_advancedButton.gameObject,
+                        "Every setting this mod has, listed module by module - the page as it has " +
+                        "always been. Your choice is remembered on this machine.");
+                }
+
+                _diagToggle = UiKit.Toggle(header);
+                if (_diagToggle != null)
+                {
+                    // Anchored, never resized: a cloned toggle carries its own child layout and
+                    // writing a sizeDelta onto it deforms the box rather than moving it.
+                    var drt = (RectTransform)_diagToggle.transform;
+                    drt.anchorMin = new Vector2(0f, 1f);
+                    drt.anchorMax = new Vector2(0f, 1f);
+                    drt.pivot = new Vector2(0f, 1f);
+                    drt.anchoredPosition = new Vector2(594f, -6f);
+                    _diagToggle.onValueChanged.AddListener(delegate (bool on)
+                    {
+                        if (_suppress) return;
+                        SetShowDiagnostics(on);
+                    });
+                    UiKit.TipOnly(_diagToggle.gameObject,
+                        "Also list the self-test, dry-run and debugging settings. They do nothing " +
+                        "for normal play; they are here for diagnosing the mod. Saved on your own " +
+                        "machine.");
+                }
+
+                _diagLabel = UiKit.Label(header, "Show diagnostics", UiKit.BaseFontSize * 0.8f,
+                                         TextAlignmentOptions.MidlineLeft, UiKit.HintColor);
+                if (_diagLabel != null)
+                    UiKit.Place((RectTransform)_diagLabel.transform, 620f, 6f, 130f, 26f);
+            }
+            catch (Exception e)
+            {
+                // The page is still usable without the switch; losing it must not cost the tab.
+                NoVikingLeftBehindPlugin.Log.LogError("[SettingsMenu] the view switch could not be built: " + e);
+            }
+        }
+
+        /// <summary>The bar that marks the lit half of the segmented control. Never takes a click.</summary>
+        private static Image LitBar(Button button)
+        {
+            var img = UiKit.Fill(button.transform, SelectedBarColor());
+            img.gameObject.name = "NVLB_Lit";
+            var rt = UiKit.Stretch((RectTransform)img.transform);
+            rt.offsetMin = new Vector2(3f, 3f);
+            rt.offsetMax = new Vector2(-3f, -3f);
+            rt.SetAsFirstSibling();       // over the donor's background, under the caption
+            img.gameObject.SetActive(false);
+            return img;
+        }
+
+        /// <summary>
+        /// Switch view: write the machine-local entry, then rebuild both panes. Nothing here goes
+        /// near the server - no tweak, no announce, no admin check - and the pending queue is left
+        /// alone, so a half-finished edit survives a look at the other view.
+        /// </summary>
+        private void SwitchView(SettingsView view)
+        {
+            if (SettingsMenuModule.View == view) return;
+            SettingsMenuModule.View = view;
+            RebuildViews();
+            SetStatus(true, view == SettingsView.Simple
+                ? "Simple view: the settings most groups change. Advanced has all of them."
+                : "Advanced view: every setting, module by module.");
+        }
+
+        private void SetShowDiagnostics(bool on)
+        {
+            if (SettingsMenuModule.ShowDiagnostics == on) return;
+            SettingsMenuModule.ShowDiagnostics = on;
+            RebuildViews();
+        }
+
+        /// <summary>
+        /// Rebuild both panes as one operation, behind the same guard <see cref="RebuildRight"/>
+        /// uses: building rows touches config values and captions, any of which could ask for
+        /// another rebuild, and a rebuild inside a rebuild is not slow but fatal (see
+        /// <see cref="_rebuilding"/>).
+        /// </summary>
+        private void RebuildViews()
+        {
+            if (!_built) return;
+            if (_rebuilding)
+            {
+                NoVikingLeftBehindPlugin.Log.LogWarning(
+                    "[SettingsMenu] something asked to rebuild both panes while one was already " +
+                    "being built - ignored. This is a bug, but a survivable one.");
+                return;
+            }
+            _rebuilding = true;
+            try
+            {
+                RebuildLeftCore();
+                RebuildRightCore();
+            }
+            finally { _rebuilding = false; }
+        }
+
+        /// <summary>Tear the left pane down and build whichever list the current view wants.</summary>
+        private void RebuildLeftCore()
+        {
+            foreach (var mr in _moduleRows)
+                if (mr != null && mr.Root != null) UnityEngine.Object.Destroy(mr.Root);
+            _moduleRows.Clear();
+            _orphanSectionOf.Clear();
+            if (_leftContent != null)
+                for (int i = _leftContent.childCount - 1; i >= 0; i--)
+                    UnityEngine.Object.Destroy(_leftContent.GetChild(i).gameObject);
+
+            BuildLeft();
+            ScrollLeftTo(0f);
+        }
+
+        /// <summary>
+        /// The left pane: the Simple groups as jump targets, or the module list. In Advanced it
+        /// also settles what the right pane shows when nothing has been picked yet.
+        /// </summary>
+        private void BuildLeft()
+        {
+            if (IsSimple) { BuildSimpleList(); return; }
+
+            BuildModuleList();
+            if (_network) return;
+
+            // The selected module can vanish from the list - "Show diagnostics" switched off
+            // under a diagnostics-only module - and a selection nothing lists is an empty pane
+            // with no row to click to get out of it. Fall back to the first module instead.
+            bool listed = false;
+            foreach (var mr in _moduleRows)
+            {
+                bool hit = _selected != null
+                    ? mr.Module == _selected
+                    : (mr.Module == null && !mr.IsNetwork && !string.IsNullOrEmpty(_selectedSection) &&
+                       mr.Section == _selectedSection);
+                if (hit) { listed = true; break; }
+            }
+            if (listed) return;
+
+            _selected = null;
+            _selectedSection = null;
+            foreach (var mr in _moduleRows)
+                if (mr.Module != null) { _selected = mr.Module; _selectedSection = mr.Module.Section; break; }
         }
 
         private TMP_FontAsset ResolveFont()
@@ -969,12 +1199,93 @@ namespace NoVikingLeftBehind
                    mr.Section == _selectedSection;
         }
 
+        /// <summary>
+        /// The Simple view's left pane: the plain-language groups, as jump targets. Same
+        /// behaviour as a theme heading in Advanced - hover tint, click to jump - except that the
+        /// jump moves the *right* pane, because the Simple page is one page and the groups are
+        /// places in it rather than separate selections.
+        ///
+        /// Built from <see cref="SimpleRows"/>, so a group with nothing tagged into it yet is
+        /// simply not listed: the left pane never promises a heading the right pane has not got.
+        /// </summary>
+        private void BuildSimpleList()
+        {
+            float y = 4f;
+            var head = UiKit.Label(_leftContent, "WHAT MOST GROUPS CHANGE", UiKit.BaseFontSize * 0.72f,
+                                   TextAlignmentOptions.BottomLeft, UiKit.HintColor);
+            if (head != null) UiKit.Place((RectTransform)head.transform, 6f, y, LeftW - 20f, ThemeRowH);
+            y += ThemeRowH;
+
+            var names = SimpleGroupNames();
+            foreach (var group in names)
+            {
+              // One group that cannot be drawn costs that group and nothing else - the same rule
+              // every other row on this page is built under.
+              try
+              {
+                var rowGo = new GameObject("Grp_" + group, typeof(RectTransform));
+                rowGo.transform.SetParent(_leftContent, false);
+                var rowRt = UiKit.Place((RectTransform)rowGo.transform, 0f, y, LeftW - 12f, ModuleRowH);
+
+                var name = UiKit.Label(rowRt, group, UiKit.BaseFontSize * 0.92f,
+                                       TextAlignmentOptions.MidlineLeft);
+                if (name != null)
+                    UiKit.Place((RectTransform)name.transform, 14f, 2f, LeftW - 30f, ModuleRowH - 4f);
+
+                string target = group;
+                var picker = new GameObject("Pick", typeof(RectTransform));
+                picker.transform.SetParent(rowRt, false);
+                UiKit.Stretch((RectTransform)picker.transform);
+                var pickBtn = picker.AddComponent<Button>();
+                pickBtn.transition = Selectable.Transition.None;
+                pickBtn.onClick.AddListener(delegate { JumpToGroup(target); });
+                // Only the Pick area is tipped. Unlike a module row, the name here is left as a
+                // plain label with raycastTarget off, so both the click and the hover fall
+                // through to the Pick button underneath - which is what tints the name.
+                UiKit.Tip(picker, "Jump to " + group);
+
+                if (name != null)
+                {
+                    var tint = picker.AddComponent<HeaderTint>();
+                    tint.Target = name;
+                    tint.Normal = UiKit.TextColor;
+                    tint.Lit = SelectedTint(UiKit.TextColor);
+                }
+              }
+              catch (Exception e)
+              {
+                  NoVikingLeftBehindPlugin.Log.LogError("[SettingsMenu] Simple group row '" +
+                      group + "' could not be built: " + e);
+              }
+              finally { y += ModuleRowH + 2f; }
+            }
+
+            // Counted, not measured off childCount: Destroy is deferred to the end of the frame,
+            // so the pane still holds the page it is replacing while this runs.
+            if (names.Count == 0)
+            {
+                var none = UiKit.Label(_leftContent, "Nothing tagged yet", UiKit.BaseFontSize * 0.85f,
+                                       TextAlignmentOptions.MidlineLeft, UiKit.HintColor);
+                if (none != null) UiKit.Place((RectTransform)none.transform, 14f, y, LeftW - 30f, ModuleRowH);
+                y += ModuleRowH;
+            }
+
+            UiKit.FitContent(_leftContent, y + 8f);
+        }
+
+        /// <summary>Put a Simple group heading at the top of the right pane, and follow it on the left.</summary>
+        private void JumpToGroup(string group)
+        {
+            float y;
+            if (group != null && _groupY.TryGetValue(group, out y)) ScrollRightTo(y);
+        }
+
         private void BuildModuleList()
         {
             float y = 4f;
             string theme = null;
 
-            foreach (var module in ConfigCatalog.ModulesForUi())
+            foreach (var module in VisibleModules())
             {
               // One module that cannot be drawn must cost that module and nothing else. In 0.7.5
               // a single throw in here (UiKit.Tip, on the very first row) left the entire page
@@ -1068,7 +1379,7 @@ namespace NoVikingLeftBehind
             // The Network panel, only when SmoothServer is actually loaded on this machine.
             // It is not one of our modules and has no Enabled toggle of its own - it is a window
             // onto five of another mod's settings, so it gets its own theme heading and one row.
-            if (SmoothServerBridge.Available && SmoothServerBridge.Rows().Count > 0)
+            if (SmoothServerBridge.Available && NetworkRows().Count > 0)
             {
               // Guarded like the module rows above: this row failing must not cost the list.
               try
@@ -1121,7 +1432,11 @@ namespace NoVikingLeftBehind
             }
 
             // Plugin-level settings that belong to no module: [General], [Frontier], [Tiers].
-            var orphans = ConfigCatalog.Orphans();
+            // Only the ones this view actually lists, so a section that is all diagnostics does
+            // not put a row in the list that opens an empty pane.
+            var orphans = new List<SettingInfo>();
+            foreach (var s in ConfigCatalog.Orphans())
+                if (Listed(s) && Visible(s)) orphans.Add(s);
             if (orphans.Count > 0)
             {
                 var head = UiKit.Label(_leftContent, "THE WHOLE MOD", UiKit.BaseFontSize * 0.72f,
@@ -1295,6 +1610,16 @@ namespace NoVikingLeftBehind
             _leftContent.anchoredPosition = p;
         }
 
+        /// <summary>Put a y offset from the top of the settings pane at the top of the visible area.</summary>
+        private void ScrollRightTo(float y)
+        {
+            if (_rightScroll == null || _rightContent == null || _rightScroll.viewport == null) return;
+            float max = Mathf.Max(0f, _rightContent.rect.height - _rightScroll.viewport.rect.height);
+            var p = _rightContent.anchoredPosition;
+            p.y = Mathf.Clamp(y - 4f, 0f, max);
+            _rightContent.anchoredPosition = p;
+        }
+
         private static string ModuleTooltip(FeatureModule m)
         {
             var sb = new System.Text.StringBuilder();
@@ -1345,11 +1670,20 @@ namespace NoVikingLeftBehind
             public SettingInfo Info;
             public GameObject Root;
             public TMP_Text Label, Hint, Note;
+
+            /// <summary>The short "Restart to turn on" / "turn back on" tag under the control.</summary>
+            public TMP_Text Tag;
+
+            /// <summary>Where this row sits in the pane, so the ▸ can scroll straight to it.</summary>
+            public float Y;
             public Toggle Toggle;
             public Slider Slider;
             public TMP_InputField Input;
             public TMP_Text CycleText;
             public Button Left, Right, Reset;
+
+            /// <summary>Simple view only: "show everything in this module".</summary>
+            public Button Jump;
             public KeyRecorder.Handle Recorder;
             public Button PickButton, RawButton;
             public bool Raw;
@@ -1401,9 +1735,57 @@ namespace NoVikingLeftBehind
 
             _netReset = null;
             _netConfirmUntil = 0f;
+            _headings.Clear();
+            _groupY.Clear();
 
-            var wanted = Wanted();
             float y = 4f;
+
+            if (!string.IsNullOrEmpty(_filter))
+            {
+                // One line, above every search, in both views: the box is level-blind on purpose.
+                var note = UiKit.Label(_rightContent,
+                    "Search looks at every setting, including advanced ones.",
+                    UiKit.BaseFontSize * 0.78f, TextAlignmentOptions.MidlineLeft, UiKit.HintColor);
+                if (note != null) UiKit.Place((RectTransform)note.transform, 12f, y, 720f, 22f);
+                y += 26f;
+            }
+            else if (IsSimple)
+            {
+                y = BuildFirstRunHint(y);
+            }
+
+            int built = SimplePage ? BuildSimplePage(ref y) : BuildListPage(ref y);
+
+            // The Network panel's own button, and only there: the selection survives a switch to
+            // Simple, where that button would sit under a page it has nothing to do with.
+            if (_network && !SimplePage && string.IsNullOrEmpty(_filter) && built > 0)
+                y = BuildNetworkReset(y);
+
+            if (built == 0)
+            {
+                string message;
+                if (!string.IsNullOrEmpty(_filter)) message = "Nothing matches \"" + _filter + "\".";
+                else if (IsSimple) message = "No simple settings are tagged yet - switch to Advanced.";
+                else message = "Nothing to show.";
+
+                var none = UiKit.Label(_rightContent, message,
+                    UiKit.BaseFontSize, TextAlignmentOptions.TopLeft, UiKit.HintColor);
+                if (none != null) UiKit.Place((RectTransform)none.transform, 12f, y + 8f, 700f, 30f);
+                y += 40f;
+            }
+
+            UiKit.FitContent(_rightContent, y + 12f);
+            _rightScroll.verticalNormalizedPosition = 1f;
+            RefreshAll();
+        }
+
+        /// <summary>
+        /// Today's page: the selected module's (or section's, or the Network panel's) settings, or
+        /// the search results, under a heading per cfg section. Returns how many rows it drew.
+        /// </summary>
+        private int BuildListPage(ref float y)
+        {
+            var wanted = Wanted();
             string section = null;
 
             foreach (var info in wanted)
@@ -1416,56 +1798,150 @@ namespace NoVikingLeftBehind
                 if (group != section)
                 {
                     section = group;
-                    var head = UiKit.Label(_rightContent, group,
-                                           UiKit.BaseFontSize * 0.8f, TextAlignmentOptions.BottomLeft,
-                                           UiKit.HintColor);
-                    var hrt = (RectTransform)head.transform;
-                    hrt.anchorMin = new Vector2(0f, 1f);
-                    hrt.anchorMax = new Vector2(1f, 1f);
-                    hrt.pivot = new Vector2(0f, 1f);
-                    hrt.offsetMin = new Vector2(8f, -(y + ThemeRowH));
-                    hrt.offsetMax = new Vector2(-8f, -y);
-                    y += ThemeRowH;
+                    y = Heading(group, y);
                 }
 
-                // One row that cannot be built must cost that row and nothing else. Before 0.7.6
-                // a single throw in here left the whole page blank.
-                //
-                // Named BEFORE it is built, and timed. A row that hangs - or overflows the stack,
-                // which Mono cannot catch and which simply stops the process - leaves no
-                // exception and no crash dump, so without this line there is nothing in the log
-                // to say which row the game died on. That cost a whole release to find once.
-                NoVikingLeftBehindPlugin.Log.LogInfo("[SettingsMenu] building row [" + info.Section +
-                                                     "] " + info.Key);
-                var started = Time.realtimeSinceStartup;
-                try { _rows.Add(BuildRow(info, y)); }
-                catch (Exception e)
-                {
-                    NoVikingLeftBehindPlugin.Log.LogError("[SettingsMenu] row [" + info.Section + "] " +
-                                                          info.Key + " could not be built: " + e);
-                }
-                float took = (Time.realtimeSinceStartup - started) * 1000f;
-                if (took > 50f)
-                    NoVikingLeftBehindPlugin.Log.LogWarning("[SettingsMenu] row [" + info.Section + "] " +
-                        info.Key + " took " + took.ToString("0") + " ms to build");
+                EmitRow(info, y, false);
                 y += RowH;
             }
+            return wanted.Count;
+        }
 
-            if (_network && string.IsNullOrEmpty(_filter) && wanted.Count > 0)
-                y = BuildNetworkReset(y);
-
-            if (wanted.Count == 0)
+        /// <summary>
+        /// The Simple page: every Essential row, under its plain-language heading, whatever module
+        /// it came from. Module selection is ignored by design - this is one page, not a per-module
+        /// one - and each editable row carries a ▸ that opens the module it really belongs to.
+        /// Returns how many rows it drew, so an untagged catalog gets the friendly line rather
+        /// than a blank pane.
+        /// </summary>
+        private int BuildSimplePage(ref float y)
+        {
+            int built = 0;
+            foreach (var group in SimpleGroupNames())
             {
-                var none = UiKit.Label(_rightContent,
-                    string.IsNullOrEmpty(_filter) ? "Nothing to show." : "Nothing matches \"" + _filter + "\".",
-                    UiKit.BaseFontSize, TextAlignmentOptions.TopLeft, UiKit.HintColor);
-                UiKit.Place((RectTransform)none.transform, 12f, 12f, 600f, 30f);
-                y += 40f;
+                _groupY[group] = y;
+                y = Heading(group.ToUpperInvariant(), y);
+
+                foreach (var entry in SimpleRows(group))
+                {
+                    if (entry.Status)
+                    {
+                        // The one read-only row on the page: a verdict, not a setting.
+                        try { _rows.Add(BuildAchievementRow(y)); }
+                        catch (Exception e)
+                        {
+                            NoVikingLeftBehindPlugin.Log.LogError(
+                                "[SettingsMenu] the achievement-safe row could not be built: " + e);
+                        }
+                    }
+                    else EmitRow(entry.Info, y, true);
+
+                    built++;
+                    y += RowH;
+                }
+            }
+            return built;
+        }
+
+        /// <summary>A heading in the right pane. Recorded, so <c>nvlb.uidump</c> can prove the page.</summary>
+        private float Heading(string text, float y)
+        {
+            _headings.Add(text);
+            var head = UiKit.Label(_rightContent, text, UiKit.BaseFontSize * 0.8f,
+                                   TextAlignmentOptions.BottomLeft, UiKit.HintColor);
+            if (head != null)
+            {
+                var hrt = (RectTransform)head.transform;
+                hrt.anchorMin = new Vector2(0f, 1f);
+                hrt.anchorMax = new Vector2(1f, 1f);
+                hrt.pivot = new Vector2(0f, 1f);
+                hrt.offsetMin = new Vector2(8f, -(y + ThemeRowH));
+                hrt.offsetMax = new Vector2(-8f, -y);
+            }
+            return y + ThemeRowH;
+        }
+
+        /// <summary>
+        /// One row, built the careful way. A row that cannot be built must cost that row and
+        /// nothing else - before 0.7.6 a single throw in here left the whole page blank - and it
+        /// is named in the log BEFORE it is built and timed after, because a row that overflows
+        /// the stack simply stops the process with no exception and no crash dump, and without
+        /// that line there is nothing to say which row the game died on.
+        /// </summary>
+        private void EmitRow(SettingInfo info, float y, bool withJump)
+        {
+            if (info == null) return;
+            NoVikingLeftBehindPlugin.Log.LogInfo("[SettingsMenu] building row [" + info.Section +
+                                                 "] " + info.Key);
+            var started = Time.realtimeSinceStartup;
+            try { _rows.Add(BuildRow(info, y, withJump)); }
+            catch (Exception e)
+            {
+                NoVikingLeftBehindPlugin.Log.LogError("[SettingsMenu] row [" + info.Section + "] " +
+                                                      info.Key + " could not be built: " + e);
+            }
+            float took = (Time.realtimeSinceStartup - started) * 1000f;
+            if (took > 50f)
+                NoVikingLeftBehindPlugin.Log.LogWarning("[SettingsMenu] row [" + info.Section + "] " +
+                    info.Key + " took " + took.ToString("0") + " ms to build");
+        }
+
+        // ---- what the Simple page contains ---------------------------------------------------------
+
+        /// <summary>One line on the Simple page: a setting, or the one read-only status row.</summary>
+        private sealed class SimpleEntry
+        {
+            public SettingInfo Info;
+            public bool Status;
+        }
+
+        /// <summary>The groups with something to show, in <see cref="SimpleGroups.Order"/>.</summary>
+        private static List<string> SimpleGroupNames()
+        {
+            var names = new List<string>();
+            foreach (var g in SimpleGroups.Order)
+                if (SimpleRows(g).Count > 0) names.Add(g);
+            return names;
+        }
+
+        /// <summary>
+        /// Everything under one Simple heading: the catalog's Essential rows for that group (in
+        /// the order <see cref="ConfigCatalog.EssentialGroupsForUi"/> settled), then SmoothServer's
+        /// Essential rows for it - they are built from an allowlist, not the catalog, so they are
+        /// appended rather than woven in - and, under "Progression &amp; XP", the read-only
+        /// achievement verdict, placed after the [ServerKeys] rows it is about.
+        /// </summary>
+        private static List<SimpleEntry> SimpleRows(string group)
+        {
+            var rows = new List<SimpleEntry>();
+            if (string.IsNullOrEmpty(group)) return rows;
+
+            foreach (var g in ConfigCatalog.EssentialGroupsForUi())
+            {
+                if (!string.Equals(g.Name, group, StringComparison.Ordinal)) continue;
+                foreach (var s in g.Rows)
+                    if (Visible(s)) rows.Add(new SimpleEntry { Info = s });
+                break;
             }
 
-            UiKit.FitContent(_rightContent, y + 12f);
-            _rightScroll.verticalNormalizedPosition = 1f;
-            RefreshAll();
+            foreach (var s in NetworkRows())
+                if (s.Level == SettingLevel.Essential &&
+                    string.Equals(s.SimpleGroup, group, StringComparison.Ordinal))
+                    rows.Add(new SimpleEntry { Info = s });
+
+            // The verdict belongs to the settings above it, so it is not a group of its own: if
+            // nothing in Progression is tagged yet there is nothing for it to be a verdict about.
+            if (string.Equals(group, SimpleGroups.Progression, StringComparison.Ordinal) && rows.Count > 0)
+            {
+                int at = 0;
+                for (int i = 0; i < rows.Count; i++)
+                    if (rows[i].Info != null &&
+                        string.Equals(rows[i].Info.Section, "ServerKeys", StringComparison.Ordinal))
+                        at = i + 1;
+                rows.Insert(at, new SimpleEntry { Status = true });
+            }
+
+            return rows;
         }
 
         /// <summary>
@@ -1520,10 +1996,164 @@ namespace NoVikingLeftBehind
             SmoothServerBridge.RequestResetToDefault();
         }
 
+        /// <summary>
+        /// The one-time strip at the top of Simple (UX §4). Dismissed for good into a
+        /// machine-local bool, exactly the way Valheim's own onboarding hints behave - no modal,
+        /// no second chance to be annoyed by it.
+        /// </summary>
+        private float BuildFirstRunHint(float y)
+        {
+            if (SettingsMenuModule.FirstRunHintShown) return y;
+            try
+            {
+                var text = UiKit.Label(_rightContent,
+                    "New here? Simple view covers what most groups change. Switch to Advanced any " +
+                    "time - search finds settings in both.",
+                    UiKit.BaseFontSize * 0.8f, TextAlignmentOptions.MidlineLeft, UiKit.HintColor);
+                if (text != null) Span((RectTransform)text.transform, 12f, 116f, y, 24f);
+
+                var got = UiKit.Button(_rightContent, "Got it", UiKit.BaseFontSize * 0.8f);
+                if (got != null)
+                {
+                    var brt = (RectTransform)got.transform;
+                    brt.anchorMin = new Vector2(1f, 1f);
+                    brt.anchorMax = new Vector2(1f, 1f);
+                    brt.pivot = new Vector2(1f, 1f);
+                    brt.anchoredPosition = new Vector2(-8f, -y);
+                    brt.sizeDelta = new Vector2(96f, 24f);
+                    got.onClick.AddListener(delegate
+                    {
+                        SettingsMenuModule.FirstRunHintShown = true;
+                        RebuildRight();
+                    });
+                    UiKit.Tip(got.gameObject, "Hide this line for good. It is remembered on this machine.");
+                }
+            }
+            catch (Exception e)
+            {
+                NoVikingLeftBehindPlugin.Log.LogError("[SettingsMenu] the first-run hint could not be built: " + e);
+            }
+            return y + 30f;
+        }
+
+        /// <summary>
+        /// The Simple page's one read-only row: does this world still earn achievements? It is a
+        /// verdict, not a setting - no control, no reset, nothing to queue - so the first word of
+        /// <c>ServerKeysModule.AchievementSafeSummary()</c> stands where a control would be and
+        /// the whole sentence, with the starting keys it read, is the tooltip.
+        /// </summary>
+        private Row BuildAchievementRow(float y)
+        {
+            var row = new Row { Info = null, Y = y };
+
+            var go = new GameObject("Row_AchievementSafe", typeof(RectTransform));
+            go.transform.SetParent(_rightContent, false);
+            row.Root = go;
+            var rt = (RectTransform)go.transform;
+            rt.anchorMin = new Vector2(0f, 1f);
+            rt.anchorMax = new Vector2(1f, 1f);
+            rt.pivot = new Vector2(0f, 1f);
+            rt.offsetMin = new Vector2(0f, -(y + RowH));
+            rt.offsetMax = new Vector2(0f, -y);
+
+            string summary;
+            try { summary = ServerKeysModule.AchievementSafeSummary(); }
+            catch (Exception e) { summary = "unknown (" + e.GetType().Name + ")"; }
+            if (string.IsNullOrEmpty(summary)) summary = "unknown";
+
+            var parts = summary.Split(' ');
+            string verdict = parts.Length > 0 ? parts[0] : "unknown";
+
+            row.Label = UiKit.Label(rt, "Achievement-safe", UiKit.BaseFontSize * 0.95f,
+                                    TextAlignmentOptions.MidlineLeft);
+            if (row.Label != null) Span((RectTransform)row.Label.transform, 12f, RowRightInset, 4f, 26f);
+
+            row.Hint = UiKit.Label(rt, "Whether this world still earns Valheim's achievements",
+                                   UiKit.BaseFontSize * 0.78f, TextAlignmentOptions.MidlineLeft,
+                                   UiKit.HintColor);
+            if (row.Hint != null) Span((RectTransform)row.Hint.transform, 12f, RowRightInset, 26f, 22f);
+
+            var tone = string.Equals(verdict, "yes", StringComparison.OrdinalIgnoreCase)
+                ? UiKit.TextColor
+                : (string.Equals(verdict, "no", StringComparison.OrdinalIgnoreCase)
+                       ? new Color(0.95f, 0.55f, 0.4f, 0.95f)
+                       : UiKit.DimColor);
+
+            var value = UiKit.Label(rt, verdict, UiKit.BaseFontSize * 0.95f,
+                                    TextAlignmentOptions.MidlineRight, tone);
+            if (value != null)
+            {
+                var vrt = (RectTransform)value.transform;
+                vrt.anchorMin = new Vector2(1f, 1f);
+                vrt.anchorMax = new Vector2(1f, 1f);
+                vrt.pivot = new Vector2(1f, 1f);
+                vrt.anchoredPosition = new Vector2(-8f, -8f);
+                vrt.sizeDelta = new Vector2(280f, 28f);
+            }
+
+            // The tooltip covers the words, not the value: nothing on this row is clickable, so
+            // one hot area over the whole row would only be a raycast target with no job.
+            var hot = new GameObject("Hot", typeof(RectTransform));
+            hot.transform.SetParent(rt, false);
+            Span((RectTransform)hot.transform, 8f, RowRightInset, 2f, RowH - 4f);
+            UiKit.Tip(hot,
+                "Achievement-safe: " + summary + "\n\n" +
+                "Valheim turns achievements off for a world whose starting keys its own World " +
+                "Modifiers menu could not have produced. Nothing to change here - this is what " +
+                "the game's own check says about this world.");
+
+            return row;
+        }
+
         private static void SetCaption(Button button, string caption)
         {
             if (button == null) return;
             foreach (var txt in button.GetComponentsInChildren<TMP_Text>(true)) txt.text = caption;
+        }
+
+        // ---- what each view lists ----------------------------------------------------------------------
+
+        /// <summary>
+        /// Is this row listed at all on the page as it stands? Two filters, and only two:
+        /// <see cref="SettingInfo.HiddenAlways"/> is never listed anywhere, and a Diagnostic row
+        /// is listed only when the player has asked for diagnostics. Everything else stays where
+        /// it has always been - <see cref="Visible"/> (permission) is a separate question.
+        /// </summary>
+        private static bool Listed(SettingInfo s)
+        {
+            if (s == null || s.HiddenAlways) return false;
+            return s.Level != SettingLevel.Diagnostic || SettingsMenuModule.ShowDiagnostics;
+        }
+
+        /// <summary>
+        /// The same for a search hit - level-blind by design. A search that cannot find something
+        /// the player knows exists is worse than a long list, so search reaches Diagnostic rows
+        /// whether or not the checkbox is on. <c>HiddenAlways</c> still means never.
+        /// </summary>
+        private static bool Found(SettingInfo s) { return s != null && !s.HiddenAlways; }
+
+        /// <summary>The modules with at least one row this view would list. The rest are dropped.</summary>
+        private static List<FeatureModule> VisibleModules()
+        {
+            var list = new List<FeatureModule>();
+            foreach (var m in ConfigCatalog.ModulesForUi())
+            {
+                int rows = 0;
+                foreach (var s in ConfigCatalog.ForModule(m))
+                    if (Listed(s) && Visible(s)) { rows++; break; }
+                if (rows > 0) list.Add(m);
+            }
+            return list;
+        }
+
+        /// <summary>SmoothServer's panel rows, filtered the same way ours are.</summary>
+        private static List<SettingInfo> NetworkRows()
+        {
+            var list = new List<SettingInfo>();
+            if (!SmoothServerBridge.Available) return list;
+            foreach (var s in SmoothServerBridge.Rows())
+                if (Listed(s) && Visible(s)) list.Add(s);
+            return list;
         }
 
         /// <summary>Which settings the right column should show right now.</summary>
@@ -1537,7 +2167,7 @@ namespace NoVikingLeftBehind
                 foreach (var s in ConfigCatalog.All)
                 {
                     if (!ConfigCatalog.Matches(s, needle)) continue;
-                    if (!Visible(s)) continue;
+                    if (!Found(s) || !Visible(s)) continue;
                     list.Add(s);
                     if (list.Count >= 80) break;      // a search is for finding, not for browsing
                 }
@@ -1552,22 +2182,17 @@ namespace NoVikingLeftBehind
                 foreach (var s in SmoothServerBridge.Rows())
                 {
                     if (!ConfigCatalog.Matches(s, needle)) continue;
-                    if (!Visible(s)) continue;
+                    if (!Found(s) || !Visible(s)) continue;
                     list.Add(s);
                 }
                 return list;
             }
 
-            if (_network)
-            {
-                foreach (var s in SmoothServerBridge.Rows())
-                    if (Visible(s)) list.Add(s);
-                return list;
-            }
+            if (_network) return NetworkRows();
 
             foreach (var s in ConfigCatalog.All)
             {
-                if (!Visible(s)) continue;
+                if (!Listed(s) || !Visible(s)) continue;
                 if (_selected != null) { if (s.Owner == _selected) list.Add(s); }
                 else if (_selectedSection != null && s.Owner == null && s.Section == _selectedSection) list.Add(s);
             }
@@ -1585,9 +2210,14 @@ namespace NoVikingLeftBehind
             return WhyNot(s, null) == null;
         }
 
-        private Row BuildRow(SettingInfo info, float y)
+        private Row BuildRow(SettingInfo info, float y, bool withJump)
         {
-            var row = new Row { Info = info };
+            var row = new Row { Info = info, Y = y };
+
+            // The Simple page puts a ▸ between the control and the reset button, so the control
+            // column - and with it the label's right inset - moves left by exactly that much.
+            float controlX = withJump ? -(52f + JumpShift) : -52f;
+            float inset = withJump ? RightInsetSimple : RightInset;
 
             var go = new GameObject("Row_" + info.Key, typeof(RectTransform));
             go.transform.SetParent(_rightContent, false);
@@ -1601,7 +2231,7 @@ namespace NoVikingLeftBehind
 
             row.Label = UiKit.Label(rt, info.Label, UiKit.BaseFontSize * 0.95f,
                                     TextAlignmentOptions.MidlineLeft);
-            Span((RectTransform)row.Label.transform, 12f, RightInset, 4f, 26f);
+            Span((RectTransform)row.Label.transform, 12f, inset, 4f, 26f);
 
             // Since 0.8.1 these hotkeys are real ZInput bindings and also appear on vanilla's
             // Keyboard & Mouse page, where a rebind beats whatever is set here. Say so on the row,
@@ -1621,12 +2251,12 @@ namespace NoVikingLeftBehind
 
             row.Hint = UiKit.Label(rt, hint, UiKit.BaseFontSize * 0.78f,
                                    TextAlignmentOptions.MidlineLeft, UiKit.HintColor);
-            Span((RectTransform)row.Hint.transform, 12f, RightInset, 26f, 22f);
+            Span((RectTransform)row.Hint.transform, 12f, inset, 26f, 22f);
 
             // The full description is the hover tooltip; the hint is the one-liner under the label.
             var hot = new GameObject("Hot", typeof(RectTransform));
             hot.transform.SetParent(rt, false);
-            Span((RectTransform)hot.transform, 8f, RightInset, 2f, RowH - 4f);
+            Span((RectTransform)hot.transform, 8f, inset, 2f, RowH - 4f);
             UiKit.Tip(hot, Tooltip(info));
 
             // ---- the control ------------------------------------------------------------------
@@ -1636,7 +2266,7 @@ namespace NoVikingLeftBehind
             crt.anchorMin = new Vector2(1f, 1f);
             crt.anchorMax = new Vector2(1f, 1f);
             crt.pivot = new Vector2(1f, 1f);
-            crt.anchoredPosition = new Vector2(-52f, -8f);
+            crt.anchoredPosition = new Vector2(controlX, -8f);
             crt.sizeDelta = new Vector2(280f, 28f);
 
             switch (info.TypeName)
@@ -1665,6 +2295,27 @@ namespace NoVikingLeftBehind
                 UiKit.Tip(row.Reset.gameObject, "Put this back to its default, " + info.DefaultString + ".");
             }
 
+            // ---- show everything in this module (Simple only) ---------------------------------
+            if (withJump)
+            {
+                row.Jump = UiKit.Button(rt, _jumpGlyph, UiKit.BaseFontSize * 0.9f);
+                if (row.Jump != null)
+                {
+                    var jrt = (RectTransform)row.Jump.transform;
+                    jrt.anchorMin = new Vector2(1f, 1f);
+                    jrt.anchorMax = new Vector2(1f, 1f);
+                    jrt.pivot = new Vector2(1f, 1f);
+                    jrt.anchoredPosition = new Vector2(-52f, -8f);
+                    jrt.sizeDelta = new Vector2(JumpButtonW, 28f);
+                    var target = info;
+                    row.Jump.onClick.AddListener(delegate { JumpToAdvanced(target); });
+                    // The tooltip goes on the button's own object, sharing it with the Button so
+                    // Unity runs both - a Hover on a patch *over* a control answers the click
+                    // itself and the control never hears it (0.8.3).
+                    UiKit.Tip(row.Jump.gameObject, "Show everything in " + OwnerName(info));
+                }
+            }
+
             // ---- the "you cannot change this" note --------------------------------------------
             row.Note = UiKit.Label(rt, "", UiKit.BaseFontSize * 0.78f,
                                    TextAlignmentOptions.MidlineRight, UiKit.DimColor);
@@ -1672,11 +2323,63 @@ namespace NoVikingLeftBehind
             nrt.anchorMin = new Vector2(1f, 1f);
             nrt.anchorMax = new Vector2(1f, 1f);
             nrt.pivot = new Vector2(1f, 1f);
-            nrt.anchoredPosition = new Vector2(-52f, -8f);
+            nrt.anchoredPosition = new Vector2(controlX, -8f);
             nrt.sizeDelta = new Vector2(280f, 28f);
             row.Note.gameObject.SetActive(false);
 
+            // ---- the restart tag (UX §3) -------------------------------------------------------
+            // Under the control, never over it: a plain label, raycastTarget off, so it cannot
+            // take a click meant for the thing above it.
+            row.Tag = UiKit.Label(rt, "", UiKit.BaseFontSize * 0.72f,
+                                  TextAlignmentOptions.MidlineRight, UiKit.DimColor);
+            if (row.Tag != null)
+            {
+                var trt = (RectTransform)row.Tag.transform;
+                trt.anchorMin = new Vector2(1f, 1f);
+                trt.anchorMax = new Vector2(1f, 1f);
+                trt.pivot = new Vector2(1f, 1f);
+                trt.anchoredPosition = new Vector2(controlX, -36f);
+                trt.sizeDelta = new Vector2(280f, 16f);
+                row.Tag.gameObject.SetActive(false);
+            }
+
             return row;
+        }
+
+        /// <summary>What a row's ▸ opens: the module it belongs to, or where it really lives.</summary>
+        private static string OwnerName(SettingInfo info)
+        {
+            if (info == null) return "this mod";
+            if (info.Foreign) return SmoothServerBridge.PanelLabel;
+            if (!string.IsNullOrEmpty(info.ModuleName)) return info.ModuleName;
+            return "[" + info.Section + "]";
+        }
+
+        /// <summary>
+        /// The ▸ on a Simple row: open Advanced at the module this setting really belongs to, with
+        /// the row itself on screen. Everything else about the page is left alone - the pending
+        /// queue especially, so a half-finished edit survives the jump.
+        /// </summary>
+        private void JumpToAdvanced(SettingInfo info)
+        {
+            if (info == null) return;
+
+            SettingsMenuModule.View = SettingsView.Advanced;
+
+            if (info.Foreign) { _selected = null; _selectedSection = null; _network = true; }
+            else if (info.Owner != null)
+            {
+                _selected = info.Owner;
+                _selectedSection = info.Owner.Section;
+                _network = false;
+            }
+            else { _selected = null; _selectedSection = info.Section; _network = false; }
+
+            RebuildViews();
+
+            var row = FindRow(info);
+            if (row != null) ScrollRightTo(row.Y);
+            SetStatus(true, "Advanced view: " + OwnerName(info) + ".");
         }
 
         /// <summary>Stretch horizontally between a left inset and a right inset, at a fixed y/height.</summary>
@@ -2206,7 +2909,13 @@ namespace NoVikingLeftBehind
                 return null;
             }
 
-            if (!info.Live) return "Needs a server restart";
+            // UX §3: a short tag that says what to do, not just that something is wrong. Only
+            // the on-direction is worded that way, and only where it is true - a tag nobody can
+            // trust is worse than no tag at all.
+            if (!info.Live)
+                return (string.Equals(info.TypeName, "bool", StringComparison.Ordinal) &&
+                        !string.Equals(info.CurrentString, "true", StringComparison.OrdinalIgnoreCase))
+                    ? "Restart to turn on" : "Needs a server restart";
             if (info.IsLocal)
             {
                 if (connected && info.Tier == SettingTier.Admin && !admin)
@@ -2222,10 +2931,29 @@ namespace NoVikingLeftBehind
             if (info.IsEnabledToggle && info.Owner != null && !info.Owner.BootEnabled)
             {
                 bool wantOn;
-                if (proposed == null) { if (!info.Owner.Enabled) return "Needs a server restart"; }
-                else if (SettingValue.TryParseBool(proposed, out wantOn) && wantOn) return "Needs a server restart";
+                if (proposed == null) { if (!info.Owner.Enabled) return "Restart to turn on"; }
+                else if (SettingValue.TryParseBool(proposed, out wantOn) && wantOn) return "Restart to turn on";
             }
             return null;
+        }
+
+        /// <summary>
+        /// The short restart tag next to a control (UX §3), shown only where it is true.
+        /// A module's Enabled toggle is the one row whose *direction* matters: turning a module
+        /// off is always live, turning it back on needs a restart unless it was on at boot. The
+        /// tab already decides that in <see cref="WhyNot"/> from <c>Owner.BootEnabled</c>; this
+        /// says the same thing before the change is committed rather than after, so nobody
+        /// switches a module off and only then finds out what it costs to switch it back.
+        /// A row that cannot be changed at all shows its reason in the note instead - two texts
+        /// saying "restart" on one row is how a tag stops being read.
+        /// </summary>
+        private static string RestartTag(SettingInfo info, string shown, bool editable)
+        {
+            if (info == null || !editable) return null;
+            if (!info.IsEnabledToggle || info.Owner == null) return null;
+            if (!info.Owner.BootEnabled) return null;
+            return string.Equals(shown, "false", StringComparison.OrdinalIgnoreCase)
+                ? "Restart needed to turn back on" : null;
         }
 
         private static bool LocalIsAdmin()
@@ -2334,7 +3062,41 @@ namespace NoVikingLeftBehind
                     UiKit.Tip(_auditText.gameObject, full.ToString());
                 }
             }
-            if (_resetButton != null) _resetButton.interactable = _selected != null;
+            RefreshViewControls();
+            // "Reset module to defaults" belongs to a module, and the Simple page has no selected
+            // one: it is a page of settings from all over the mod.
+            if (_resetButton != null) _resetButton.interactable = !SimplePage && _selected != null;
+        }
+
+        /// <summary>The header's segmented control and diagnostics box, from the machine-local settings.</summary>
+        private void RefreshViewControls()
+        {
+            bool simple = IsSimple;
+
+            if (_simpleLit != null && _simpleLit.gameObject.activeSelf != simple)
+                _simpleLit.gameObject.SetActive(simple);
+            if (_advancedLit != null && _advancedLit.gameObject.activeSelf == simple)
+                _advancedLit.gameObject.SetActive(!simple);
+
+            SetCaptionColor(_simpleButton, simple ? UiKit.TextColor : UiKit.HintColor);
+            SetCaptionColor(_advancedButton, simple ? UiKit.HintColor : UiKit.TextColor);
+
+            // Diagnostics is an Advanced-only idea, so the box is not there at all in Simple.
+            if (_diagToggle != null)
+            {
+                if (_diagToggle.gameObject.activeSelf == simple) _diagToggle.gameObject.SetActive(!simple);
+                _suppress = true;
+                try { _diagToggle.isOn = SettingsMenuModule.ShowDiagnostics; }
+                finally { _suppress = false; }
+            }
+            if (_diagLabel != null && _diagLabel.gameObject.activeSelf == simple)
+                _diagLabel.gameObject.SetActive(!simple);
+        }
+
+        private static void SetCaptionColor(Button button, Color color)
+        {
+            if (button == null) return;
+            foreach (var txt in button.GetComponentsInChildren<TMP_Text>(true)) txt.color = color;
         }
 
         private void RefreshModuleRow(SettingInfo info)
@@ -2471,6 +3233,15 @@ namespace NoVikingLeftBehind
                     row.Hint.color = editable ? UiKit.HintColor
                                              : new Color(UiKit.HintColor.r, UiKit.HintColor.g,
                                                          UiKit.HintColor.b, 0.35f);
+
+                // The restart tag sits under the control and says what to do about it.
+                string tag = RestartTag(info, current, editable);
+                if (row.Tag != null)
+                {
+                    row.Tag.text = tag ?? "";
+                    bool showTag = !string.IsNullOrEmpty(tag);
+                    if (row.Tag.gameObject.activeSelf != showTag) row.Tag.gameObject.SetActive(showTag);
+                }
 
                 // A row that cannot be changed shows the reason in place of its control.
                 if (row.Note != null)

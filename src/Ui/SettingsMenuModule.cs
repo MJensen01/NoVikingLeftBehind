@@ -64,6 +64,7 @@ namespace NoVikingLeftBehind
         private ConfigEntry<bool> _showUnavailable;
         private ConfigEntry<SettingsView> _view;
         private ConfigEntry<bool> _showDiagnostics;
+        private ConfigEntry<bool> _firstRunHintShown;
 
         // Vanilla's private tab bookkeeping, for the hooks that arrive late.
         private static FieldInfo _fSettingsTabs;
@@ -115,6 +116,25 @@ namespace NoVikingLeftBehind
             }
         }
 
+        /// <summary>
+        /// Has the one-time "New here?" line at the top of Simple been dismissed? Machine-local
+        /// and written once, the way Valheim's own onboarding hints behave: it is remembered, not
+        /// asked again. Tagged <c>.Diag()</c> so it never clutters the tab it is about.
+        /// </summary>
+        public static bool FirstRunHintShown
+        {
+            get
+            {
+                return _inst != null && _inst._firstRunHintShown != null && _inst._firstRunHintShown.Value;
+            }
+            set
+            {
+                if (_inst == null || _inst._firstRunHintShown == null) return;
+                if (_inst._firstRunHintShown.Value == value) return;
+                _inst._firstRunHintShown.Value = value;
+            }
+        }
+
         protected override void Bind()
         {
             _inst = this;
@@ -131,6 +151,12 @@ namespace NoVikingLeftBehind
                 "that exist only for diagnosing the mod. Off by default because they do nothing " +
                 "for normal play. Machine-local: this only affects your own menu.",
                 Opt.B("Show self-test and debugging settings in Advanced"));
+
+            _firstRunHintShown = BindLocal("FirstRunHintShown", false,
+                "Has the one-time \"New here?\" line at the top of the Simple view been dismissed? " +
+                "Set by pressing Got it; set it back to false to see the line again. " +
+                "Machine-local, and never listed in the settings tab itself.",
+                Opt.B("Whether the Simple view's first-run line has been dismissed").Diag());
 
             _showUnavailable = BindLocal("ShowUnavailable", true,
                 "Show settings you are not allowed to change, greyed out with the reason, rather " +
