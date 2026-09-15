@@ -19,7 +19,7 @@ runs, guardian powers, ore regrowth, portals and a frontier-based catch-up syste
 every player. The server enforces every setting (via [ServerSync](https://github.com/blaxxun-boop/ServerSync)),
 so nobody has to agree on config by hand.
 
-0.10.2 is built against the Valheim `1.0.7` assemblies and smoke-tested on `1.0.12` (network version 40) / BepInEx `5.4.2350`.
+0.10.3 is built against the Valheim `1.0.7` assemblies and smoke-tested on `1.0.12` (network version 40) / BepInEx `5.4.2350`.
 For servers held on the `default_pre1_0` branch (0.221.12) use 0.8.8.
 
 ## Install (players, via r2modman / Thunderstore)

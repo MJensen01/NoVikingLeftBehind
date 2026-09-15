@@ -1,7 +1,7 @@
 
 # Changelog — NoVikingLeftBehind
 
-## 0.10.3 (unreleased)
+## 0.10.3 (2026-09-15)
 
 Fixes
 * **OreRegrowth: pending ore never respawned after a server restart** (the store rounded prefab hashes through a float on
