@@ -43,13 +43,16 @@ plan — `docs/research/settings-menu/INVENTORY.md` (all 294 settings classified
   one batched write through TweakDoor modelled on "Reset module", one chat line, Custom computed not stored) but **recommended for
   the release after**, once Matt has seen the Simple list in game.
 
-## Proposed Simple view — 28 rows, 7 groups (labels are the player-facing text)
+## Proposed Simple view — 32 rows, 8 groups (labels are the player-facing text)
 
 **Progression & XP** — How fast you learn skills (SkillGainRate) · Skill lost when you die (1 = normal, 0 = none) · Keep your gear
 when you die · *Achievement-safe: yes/no* (read-only status row from 0.10.3's check)
 
 **Inventory & carrying** — Carry weight · Extra from the Megingjord belt · Dedicated gear slots (restart to turn on) · Food slots ·
-Ammo slots · Belt/utility slots · Spare storage slots
+Ammo slots · Belt/utility slots · Spare storage slots · Quick slots (hotbar row)
+
+**Powers & hotkeys** — Keys for the quick slots · Forsaken powers you can carry at once (1 = vanilla) · Key for your second power ·
+Modifier held with the second-power key · Key for your third power · Modifier held with the third-power key
 
 **Crafting from storage** — Craft and build from nearby chests · How far a chest can be
 
@@ -65,7 +68,7 @@ runs out
 **Server & safety** (admin rows greyed for non-admins) — Who may change these settings · Everyone must have this mod installed ·
 Back up your character file · Network preset (SmoothServer) · Shared map for everyone (SmoothServer)
 
-Trimmed to Advanced: Playtime MaxBonus, Vanguard DamageReduction, Powers Slots, Loadouts Slots, Repair Trigger, Mining
+Trimmed to Advanced: Playtime MaxBonus, Vanguard DamageReduction, Loadouts Slots, Repair Trigger, Mining
 DropMultiplier, Tools PerTierBonus, CorpseRun RespawnFood, Access Announce. Budget enforced by a self-test (≤ 45 Essential rows).
 
 ## Work breakdown (from UI-ARCHITECTURE §6)

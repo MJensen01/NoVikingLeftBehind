@@ -103,7 +103,8 @@ namespace NoVikingLeftBehind
                 "0 by default since 0.4.2 - the bottom row is GenericSlots plain storage instead. " +
                 "Set it above 0 to bring the hotkey row back; quick slots are drawn first, then " +
                 "the generic ones, on the same row.",
-                Opt.N("How many hotkeyed quick-use slots", 0, 8));
+                Opt.N("Extra hotbar slots with their own keys, set below (0 = none)", 0, 8)
+                    .As("Quick slots (hotbar row)").Simple(SimpleGroups.Inventory, 80));
             _genericSlots = BindSynced("GenericSlots", 2,
                 "Server: how many plain storage slots (0-8) on the bottom row. Any item fits, " +
                 "there is no hotkey and nothing is drawn on the cell - they are simply two more " +
@@ -133,7 +134,8 @@ namespace NoVikingLeftBehind
                 "leave a single quick slot without a hotkey. Pick keys the game is not already " +
                 "using for something else, or you will fight vanilla for that key. Never synced, " +
                 "so each player picks their own.",
-                Opt.T("Keys for the quick slots, in order - unset by default; avoid keys vanilla already uses"));
+                Opt.T("In order; avoid keys vanilla already uses; saved on your own machine")
+                    .As("Keys for the quick slots").Simple(SimpleGroups.Powers, 50));
             _showUi = BindLocal("ShowUI", true,
                 "Local: draw the extra slots in their own panel beside the inventory window. " +
                 "Turn off if a game update breaks the layout - the items stay exactly where they " +

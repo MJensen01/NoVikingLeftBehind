@@ -5,9 +5,9 @@
 
 Settings tab
 
-The settings tab has a **Simple** view and now opens on it: one page, seven plain-language groups, about twenty-eight
+The settings tab has a **Simple** view and now opens on it: one page, eight plain-language groups, about thirty-four
 rows - the settings most groups actually change - and Advanced, unchanged, one click away in the header. The detail:
-* **The tab opens on a Simple view: the settings most groups change, in plain language, seven groups, one page.** No module
+* **The tab opens on a Simple view: the settings most groups change, in plain language, eight groups, one page.** No module
   names, no scrolling past forty entries to find the one dial you came for — just the settings that actually get changed,
   under headings like "Inventory & carrying" and "Gathering & the world", with a read-only "Achievement-safe" verdict where
   it matters. **Advanced is one click away in the header and is completely unchanged**: every setting, module by module,

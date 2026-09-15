@@ -79,7 +79,7 @@ it. `SettingLevel` is `Essential` | `Advanced` | `Diagnostic`, and **Advanced is
 setting nobody has classified stays exactly where it is today and nothing is ever lost by omission.
 Three chainable modifiers set it at the bind site:
 `.Simple(SimpleGroups.Gathering, 20)` makes a row Essential and puts it on the Simple view under a
-plain-language heading (`src/Config/SimpleGroups.cs` holds the seven group names and their order —
+plain-language heading (`src/Config/SimpleGroups.cs` holds the eight group names and their order —
 always the constant, never a literal); `.Diag()` marks a self-test / dry-run / debugging knob, shown
 in Advanced only when the player ticks "Show diagnostics"; `.Hidden()` drops a row from both views
 for good (obsolete settings such as `[Powers] Slot1Modifier`, still bound so an old cfg file parses).
@@ -97,7 +97,7 @@ server by `[PickerSelfTest] SelfTest`) checks it: every Essential row names a gr
 stays inside its budget of 45 (FAIL) — a page that grows back into 298 rows helps nobody.
 
 **The settings tab's two views (0.11.0)**: the tab opens on **Simple** — one page of the settings
-most groups actually change, under the seven plain-language `SimpleGroups` headings, ignoring
+most groups actually change, under the eight plain-language `SimpleGroups` headings, ignoring
 modules entirely: the left pane lists the groups as jump targets into the page, the right pane
 lists every `Essential` row there is, wherever it came from, plus SmoothServer's two Essential
 rows under "Server & safety" and one **read-only** "Achievement-safe" row (the verdict

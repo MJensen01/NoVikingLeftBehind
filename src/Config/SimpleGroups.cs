@@ -24,11 +24,12 @@ namespace NoVikingLeftBehind
         public const string Gathering = "Gathering & the world";
         public const string Death = "Death & getting back";
         public const string Server = "Server & safety";
+        public const string Powers = "Powers & hotkeys";
 
         /// <summary>Every group, in the order the Simple view lists them.</summary>
         public static readonly string[] Order =
         {
-            Progression, Inventory, Crafting, Building, Gathering, Death, Server
+            Progression, Inventory, Powers, Crafting, Building, Gathering, Death, Server
         };
 
         /// <summary>Position in <see cref="Order"/>, or -1 for a name that is not a group.</summary>
@@ -40,7 +41,7 @@ namespace NoVikingLeftBehind
             return -1;
         }
 
-        /// <summary>True when this is one of the seven groups. The self-test's first check.</summary>
+        /// <summary>True when this is one of the eight groups. The self-test's first check.</summary>
         public static bool IsKnown(string group)
         {
             return IndexOf(group) >= 0;
