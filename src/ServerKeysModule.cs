@@ -453,6 +453,9 @@ namespace NoVikingLeftBehind
         /// GUI prefab, so there we answer the narrower question we can actually prove: does the
         /// world still carry a skill-rate key (the only non-GUI key this module ever wrote)?
         /// </summary>
+        /// <summary>UI entry point: the same answer StatusDetail prints, for the settings tab read-only "Achievement-safe" row.</summary>
+        internal static string AchievementSafeSummary() { try { return AchievementSafety(); } catch (Exception e) { return "unknown (" + e.GetType().Name + ")"; } }
+
         private static string AchievementSafety()
         {
             var world = ZNet.World;
