@@ -1,6 +1,24 @@
 
 # Changelog — NoVikingLeftBehind
 
+## 0.10.3 (unreleased)
+
+Fixes
+* **A `[ServerKeys]` flag set to off no longer deletes the world's own key.** Off now means "not managed by
+  NoVikingLeftBehind", not "delete": a server launched with a vanilla `-modifier deathpenalty casual` flag kept losing
+  `DeathKeepEquip` (and its skill-loss setting) on *every* world load, because the module re-asserted its whole key set
+  right after the launch flag applied it — silently, so nobody had a reason to look. Skill rates left at their default
+  1.0 are likewise no longer written at all, so the world's own value stands. `[ServerKeys] RemoveKeys` is now the only
+  setting that takes a key off a world, and an override of an existing key value is logged as a warning. (GitHub issue #8)
+* **Skill rates are applied without a world key, so a dedicated server's world is no longer flagged as cheated.**
+  Valheim has no skill modifier in its World Modifiers menu, so *any* stored `skillgainrate` key makes the game treat the
+  world as cheated and turns achievements off for every player on the server — which is what a modded server with a
+  non-vanilla XP rate had been doing. The new `[ServerKeys] RatesWithoutWorldKeys=true` (default on, server-synced)
+  applies `SkillGainRate`/`SkillReductionRate` directly to the values the game reads, on the server and on every client,
+  and writes no key. **An existing world has the stray key removed on its first start with this version**, with the rate
+  unchanged; `nvlb.status` prints the mode, the effective rates and an `achievement-safe: yes/no` verdict. Set
+  `RatesWithoutWorldKeys=false` to go back to storing the rates in the world file. (GitHub issue #4)
+
 ## 0.10.2
 
 New module **CarryWeight** `[Carry]` — a Viking who can carry a run's worth of ore home, and a Megingjord worth the belt slot.
