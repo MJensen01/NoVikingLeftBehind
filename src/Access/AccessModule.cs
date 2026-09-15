@@ -107,7 +107,8 @@ namespace NoVikingLeftBehind
                 "Who may change a server-synced setting from the in-game settings tab. " +
                 "Everyone = any player on the server (settings marked admin-only still are). " +
                 "Admins = only players in adminlist.txt. Changing this takes effect immediately.",
-                Opt.C("Who may change settings from the in-game menu").Admin());
+                Opt.C("Who may change settings from the in-game menu").Admin()
+                   .Simple(SimpleGroups.Server, 10).As("Who may change these settings"));
 
             _announce = BindSynced("Announce", Announce.Chat,
                 "How a change is told to the rest of the server. Chat = one chat line attributed " +

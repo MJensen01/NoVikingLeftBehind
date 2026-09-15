@@ -110,12 +110,16 @@ namespace NoVikingLeftBehind
                 "NoVikingLeftBehind does not touch the rate at all - whatever the world or a vanilla " +
                 "launch flag set stays. Stored in the world as value*100 only when " +
                 "RatesWithoutWorldKeys is off.",
-                Opt.N("How fast players gain skill levels", 0, 10).Admin());
+                Opt.N("How fast players gain skill levels", 0, 10).Admin()
+                   .Simple(SimpleGroups.Progression, 10).As("How fast everyone learns skills (1 = normal)"));
             _skillReductionRate = BindSynced("SkillReductionRate", 1.0f,
-                "Skill loss on death multiplier. 1.0 = vanilla, 0 = no skill loss. Left at its " +
-                "default, NoVikingLeftBehind does not touch the rate at all - a vanilla " +
+                "Skill loss on death is a MULTIPLIER on top of vanilla's own loss, not a fixed " +
+                "amount removed. 1.0 = vanilla's normal loss, 0.5 = half of whatever vanilla would " +
+                "have taken (not 'lose half a level'), 0 = no skill loss. Left at its default, " +
+                "NoVikingLeftBehind does not touch the rate at all - a vanilla " +
                 "'-modifier deathpenalty casual' server keeps its own setting.",
-                Opt.N("How much skill is lost when a player dies", 0, 5).Admin());
+                Opt.N("How much skill is lost when a player dies", 0, 5).Admin()
+                   .Simple(SimpleGroups.Progression, 20).As("Skill lost when you die (1 = normal, 0 = none)"));
 
             _noBuildCost = BindSynced("NoBuildCost", false, "Building costs no resources. Off = not managed (the world's own key stands).",
                 Opt.B("Building structures costs no resources").Admin());
@@ -129,7 +133,8 @@ namespace NoVikingLeftBehind
                 Opt.B("Every crafting recipe is unlocked from the start").Admin());
             _deathKeepEquip = BindSynced("DeathKeepEquip", false, "Keep equipped items on death. Off = not managed - a server launched with " +
                 "'-modifier deathpenalty casual' keeps the key that flag set (this is GitHub issue #8).",
-                Opt.B("Players keep their equipped gear when they die").Admin());
+                Opt.B("Players keep their equipped gear when they die").Admin()
+                   .Simple(SimpleGroups.Progression, 30).As("Keep your gear when you die"));
             _removeKeys = BindSynced("RemoveKeys", "",
                 "Global keys to DELETE from the world every time these settings are applied (comma-separated " +
                 "key names, e.g. 'enemyleveluprate,playerevents'). This is the ONLY setting that deletes a " +
