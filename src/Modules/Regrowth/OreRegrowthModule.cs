@@ -58,8 +58,9 @@ namespace NoVikingLeftBehind
         public override string Hint => "Mined ore nodes come back after a while";
 
         protected override string EnabledDescription =>
-            "Regrow mined-out ore nodes whose material tier is behind the frontier. " +
-            "Server only: recording and respawning both happen on the dedicated server.";
+            "Regrow mined-out ore nodes from tiers your group has moved past. Regrow mined-out " +
+            "ore nodes whose material tier is behind the frontier. Server only: recording and " +
+            "respawning both happen on the dedicated server.";
 
         // ---- config -------------------------------------------------------------------
 
@@ -149,7 +150,8 @@ namespace NoVikingLeftBehind
             _regrowDays = BindSynced("RegrowDays", 14,
                 "In-game days a mined-out node stays gone before it may regrow. To turn ore " +
                 "regrowth off entirely, set [Regrowth] Enabled=false rather than raising this.",
-                Opt.N("Days before a mined ore node comes back", 0, 60));
+                Opt.N("Days before mined ore comes back (0 = instantly)", 0, 60)
+                    .Simple(SimpleGroups.Gathering, 30));
 
             _checkIntervalSec = BindSynced("CheckIntervalSec", 60f,
                 "Real seconds between respawn sweeps on the server.",

@@ -124,7 +124,8 @@ namespace NoVikingLeftBehind
             _maxRange = BindSynced("MaxRangeMetres", 60f,
                 "Hard cap on the effective build range in metres, whatever the tier and level add " +
                 "up to. The result is also never below the vanilla range.",
-                Opt.N("Highest possible workbench build range, in metres", 10, 200, 5));
+                Opt.N("Furthest a workbench can reach (metres)", 10, 200, 5)
+                    .Simple(SimpleGroups.Building, 30));
 
             _stationsCfg = BindSynced("Stations", DefaultStations,
                 "Comma-separated crafting-station PREFAB names this applies to. Default: the " +
