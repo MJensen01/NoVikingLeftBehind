@@ -40,6 +40,7 @@ namespace NoVikingLeftBehind
         private ConfigEntry<int> _quickSlots;
         private ConfigEntry<int> _genericSlots;
         private ConfigEntry<bool> _autoEat;
+        private ConfigEntry<float> _autoEatSeconds;
         private ConfigEntry<bool> _stackAllGuard;
         private ConfigEntry<bool> _showUi;
         private ConfigEntry<string> _quickKeys;
@@ -65,6 +66,9 @@ namespace NoVikingLeftBehind
         private static float _eatTimer;
         private static int _tickErrors;
         private static bool _commandRegistered;
+
+        /// <summary>How many food buffs vanilla runs at once (Player.EatFood, Player.cs:2316/2390).</summary>
+        private const int VanillaFoodEffects = 3;
 
         private static readonly MethodInfo SetupEquipmentMi = AccessTools.Method(typeof(Humanoid), "SetupEquipment");
         private static readonly FieldInfo EquipSeFi = AccessTools.Field(typeof(Humanoid), "m_equipmentStatusEffects");
@@ -104,6 +108,11 @@ namespace NoVikingLeftBehind
                 "Server: when a food buff runs out and the same food is sitting in a food slot, " +
                 "eat it automatically.",
                 Opt.B("Automatically eat from a food slot when a buff runs out"));
+            _autoEatSeconds = BindSynced("AutoEatWhenSecondsLeft", 10f,
+                "With food that keeps full strength (FoodNoDecay), wait until the food in that " +
+                "slot has this many seconds left before eating the next one. 0 = eat as soon as " +
+                "the game allows.",
+                Opt.N("Seconds left on a food before AutoEat tops it up", 0, 120, 1));
             _stackAllGuard = BindSynced("StackAllProtectsSlots", true,
                 "Server: keep the vanilla 'Stack all' button and hold-E on a chest out of the extra " +
                 "slots. Vanilla walks the whole bag with no row filter, so a chest holding arrows or " +
@@ -1155,9 +1164,32 @@ namespace NoVikingLeftBehind
             }
         }
 
+        /// <summary>
+        /// One pass over the food slots, once a second (see the tick above). Eats at most one item
+        /// per pass, exactly like a player pressing a key.
+        ///
+        /// GRACE PERIOD (0.11.0, issue #2): vanilla lets you eat again at half the burn time
+        /// (<c>Player.Food.CanEatAgain() =&gt; m_time &lt; m_foodBurnTime / 2</c>, Player.cs:36-39),
+        /// because vanilla food is decaying towards nothing by then and topping it up is a gain.
+        /// With FoodNoDecay on it is NOT decaying - it is still at full strength - so eating at the
+        /// half mark throws away the whole second half of the sausage. AutoEatWhenSecondsLeft makes
+        /// us wait until the food in THAT slot is nearly gone. The check is per-candidate on
+        /// purpose: a sausage with 20 minutes left must not stop honey in another slot from being
+        /// topped up.
+        ///
+        /// <c>Food.m_time</c> is REMAINING seconds, not elapsed - Player.UpdateFood does
+        /// <c>food.m_time -= 1f</c> each second and removes the food at <c>m_time &lt;= 0</c>
+        /// (Player.cs:2433-2439), and EatFood sets it to the full <c>m_foodBurnTime</c> on eating.
+        /// </summary>
         private static void AutoEat(Player p, Inventory inv)
         {
             if (p.IsDead() || p.InCutscene()) return;
+
+            float grace = Inst != null && Inst._autoEatSeconds != null ? Inst._autoEatSeconds.Value : 0f;
+            // Only meaningful while food actually keeps its strength; with vanilla decay the old
+            // "eat as soon as the game allows" timing is the right one and we leave it alone.
+            bool hold = grace > 0f && FoodNoDecayModule.NoDecayActive();
+
             for (int i = 1; i <= SlotLayout.FoodCount; i++)
             {
                 var slot = SlotLayout.ByKey("food" + i);
@@ -1165,9 +1197,63 @@ namespace NoVikingLeftBehind
                 var item = inv.GetItemAt(slot.Pos.x, slot.Pos.y);
                 if (item == null || !SlotLayout.IsFood(item)) continue;
                 if (!p.CanEat(item, false)) continue;
-                p.UseItem(null, item, false);
+
+                // Skip only THIS candidate while its own buff still has plenty of time left. The
+                // loop carries on to the next slot, and a skipped slot is simply re-tested on the
+                // next tick - nothing is remembered between passes.
+                if (hold && RemainingFoodTime(p, item) > grace) continue;
+
+                // Straight down the game's own consume path: Player.ConsumeItem (Player.cs:6059)
+                // re-checks CanConsumeItem (world level, CanEat, the $msg_cantconsume status-effect
+                // conflict), applies m_shared.m_consumeStatusEffect, calls EatFood, and removes the
+                // item with inventory.RemoveOneItem(item) - exactly once, and only on success.
+                // We deliberately no longer go through Humanoid.UseItem: it looks at
+                // GetHoverObject() first and hands the item to whatever Interactable you happen to
+                // be looking at (a fermenter, a beehive, a tamed boar), which is not what an
+                // automatic bite should ever do.
+                if (!p.ConsumeItem(inv, item, false)) continue;
+
+                Log.LogInfo("[Slots] auto-ate " + item.m_shared.m_name + " from food slot " + i);
                 return;   // one bite per tick, exactly like a player pressing the key
             }
+        }
+
+        /// <summary>
+        /// Seconds left on the food effect this item would consume, or 0 when nothing would be
+        /// thrown away by eating it right now.
+        ///
+        /// Vanilla EatFood (Player.cs:2355-2420) does one of three things: refresh the effect with
+        /// the SAME shared name (2374), ADD a new one while fewer than three are running (2390), or
+        /// overwrite GetMostDepletedFood() (2407). The first and third destroy whatever time was
+        /// left on that effect, so those are the ones worth waiting for; the second costs nothing,
+        /// hence 0.
+        /// </summary>
+        private static float RemainingFoodTime(Player p, ItemDrop.ItemData item)
+        {
+            var foods = p.GetFoods();
+            if (foods == null || item == null || item.m_shared == null) return 0f;
+
+            for (int i = 0; i < foods.Count; i++)
+            {
+                var f = foods[i];
+                if (f == null || f.m_item == null || f.m_item.m_shared == null) continue;
+                if (f.m_item.m_shared.m_name == item.m_shared.m_name) return f.m_time;
+            }
+
+            // No effect of this food running. Vanilla only keeps three at a time, so below that
+            // this is a free addition; at three it would evict the most depleted one instead.
+            if (foods.Count < VanillaFoodEffects) return 0f;
+
+            float lowest = 0f;
+            bool any = false;
+            for (int i = 0; i < foods.Count; i++)
+            {
+                var f = foods[i];
+                if (f == null || f.m_item == null || f.m_item.m_shared == null) continue;
+                if (!f.CanEatAgain()) continue;             // not a candidate for eviction
+                if (!any || f.m_time < lowest) { lowest = f.m_time; any = true; }
+            }
+            return any ? lowest : 0f;
         }
 
         private static bool InputAllowed(Player me)
@@ -1255,6 +1341,7 @@ namespace NoVikingLeftBehind
         public override string StatusDetail()
         {
             var s = SlotLayout.Describe() + " autoEat=" + (_autoEat != null && _autoEat.Value) +
+                    " autoEatAt=" + (_autoEatSeconds != null ? _autoEatSeconds.Value : 0f) + "s" +
                     " ui=" + (_showUi != null && _showUi.Value) +
                     (SlotLayout.QuickCount > 0 ? " keys=" + (_quickKeys != null ? _quickKeys.Value : "") : "");
             if (SlotStore.Managed != null)
