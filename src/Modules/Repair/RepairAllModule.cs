@@ -135,7 +135,7 @@ namespace NoVikingLeftBehind
                 "grouped by the station (and station level) vanilla would require to repair it, " +
                 "so the eligibility rules can be checked without a client. Flips this module's " +
                 "side to Both so a dedicated server runs it. Changes no game state.",
-                Opt.B("Log a one-time diagnostic self-test of repair eligibility").Admin().Restart());
+                Opt.B("Log a one-time diagnostic self-test of repair eligibility").Admin().Restart().Diag());
 
             ParseSettings();
         }

@@ -147,7 +147,7 @@ namespace NoVikingLeftBehind
                 CatchupUtil.SelfTestCfg = BindLocal("Catchup", "SelfTest", false,
                     "LOCAL diagnostic. Seeds fake playtime and skill data once, logs the computed " +
                     "median / factors / ceilings, then does nothing more. Never sync this on.",
-                    Opt.B("Run a one-time diagnostic test with fake data").Admin());
+                    Opt.B("Run a one-time diagnostic test with fake data").Admin().Diag());
         }
 
         protected override void ApplyPatches()

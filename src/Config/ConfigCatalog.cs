@@ -30,6 +30,18 @@ namespace NoVikingLeftBehind
         public bool IsLocal;
         public bool FreeText;
 
+        /// <summary>Which view shows this row. See <see cref="SettingLevel"/>.</summary>
+        public SettingLevel Level;
+
+        /// <summary>Plain-language heading on the Simple view. Only set for Essential rows.</summary>
+        public string SimpleGroup;
+
+        /// <summary>Order within <see cref="SimpleGroup"/>, low first; ties keep bind order.</summary>
+        public int SimpleOrder;
+
+        /// <summary>Never list this row, in either view. Obsolete settings only.</summary>
+        public bool HiddenAlways;
+
         /// <summary>When set, this list can be ticked off a list of what is in the world.</summary>
         public PickerSpec Picker;
 
@@ -182,7 +194,11 @@ namespace NoVikingLeftBehind
                 Theme = owner != null ? owner.Theme : "Server",
                 ModuleHint = owner != null ? owner.Hint : null,
                 Hint = opt.Hint,
-                Choices = opt.Choices
+                Choices = opt.Choices,
+                Level = opt.Level,
+                SimpleGroup = opt.SimpleGroup,
+                SimpleOrder = opt.SimpleOrder,
+                HiddenAlways = opt.HiddenAlways
             };
 
             info.IsEnabledToggle = string.Equals(info.Key, "Enabled", StringComparison.Ordinal) && owner != null;
@@ -390,15 +406,204 @@ namespace NoVikingLeftBehind
             return list;
         }
 
+        // ---- the Simple view ------------------------------------------------------------------
+
+        /// <summary>One Simple-view heading and the rows under it, ready to draw.</summary>
+        internal sealed class SimpleGroup
+        {
+            public string Name;
+            public List<SettingInfo> Rows;
+        }
+
+        /// <summary>
+        /// The whole Simple view: every <see cref="SettingLevel.Essential"/> row, grouped under its
+        /// <see cref="SettingInfo.SimpleGroup"/> heading, groups in <see cref="SimpleGroups.Order"/>
+        /// and rows by <see cref="SettingInfo.SimpleOrder"/> then bind order. A group with no rows
+        /// is left out entirely, so the page is honest while the tagging lands module by module.
+        ///
+        /// Ignores module selection by design - the Simple view is one page, not a per-module one -
+        /// and skips <see cref="SettingInfo.HiddenAlways"/>. An Essential row whose group is
+        /// misspelt simply does not appear; the self-test is what shouts about it.
+        /// </summary>
+        public static List<SimpleGroup> EssentialGroupsForUi()
+        {
+            var groups = new List<SimpleGroup>();
+            foreach (var name in SimpleGroups.Order)
+            {
+                var rows = new List<SettingInfo>();
+                int bind = 0;
+                var order = new List<int>();
+                foreach (var s in _all)
+                {
+                    bind++;
+                    if (s.Level != SettingLevel.Essential || s.HiddenAlways) continue;
+                    if (!string.Equals(s.SimpleGroup, name, StringComparison.Ordinal)) continue;
+                    rows.Add(s);
+                    order.Add(bind);
+                }
+                if (rows.Count == 0) continue;
+
+                // Stable: List.Sort is not, so the bind index is the tie-breaker, not luck.
+                var idx = new List<int>();
+                for (int i = 0; i < rows.Count; i++) idx.Add(i);
+                var rowsCopy = rows;
+                var orderCopy = order;
+                idx.Sort(delegate (int a, int b)
+                {
+                    int c = rowsCopy[a].SimpleOrder.CompareTo(rowsCopy[b].SimpleOrder);
+                    return c != 0 ? c : orderCopy[a].CompareTo(orderCopy[b]);
+                });
+                var sorted = new List<SettingInfo>(rows.Count);
+                foreach (var i in idx) sorted.Add(rows[i]);
+
+                groups.Add(new SimpleGroup { Name = name, Rows = sorted });
+            }
+            return groups;
+        }
+
+        /// <summary>
+        /// The Simple view as plain text, for <c>nvlb.catalog simple</c> and the boot log: a group
+        /// heading, then one line per row. The point is that the classification can be reviewed
+        /// from a log file, with no game and no screenshot.
+        /// </summary>
+        public static List<string> SimpleLines()
+        {
+            var lines = new List<string>();
+            var groups = EssentialGroupsForUi();
+
+            int rows = 0;
+            foreach (var g in groups) rows += g.Rows.Count;
+            lines.Add("Simple view: " + rows + " essential setting(s) in " + groups.Count +
+                      " of " + SimpleGroups.Order.Length + " group(s)");
+
+            foreach (var g in groups)
+            {
+                lines.Add("  " + g.Name.ToUpperInvariant());
+                foreach (var s in g.Rows)
+                    lines.Add("    " + (s.Label ?? s.Key) + "  -  [" + s.Section + "] " + s.Key +
+                              " = " + s.CurrentString);
+            }
+
+            foreach (var name in SimpleGroups.Order)
+            {
+                bool present = false;
+                foreach (var g in groups) if (g.Name == name) { present = true; break; }
+                if (!present) lines.Add("  " + name.ToUpperInvariant() + "  (empty - nothing tagged yet)");
+            }
+            return lines;
+        }
+
+        // ---- the headless self-test -------------------------------------------------------------
+
+        /// <summary>
+        /// Proves the Simple/Advanced metadata is coherent, with no game and no UI: it reads the
+        /// catalog only and changes nothing. Driven on a dedicated server by
+        /// <c>[PickerSelfTest] SelfTest</c> (which already runs a headless config check at world
+        /// load) and on demand by <c>nvlb.catalog selftest</c>.
+        ///
+        /// A malformed group is a FAIL - it silently loses a row from the page. An empty group and
+        /// a restart-only Essential are WARN: both are true for a while by design as the tagging
+        /// lands module by module, and a foundation build must boot clean.
+        /// </summary>
+        public static List<string> SelfTestLines()
+        {
+            const string P = "[SettingsSelfTest] ";
+            var lines = new List<string> { P + "--- begin ---" };
+            int pass = 0, warn = 0, fail = 0;
+
+            int essential = 0, advanced = 0, diagnostic = 0, hidden = 0;
+            foreach (var s in _all)
+            {
+                if (s.HiddenAlways) hidden++;
+                switch (s.Level)
+                {
+                    case SettingLevel.Essential: essential++; break;
+                    case SettingLevel.Diagnostic: diagnostic++; break;
+                    default: advanced++; break;
+                }
+            }
+
+            // 1. Every setting carries a level. True by construction (the field has a default), so
+            //    this is a count, not a question - but the count is the thing worth logging.
+            lines.Add(P + "levels: " + essential + " essential, " + advanced + " advanced, " +
+                      diagnostic + " diagnostic, " + hidden + " hidden-always, of " + _all.Count +
+                      " setting(s)");
+            pass++;
+
+            // 2. Every Essential row names a group that exists.
+            int badGroup = 0;
+            foreach (var s in _all)
+            {
+                if (s.Level != SettingLevel.Essential) continue;
+                if (SimpleGroups.IsKnown(s.SimpleGroup)) continue;
+                badGroup++;
+                lines.Add(P + "FAIL  " + s.Id + " is Essential but its group is " +
+                          (string.IsNullOrEmpty(s.SimpleGroup) ? "<none>" : "'" + s.SimpleGroup + "'") +
+                          " - it would not appear on the Simple page at all");
+            }
+            if (badGroup == 0) { pass++; lines.Add(P + "PASS  every Essential row names a known group"); }
+            else fail += badGroup;
+
+            // 3. Every group has something in it.
+            var groups = EssentialGroupsForUi();
+            var filled = new HashSet<string>();
+            foreach (var g in groups) filled.Add(g.Name);
+            int empty = 0;
+            foreach (var name in SimpleGroups.Order)
+            {
+                if (filled.Contains(name)) continue;
+                empty++;
+                lines.Add(P + "WARN  group '" + name + "' has no Essential rows yet");
+            }
+            if (empty == 0) { pass++; lines.Add(P + "PASS  all " + SimpleGroups.Order.Length + " groups have rows"); }
+            else warn += empty;
+
+            // 4. The Essential budget. A page that grows back into 294 rows helps nobody.
+            if (essential <= EssentialBudget)
+            {
+                pass++;
+                lines.Add(P + "PASS  " + essential + " Essential row(s), budget " + EssentialBudget);
+            }
+            else
+            {
+                fail++;
+                lines.Add(P + "FAIL  " + essential + " Essential row(s) exceeds the budget of " +
+                          EssentialBudget + " - trim the list rather than raising the budget");
+            }
+
+            // 5. A Simple row that cannot be changed without a restart is a poor first impression.
+            //    A module's own Enabled toggle is exempt: its restart rule is the door's, not
+            //    Opt.Restart's, and it is greyed with its own reason.
+            int restartOnly = 0;
+            foreach (var s in _all)
+            {
+                if (s.Level != SettingLevel.Essential || s.Live || s.IsEnabledToggle) continue;
+                restartOnly++;
+                lines.Add(P + "WARN  " + s.Id + " is Essential but restart-only");
+            }
+            if (restartOnly == 0) { pass++; lines.Add(P + "PASS  no Essential row is restart-only"); }
+            else warn += restartOnly;
+
+            lines.Add(P + "--- end --- " + (pass + warn + fail) + " checks, " + pass + " PASS, " +
+                      warn + " WARN, " + fail + " FAIL");
+            return lines;
+        }
+
+        /// <summary>How many rows the Simple page may hold. Enforced by <see cref="SelfTestLines"/>.</summary>
+        public const int EssentialBudget = 45;
+
         // ---- reporting ------------------------------------------------------------------------
 
         /// <summary>The one-line proof, logged at boot on both halves.</summary>
         public static string SummaryLine()
         {
             int synced = 0, local = 0, everyone = 0, admin = 0, live = 0, restart = 0, ranged = 0, hinted = 0;
+            int essential = 0, diagnostic = 0;
             var types = new Dictionary<string, int>();
             foreach (var s in _all)
             {
+                if (s.Level == SettingLevel.Essential) essential++;
+                else if (s.Level == SettingLevel.Diagnostic) diagnostic++;
                 if (s.IsLocal) local++; else synced++;
                 if (s.Tier == SettingTier.Admin) admin++; else everyone++;
                 if (s.Live) live++; else restart++;
@@ -418,7 +623,8 @@ namespace NoVikingLeftBehind
             return "ConfigCatalog: " + _all.Count + " settings (" + synced + " synced / " + local +
                    " local), tiers: Everyone=" + everyone + " Admin=" + admin +
                    ", live=" + live + " restart=" + restart +
-                   ", types: " + sb + ", ranged=" + ranged + ", hints=" + hinted + "/" + _all.Count;
+                   ", types: " + sb + ", ranged=" + ranged + ", hints=" + hinted + "/" + _all.Count +
+                   ", " + essential + " essential / " + diagnostic + " diagnostic";
         }
 
         /// <summary>Human-readable dump, one block per module. Used by <c>nvlb.catalog</c>.</summary>
@@ -460,6 +666,9 @@ namespace NoVikingLeftBehind
             sb.Append(s.IsLocal ? " local" : " synced");
             sb.Append(' ').Append(s.Tier == SettingTier.Admin ? "admin" : "everyone");
             if (!s.Live) sb.Append(" restart");
+            if (s.Level == SettingLevel.Essential) sb.Append(" essential:").Append(s.SimpleGroup);
+            else if (s.Level == SettingLevel.Diagnostic) sb.Append(" diagnostic");
+            if (s.HiddenAlways) sb.Append(" hidden");
             sb.Append(")");
             if (!string.IsNullOrEmpty(s.Hint)) sb.Append("  - ").Append(s.Hint);
             return sb.ToString();
@@ -489,7 +698,9 @@ namespace NoVikingLeftBehind
         public static string Tsv()
         {
             var sb = new StringBuilder();
-            sb.Append("section\tkey\tlabel\thint\ttype\tmin\tmax\tstep\tchoices\ttier\tlive\tscope\tmodule\ttheme\tdefault\tvalue\n");
+            // Columns are APPEND-ONLY: anything that already reads this file by column index must
+            // keep working, so a new field goes on the end and never in the middle.
+            sb.Append("section\tkey\tlabel\thint\ttype\tmin\tmax\tstep\tchoices\ttier\tlive\tscope\tmodule\ttheme\tdefault\tvalue\tlevel\tsimplegroup\n");
             foreach (var s in _all)
             {
                 sb.Append(s.Section).Append('\t').Append(s.Key).Append('\t').Append(Clean(s.Label)).Append('\t')
@@ -501,7 +712,9 @@ namespace NoVikingLeftBehind
                   .Append(s.Tier).Append('\t').Append(s.Live ? "live" : "restart").Append('\t')
                   .Append(s.IsLocal ? "local" : "synced").Append('\t')
                   .Append(s.ModuleName).Append('\t').Append(s.Theme).Append('\t')
-                  .Append(Clean(s.DefaultString)).Append('\t').Append(Clean(s.CurrentString)).Append('\n');
+                  .Append(Clean(s.DefaultString)).Append('\t').Append(Clean(s.CurrentString)).Append('\t')
+                  .Append(s.HiddenAlways ? "Hidden" : s.Level.ToString()).Append('\t')
+                  .Append(Clean(s.SimpleGroup)).Append('\n');
             }
             return sb.ToString();
         }

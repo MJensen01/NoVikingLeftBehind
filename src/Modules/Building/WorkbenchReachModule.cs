@@ -138,7 +138,7 @@ namespace NoVikingLeftBehind
                 "station's vanilla m_rangeBuild / m_extraRangePerLevel read from the real prefab " +
                 "and the effective range this module computes at levels 1, 3 and 5 for the " +
                 "current world tier. Changes no game state. Leave false in normal use.",
-                Opt.B("Log workbench range numbers for every configured station").Admin());
+                Opt.B("Log workbench range numbers for every configured station").Admin().Diag());
 
             ParseStations();
         }

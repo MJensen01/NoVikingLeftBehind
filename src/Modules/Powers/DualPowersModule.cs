@@ -173,7 +173,7 @@ namespace NoVikingLeftBehind
                 "filled the first EMPTY slot and this key forced slot 1, which felt backwards; from " +
                 "0.8.0 a plain interact always sets slot 1 (vanilla) and the modifiers pick the extra " +
                 "slots instead. Use SecondSlotModifier / ThirdSlotModifier. Safe to delete.",
-                Opt.T("Obsolete - replaced by SecondSlotModifier and ThirdSlotModifier"));
+                Opt.T("Obsolete - replaced by SecondSlotModifier and ThirdSlotModifier").Diag().Hidden());
             _showHud = BindLocal("ShowHud", true,
                 "Machine-local. Clone the vanilla power icon so slot 2 gets its own icon, name " +
                 "and cooldown readout. Turn off if it clashes with another HUD mod.",
@@ -211,7 +211,7 @@ namespace NoVikingLeftBehind
             _selfTest = BindLocal("SelfTest", false,
                 "Diagnostic, machine-local. Runs the module on a dedicated server too and logs a " +
                 "storage + recharge self test at world load. Leave false in normal use.",
-                Opt.B("Run power-slot self tests on a dedicated server").Admin().Restart());
+                Opt.B("Run power-slot self tests on a dedicated server").Admin().Restart().Diag());
 
             _inst = this;
             Push();

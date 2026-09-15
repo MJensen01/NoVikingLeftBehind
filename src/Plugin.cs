@@ -62,12 +62,12 @@ namespace NoVikingLeftBehind
             ModeCfg = BindLocal("General", "Mode", RunMode.Auto,
                 "Which half of the mod to run. Auto = dedicated server (-batchmode) runs the " +
                 "server half, everything else runs the client half. Machine-local, never synced.",
-                null, Opt.C("Which half of the mod this install runs").Admin().Restart());
+                null, Opt.C("Which half of the mod this install runs").Admin().Restart().Diag());
 
             HotReloadCfg = BindLocal("General", "HotReload", true,
                 "Watch this plugin's own cfg file on disk and reload it automatically when it " +
                 "changes, so edits take effect without a server restart. Machine-local, never synced.",
-                null, Opt.B("Apply config edits without a restart").Admin());
+                null, Opt.B("Apply config edits without a restart").Admin().Diag());
 
             EnforceClientMod = BindSynced("General", "EnforceClientMod", true,
                 "Server: require every connecting client to run NoVikingLeftBehind " + PluginVersion +

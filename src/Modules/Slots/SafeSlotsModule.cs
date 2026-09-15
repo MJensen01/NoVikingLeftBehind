@@ -138,7 +138,7 @@ namespace NoVikingLeftBehind
                 "it, read it back byte for byte, enforce the version cap and the 64 KB size guard, " +
                 "and check the login decision that offers a restore. Writes and then deletes one " +
                 "throwaway vault file. Machine-local, never synced.",
-                Opt.B("Prove the server vault works with no players online").Admin().Restart());
+                Opt.B("Prove the server vault works with no players online").Admin().Restart().Diag());
         }
 
         // ---- patches ------------------------------------------------------------------------------

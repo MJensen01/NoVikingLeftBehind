@@ -67,7 +67,7 @@ namespace NoVikingLeftBehind
                 "local player's inventory and guardian powers - no world edits, no RPC - but they " +
                 "are still cheats, so this is OFF by default and only the server can turn it on. " +
                 "Intended for a private test server.",
-                Opt.B("Let connected clients use the nvlb test cheat commands").Admin());
+                Opt.B("Let connected clients use the nvlb test cheat commands").Admin().Diag());
         }
 
         protected override void ApplyPatches()

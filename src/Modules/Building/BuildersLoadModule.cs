@@ -154,7 +154,7 @@ namespace NoVikingLeftBehind
                 "dedicated server can resolve the material list against ObjectDB and log which " +
                 "names were found and which were not, once per world load. Changes no game " +
                 "state. Leave false in normal use.",
-                Opt.B("Log resolved material weights once per world load").Admin().Restart());
+                Opt.B("Log resolved material weights once per world load").Admin().Restart().Diag());
 
             ParseLists();
         }

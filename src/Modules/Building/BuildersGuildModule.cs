@@ -607,7 +607,7 @@ namespace NoVikingLeftBehind
                 "dedicated server can prove the yard maths, the framing rule and the refund " +
                 "record against real prefabs, once per world load. Changes no game state - it " +
                 "prices pieces, it never places one. Leave false in normal use.",
-                Opt.B("Prove the yard and framing maths in the log").Admin().Restart());
+                Opt.B("Prove the yard and framing maths in the log").Admin().Restart().Diag());
 
             ParseLists();
         }

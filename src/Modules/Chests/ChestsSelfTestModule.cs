@@ -42,7 +42,7 @@ namespace NoVikingLeftBehind
                 "counting/consuming core against inventories this module creates itself. " +
                 "Machine-local and never synced, so turning it on for a server boot affects no " +
                 "client. Leave it false in normal use.",
-                Opt.B("Log a one-time diagnostic self-test at world load").Admin());
+                Opt.B("Log a one-time diagnostic self-test at world load").Admin().Diag());
         }
 
         protected override void ApplyPatches()

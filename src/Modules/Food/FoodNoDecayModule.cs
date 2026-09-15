@@ -123,7 +123,7 @@ namespace NoVikingLeftBehind
                 "Local debug only, not synced. When true, on (re)load and on Enabled toggling logs " +
                 "the decay fraction across three consecutive simulated ticks for CookedMeat, " +
                 "asserting it does not move. Leave false in normal play.",
-                Opt.B("Log decay math proof for a sample food").Admin().Restart());
+                Opt.B("Log decay math proof for a sample food").Admin().Restart().Diag());
         }
 
         protected override void ApplyPatches()

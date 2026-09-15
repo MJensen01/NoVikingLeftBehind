@@ -154,7 +154,7 @@ namespace NoVikingLeftBehind
                 "Diagnostic, local only, never synced. Logs the whole cone table (the LerpStep " +
                 "pair and the resulting degrees for crew 1..4) at load, so the arithmetic can be " +
                 "checked on a headless server. Changes no game state.",
-                Opt.B("Log the wind-cone numbers for every crew size at load").Admin());
+                Opt.B("Log the wind-cone numbers for every crew size at load").Admin().Diag());
 
             RebuildTable();
         }

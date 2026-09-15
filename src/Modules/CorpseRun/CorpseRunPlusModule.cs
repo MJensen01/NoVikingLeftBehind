@@ -189,7 +189,7 @@ namespace NoVikingLeftBehind
                 "registers the status effect and runs the self test (top-10 stamina foods, the " +
                 "vanilla Rested/CorpseRun fields, and the pull/duration maths) with zero players. " +
                 "Never synced. Leave false in normal play.",
-                Opt.B("Prove the corpse-run buffs work with no players online").Admin().Restart());
+                Opt.B("Prove the corpse-run buffs work with no players online").Admin().Restart().Diag());
 
             _compassEnabled = BindSynced("CompassEnabled", true,
                 "GraveCompass: show a HUD arrow and distance pointing at your death point until " +

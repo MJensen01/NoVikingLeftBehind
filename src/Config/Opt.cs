@@ -12,6 +12,22 @@ namespace NoVikingLeftBehind
     }
 
     /// <summary>
+    /// How prominent a setting is - which of the settings tab's two views it belongs to. This is
+    /// about *prominence*, not permission: <see cref="SettingTier"/> already says who may change a
+    /// setting, and <c>src/Tiers.cs</c> means the world's progress tier, so a third "Tier" here
+    /// would be actively confusing.
+    /// </summary>
+    internal enum SettingLevel
+    {
+        /// <summary>On the Simple view, under a plain-language <see cref="Opt.SimpleGroup"/>.</summary>
+        Essential,
+        /// <summary>The default: shown in Advanced, where every setting still lives.</summary>
+        Advanced,
+        /// <summary>A self-test / debugging knob. Advanced only, and only with "Show diagnostics".</summary>
+        Diagnostic
+    }
+
+    /// <summary>
     /// Per-setting metadata, attached at bind time so one pass over the modules describes every
     /// setting once for every consumer: the in-game settings tab, <c>nvlb.catalog</c>, and the
     /// server-side tweak door's validation.
@@ -61,6 +77,27 @@ namespace NoVikingLeftBehind
         /// </summary>
         public PickerSpec Picker;
 
+        /// <summary>
+        /// Which view this setting appears on. Advanced by default, deliberately: a setting nobody
+        /// has classified is still exactly where it is today, so nothing is ever lost by omission.
+        /// </summary>
+        public SettingLevel Level = SettingLevel.Advanced;
+
+        /// <summary>
+        /// The plain-language heading this row sits under on the Simple view. Only meaningful for
+        /// <see cref="SettingLevel.Essential"/>, and must be one of <see cref="SimpleGroups.Order"/>.
+        /// </summary>
+        public string SimpleGroup;
+
+        /// <summary>Order within the Simple group, low first. Ties keep bind order.</summary>
+        public int SimpleOrder = 50;
+
+        /// <summary>
+        /// Never show this row in either view, not even with "Show diagnostics" on. For an
+        /// obsolete setting that is still bound so an existing cfg file keeps parsing.
+        /// </summary>
+        public bool HiddenAlways;
+
         // ---- factories -------------------------------------------------------------------
 
         /// <summary>A boolean.</summary>
@@ -104,6 +141,26 @@ namespace NoVikingLeftBehind
         /// text, still parsed by its own module, and still editable by hand.
         /// </summary>
         public Opt Pick(PickerSpec spec) { Picker = spec; FreeText = true; return this; }
+
+        /// <summary>
+        /// Show this on the Simple view, under a plain-language heading. Pass a constant from
+        /// <see cref="SimpleGroups"/> - never a literal, so 60 bind sites cannot misspell one and
+        /// the self-test can prove every group exists.
+        /// </summary>
+        /// <param name="group">One of <see cref="SimpleGroups.Order"/>.</param>
+        /// <param name="order">Position within the group, low first; ties keep bind order.</param>
+        public Opt Simple(string group, int order = 50)
+        {
+            Level = SettingLevel.Essential; SimpleGroup = group; SimpleOrder = order; return this;
+        }
+
+        /// <summary>A knob only someone debugging the mod wants. Hidden unless "Show diagnostics".</summary>
+        public Opt Diag() { Level = SettingLevel.Diagnostic; return this; }
+
+        /// <summary>
+        /// Never list this row at all. For a setting kept only so an old cfg file still parses.
+        /// </summary>
+        public Opt Hidden() { HiddenAlways = true; return this; }
 
         /// <summary>Attach a range to a setting created with another factory.</summary>
         public Opt Range(double min, double max, double step = 0)

@@ -240,7 +240,7 @@ namespace NoVikingLeftBehind
                 "Machine-local. Log why the crafting menu's 'can I craft this' check accepted or refused " +
                 "each recipe when it looked at nearby containers (one line per change, throttled). " +
                 "Turn on only while chasing a 'craft button is grey' report; noisy otherwise.",
-                Opt.B("Log the crafting-from-chests decisions"));
+                Opt.B("Log the crafting-from-chests decisions").Diag());
 
             _toggleKey = BindLocal("ToggleKey", "LeftAlt+O",
                 "MACHINE-LOCAL. Key combination that turns this player's own container pulling on " +

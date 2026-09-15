@@ -60,7 +60,7 @@ namespace NoVikingLeftBehind
                 "Force the world tier instead of reading the boss keys. -1 = auto. " +
                 "0 = no boss killed, 1 Eikthyr, 2 The Elder, 3 Bonemass, 4 Moder, 5 Yagluth, " +
                 "6 The Queen, 7 Fader. For testing.", null,
-                Opt.N("Force the world's progress tier instead of reading boss kills", -1, 7, 1));
+                Opt.N("Force the world's progress tier instead of reading boss kills", -1, 7, 1).Diag());
 
             TiersBehind = NoVikingLeftBehindPlugin.BindSynced(Section, "TiersBehind", 1,
                 "How many tiers below the world tier a material has to be before the catch-up " +

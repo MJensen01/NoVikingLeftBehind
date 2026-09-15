@@ -6,6 +6,15 @@ using HarmonyLib;
 
 namespace NoVikingLeftBehind
 {
+    /// <summary>Which of the settings tab's two views is on screen.</summary>
+    internal enum SettingsView
+    {
+        /// <summary>One page of the settings most groups actually change, under plain headings.</summary>
+        Simple,
+        /// <summary>Today's page: every module, every setting.</summary>
+        Advanced
+    }
+
     /// <summary>
     /// **SettingsMenu** - puts the NoVikingLeftBehind tab into Valheim's own Settings menu.
     ///
@@ -53,6 +62,8 @@ namespace NoVikingLeftBehind
 
         private static SettingsMenuModule _inst;
         private ConfigEntry<bool> _showUnavailable;
+        private ConfigEntry<SettingsView> _view;
+        private ConfigEntry<bool> _showDiagnostics;
 
         // Vanilla's private tab bookkeeping, for the hooks that arrive late.
         private static FieldInfo _fSettingsTabs;
@@ -69,9 +80,58 @@ namespace NoVikingLeftBehind
             get { return _inst == null || _inst._showUnavailable == null || _inst._showUnavailable.Value; }
         }
 
+        /// <summary>
+        /// Which view the tab opens on. Machine-local, so switching it is instant: no server round
+        /// trip, no announce, no admin check, nothing another player can see. The setter writes the
+        /// player's own cfg entry exactly the way BepInEx does for any local key; the tab calls it
+        /// from the header's segmented control and then rebuilds both panes.
+        /// </summary>
+        public static SettingsView View
+        {
+            get
+            {
+                return (_inst == null || _inst._view == null) ? SettingsView.Simple : _inst._view.Value;
+            }
+            set
+            {
+                if (_inst == null || _inst._view == null) return;
+                if (_inst._view.Value == value) return;
+                _inst._view.Value = value;
+            }
+        }
+
+        /// <summary>Are Diagnostic rows listed in Advanced? Machine-local, like <see cref="View"/>.</summary>
+        public static bool ShowDiagnostics
+        {
+            get
+            {
+                return _inst != null && _inst._showDiagnostics != null && _inst._showDiagnostics.Value;
+            }
+            set
+            {
+                if (_inst == null || _inst._showDiagnostics == null) return;
+                if (_inst._showDiagnostics.Value == value) return;
+                _inst._showDiagnostics.Value = value;
+            }
+        }
+
         protected override void Bind()
         {
             _inst = this;
+            _view = BindLocal("View", SettingsView.Simple,
+                "Which view the NoVikingLeftBehind settings tab opens on. Simple is one page of " +
+                "the settings most groups actually change, under plain-language headings; " +
+                "Advanced is every setting, listed per module, the way it has always been. " +
+                "Machine-local: this only affects your own menu, and the tab remembers whichever " +
+                "you last used.",
+                Opt.C("Simple shows the settings most groups change; Advanced shows every setting"));
+
+            _showDiagnostics = BindLocal("ShowDiagnostics", false,
+                "In the Advanced view, also list the self-test, dry-run and debugging settings " +
+                "that exist only for diagnosing the mod. Off by default because they do nothing " +
+                "for normal play. Machine-local: this only affects your own menu.",
+                Opt.B("Show self-test and debugging settings in Advanced"));
+
             _showUnavailable = BindLocal("ShowUnavailable", true,
                 "Show settings you are not allowed to change, greyed out with the reason, rather " +
                 "than hiding them. On by default so everyone can see what the mod can do. " +
@@ -337,7 +397,8 @@ namespace NoVikingLeftBehind
 
         public override string StatusDetail()
         {
-            return "tab=\"" + NvlbSettingsTab.TabTitle + "\" showUnavailable=" + ShowUnavailable +
+            return "tab=\"" + NvlbSettingsTab.TabTitle + "\" view=" + View +
+                   " showDiagnostics=" + ShowDiagnostics + " showUnavailable=" + ShowUnavailable +
                    " settings=" + ConfigCatalog.All.Count;
         }
     }

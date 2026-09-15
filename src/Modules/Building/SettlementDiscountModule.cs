@@ -130,7 +130,7 @@ namespace NoVikingLeftBehind
                 "Diagnostic, local only, never synced. Flips this module's Side to Both so a " +
                 "dedicated server can log the factor and price five real build pieces before and " +
                 "after, once per world load. Changes no game state. Leave false in normal use.",
-                Opt.B("Log settlement discount pricing for five real pieces").Admin().Restart());
+                Opt.B("Log settlement discount pricing for five real pieces").Admin().Restart().Diag());
 
             ParseLists();
         }
