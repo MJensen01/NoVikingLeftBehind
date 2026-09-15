@@ -43,7 +43,7 @@ plan — `docs/research/settings-menu/INVENTORY.md` (all 294 settings classified
   one batched write through TweakDoor modelled on "Reset module", one chat line, Custom computed not stored) but **recommended for
   the release after**, once Matt has seen the Simple list in game.
 
-## Proposed Simple view — 32 rows, 8 groups (labels are the player-facing text)
+## Proposed Simple view — 32 essential settings + the achievement-safe status row + 2 SmoothServer rows = 35 controls, 8 groups (labels are the player-facing text)
 
 **Progression & XP** — How fast you learn skills (SkillGainRate) · Skill lost when you die (1 = normal, 0 = none) · Keep your gear
 when you die · *Achievement-safe: yes/no* (read-only status row from 0.10.3's check)
