@@ -113,7 +113,8 @@ namespace NoVikingLeftBehind
                 ".fch file into characters_local\\" + CharacterBackup.FolderName + "\\. Taken on a " +
                 "character's first login with this mod, and again any time items are rescued from " +
                 "an older extra-slots mod. Never synced - it is your own machine's disk.",
-                Opt.B("Copy your character file before this mod first changes it"));
+                Opt.B("A copy of your .fch on this machine before anything moves")
+                    .As("Back up your character file").Simple(SimpleGroups.Server, 30));
 
             _keepBackups = BindLocal("KeepBackups", 3,
                 "Local: how many character-file backups to keep per character. The oldest is " +
@@ -138,7 +139,7 @@ namespace NoVikingLeftBehind
                 "it, read it back byte for byte, enforce the version cap and the 64 KB size guard, " +
                 "and check the login decision that offers a restore. Writes and then deletes one " +
                 "throwaway vault file. Machine-local, never synced.",
-                Opt.B("Prove the server vault works with no players online").Admin().Restart());
+                Opt.B("Prove the server vault works with no players online").Admin().Restart().Diag());
         }
 
         // ---- patches ------------------------------------------------------------------------------

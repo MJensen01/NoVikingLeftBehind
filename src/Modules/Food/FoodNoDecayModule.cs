@@ -90,16 +90,29 @@ namespace NoVikingLeftBehind
             return _self != null && _self.Active && ClientActive();
         }
 
+        /// <summary>
+        /// True when eaten food really is holding its value on this client - the module is on AND
+        /// KeepFraction is above 0 (0 is documented as "vanilla behaviour, unchanged", so there is
+        /// nothing to protect). ExtraSlots' AutoEat asks this before holding a bite back:
+        /// waiting only makes sense while the food in the buff is not decaying anyway.
+        /// </summary>
+        internal static bool NoDecayActive()
+        {
+            return Live() && _keepFraction != null && _keepFraction.Value > 0f;
+        }
+
         protected override void Bind()
         {
             _self = this;
 
             _keepFraction = BindSynced("KeepFraction", 1f,
-                "Floor applied to each eaten food's health/stamina/eitr contribution, as a " +
-                "fraction of its full (freshly-eaten) value: 1.0 = no decay at all until the food " +
-                "expires (default). 0.5 = the value never decays below half, but may still decay " +
-                "further towards 0.5 like vanilla. 0.0 = vanilla behaviour, unchanged.",
-                Opt.N("Lowest fraction eaten food keeps before expiring", 0, 1, 0.05));
+                "1.0 (the default) means eaten food never weakens - it keeps its full health/" +
+                "stamina/eitr benefit right up until it runs out. A lower value lets that benefit " +
+                "fade as the food's timer counts down, the way vanilla food decays, but never " +
+                "below this fraction of its full value. 0.0 = vanilla behaviour, unchanged.",
+                Opt.N("1 = full strength to the last second, 0 = vanilla decay", 0, 1, 0.05)
+                    .As("Food keeps its full benefit until it runs out")
+                    .Simple(SimpleGroups.Gathering, 60));
 
             _curveExponent = BindSynced("CurveExponent", 0.3f,
                 "Exponent used for the vanilla decay curve before the KeepFraction floor is " +
@@ -123,7 +136,7 @@ namespace NoVikingLeftBehind
                 "Local debug only, not synced. When true, on (re)load and on Enabled toggling logs " +
                 "the decay fraction across three consecutive simulated ticks for CookedMeat, " +
                 "asserting it does not move. Leave false in normal play.",
-                Opt.B("Log decay math proof for a sample food").Admin().Restart());
+                Opt.B("Log decay math proof for a sample food").Admin().Restart().Diag());
         }
 
         protected override void ApplyPatches()

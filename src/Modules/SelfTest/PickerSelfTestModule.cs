@@ -51,7 +51,7 @@ namespace NoVikingLeftBehind
                 "through Parse() and Serialise(), asserting the result is byte-identical to what " +
                 "is on disk. Machine-local and never synced, so turning it on for a server boot " +
                 "affects no client. Leave it false in normal use.",
-                Opt.B("Log a one-time diagnostic self-test of the item pickers at world load").Admin());
+                Opt.B("Log a one-time diagnostic self-test of the item pickers at world load").Admin().Diag());
         }
 
         protected override void ApplyPatches()
@@ -74,6 +74,7 @@ namespace NoVikingLeftBehind
                 ProviderCounts();
                 var rawFindings = RoundTripAll();
                 Coverage(rawFindings);
+                SettingLevels();
             }
             catch (Exception e)
             {
@@ -206,6 +207,31 @@ namespace NoVikingLeftBehind
                             " entry/entries the parser could not resolve against this world (Raw != null), kept and flagged:");
                 foreach (var line in rawFindings) Log.LogInfo("[PickerSelfTest]   " + line);
             }
+        }
+
+        // ---- part 4: the Simple/Advanced metadata ---------------------------------------------
+
+        /// <summary>
+        /// The settings-tab levels check (<see cref="ConfigCatalog.SelfTestLines"/>), run from here
+        /// rather than from a module of its own so it costs the catalog no new settings: this flag
+        /// is already the mod's headless "prove the config metadata" switch, and like the rest of
+        /// this module it only reads. A FAIL line is logged as an error so a boot log grep finds
+        /// it; a WARN is expected while the tagging lands module by module.
+        ///
+        /// The severity is read off the "FAIL  " / "WARN  " marker each finding starts with - two
+        /// spaces, which the block's own tallying end line ("... 3 WARN, 0 FAIL") does not have -
+        /// and it deliberately does not touch this module's own pass/fail counters, so the
+        /// round-trip line above still counts round trips and nothing else.
+        /// </summary>
+        private static void SettingLevels()
+        {
+            foreach (var line in ConfigCatalog.SelfTestLines())
+            {
+                if (line.IndexOf("FAIL  ", StringComparison.Ordinal) >= 0) Log.LogError(line);
+                else if (line.IndexOf("WARN  ", StringComparison.Ordinal) >= 0) Log.LogWarning(line);
+                else Log.LogInfo(line);
+            }
+            foreach (var line in ConfigCatalog.SimpleLines()) Log.LogInfo("[SettingsSelfTest] " + line);
         }
 
         // ---- helpers ------------------------------------------------------------------------

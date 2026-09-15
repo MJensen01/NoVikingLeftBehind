@@ -124,7 +124,9 @@ namespace NoVikingLeftBehind
             _maxRange = BindSynced("MaxRangeMetres", 60f,
                 "Hard cap on the effective build range in metres, whatever the tier and level add " +
                 "up to. The result is also never below the vanilla range.",
-                Opt.N("Highest possible workbench build range, in metres", 10, 200, 5));
+                Opt.N("In metres, whatever the tier and level add up to", 10, 200, 5)
+                    .As("Furthest a workbench can reach")
+                    .Simple(SimpleGroups.Building, 30));
 
             _stationsCfg = BindSynced("Stations", DefaultStations,
                 "Comma-separated crafting-station PREFAB names this applies to. Default: the " +
@@ -138,7 +140,7 @@ namespace NoVikingLeftBehind
                 "station's vanilla m_rangeBuild / m_extraRangePerLevel read from the real prefab " +
                 "and the effective range this module computes at levels 1, 3 and 5 for the " +
                 "current world tier. Changes no game state. Leave false in normal use.",
-                Opt.B("Log workbench range numbers for every configured station").Admin());
+                Opt.B("Log workbench range numbers for every configured station").Admin().Diag());
 
             ParseStations();
         }

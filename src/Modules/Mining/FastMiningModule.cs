@@ -52,7 +52,7 @@ namespace NoVikingLeftBehind
     {
         public override string Name => "FastMining";
         public override string Theme => "Building & gathering";
-        public override string Hint => "Ore nodes behind the frontier mine faster and drop more";
+        public override string Hint => "Ore nodes from tiers your group has moved past mine faster and drop more";
 
         /// <summary>
         /// Normally Client. [Mining] SelfTest = true (machine-local) flips this to Both so the
@@ -68,9 +68,9 @@ namespace NoVikingLeftBehind
         public override string Section => "Mining";
 
         protected override string EnabledDescription =>
-            "Mining ore nodes whose material tier is behind the frontier is faster (and " +
-            "optionally drops more). Runs on the node-owning client - the same for every player " +
-            "who has the mod.";
+            "Mining ore from tiers your group has moved past is faster. Mining ore nodes whose " +
+            "material tier is behind the frontier is faster (and optionally drops more). Runs on " +
+            "the node-owning client - the same for every player who has the mod.";
 
         /// <summary>
         /// FRACTURED STAGES (0.221.12+, found on Matt's first live test): a copper vein
@@ -113,19 +113,22 @@ namespace NoVikingLeftBehind
             _speedMult = BindSynced("SpeedMultiplier", 3.0f,
                 "Pickaxe damage multiplier applied to a hit on an ore node whose material tier is " +
                 "behind the frontier (see [Frontier] TiersBehind). 1.0 = vanilla speed.",
-                Opt.N("How much faster pickaxes mine behind-the-frontier ore", 1, 10, 0.5));
+                Opt.N("1 = normal. Only ore your group has moved past", 1, 10, 0.5)
+                    .As("Mining speed on old ore")
+                    .Simple(SimpleGroups.Gathering, 10));
 
             _dropMult = BindSynced("DropMultiplier", 1.0f,
-                "Extra-drops multiplier for the same behind-the-frontier ore nodes. 1.0 = vanilla " +
-                "drop count. 2.0 = always double, 1.5 = 50% chance of one extra full copy of the " +
-                "drop list, etc.",
-                Opt.N("Extra ore drops from behind-the-frontier nodes", 1, 5, 0.25));
+                "Ore drops more from tiers your group has moved past. Extra-drops multiplier for " +
+                "the same behind-the-frontier ore nodes. 1.0 = vanilla drop count. 2.0 = always " +
+                "double, 1.5 = 50% chance of one extra full copy of the drop list, etc.",
+                Opt.N("Extra ore drops from tiers your group has moved past", 1, 5, 0.25));
 
             _ignoreToolTier = BindSynced("IgnoreToolTier", false,
-                "Let a pickaxe below the node's required tool tier mine a behind-the-frontier ore " +
-                "node anyway (raises the hit's tool tier to the node's own requirement before the " +
-                "vanilla tool-tier check runs).",
-                Opt.B("Let any pickaxe mine behind-the-frontier ore nodes"));
+                "Any pickaxe can mine ore from tiers your group has moved past. Let a pickaxe " +
+                "below the node's required tool tier mine a behind-the-frontier ore node anyway " +
+                "(raises the hit's tool tier to the node's own requirement before the vanilla " +
+                "tool-tier check runs).",
+                Opt.B("Let any pickaxe mine ore from tiers your group has moved past"));
 
             _oreNodes = BindSynced("OreNodes", DefaultOreNodes,
                 "Ore node prefabs FastMining applies to, as name:tier,name:tier. The tier is the " +
@@ -142,7 +145,7 @@ namespace NoVikingLeftBehind
                 "and m_minToolTier, then runs the pure speed-multiplier function against " +
                 "rock4_copper and silvervein with a fake 30-damage hit and logs the result. " +
                 "Changes no game state. Leave false in normal use.",
-                Opt.B("Log ore node speed test results once per load").Admin().Restart());
+                Opt.B("Log ore node speed test results once per load").Admin().Restart().Diag());
         }
 
         protected override void ApplyPatches()

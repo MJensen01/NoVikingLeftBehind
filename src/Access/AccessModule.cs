@@ -107,7 +107,8 @@ namespace NoVikingLeftBehind
                 "Who may change a server-synced setting from the in-game settings tab. " +
                 "Everyone = any player on the server (settings marked admin-only still are). " +
                 "Admins = only players in adminlist.txt. Changing this takes effect immediately.",
-                Opt.C("Who may change settings from the in-game menu").Admin());
+                Opt.C("Everyone = any player here; Admins = only adminlist.txt").Admin()
+                   .Simple(SimpleGroups.Server, 10).As("Who may change these settings"));
 
             _announce = BindSynced("Announce", Announce.Chat,
                 "How a change is told to the rest of the server. Chat = one chat line attributed " +
@@ -125,7 +126,7 @@ namespace NoVikingLeftBehind
                 "a harmless setting through the same path a player's menu uses, prove the cfg file " +
                 "on disk changed (with its timestamped backup), hold it for 45 seconds so it can be " +
                 "seen from outside, then undo it. Everything is written to the log. Off by default.",
-                Opt.B("Prove the settings door works, at server start").Admin());
+                Opt.B("Prove the settings door works, at server start").Admin().Diag());
 
             _netSelfTest = BindSynced("NetworkSelfTest", false,
                 "Dedicated server only: at world load, drive the settings door against the " +
@@ -135,7 +136,7 @@ namespace NoVikingLeftBehind
                 "admin-only one asked for by a non-admin. Everything is restored. Needs " +
                 "SmoothServer installed on this server; otherwise it logs that and stops. " +
                 "Off by default.",
-                Opt.B("Prove the Network panel's door works, at server start").Admin());
+                Opt.B("Prove the Network panel's door works, at server start").Admin().Diag());
         }
 
         /// <summary>True when the operator asked for the ordinary door self-test this boot.</summary>

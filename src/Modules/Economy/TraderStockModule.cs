@@ -33,7 +33,7 @@ namespace NoVikingLeftBehind
 
         public override string Theme => "Catching up";
 
-        public override string Hint => "Traders sell trailing-tier metal bars once you have caught up";
+        public override string Hint => "Traders sell metal bars from tiers your group has moved past once you have caught up";
 
         internal const string DefaultItems = "Bronze:5:60,Iron:5:80,Silver:5:120,BlackMetal:5:150";
 
@@ -58,13 +58,14 @@ namespace NoVikingLeftBehind
             _self = this;
 
             _items = BindSynced("Items", DefaultItems,
-                "Comma-separated PrefabName:stack:price entries added to the trader's stock. An " +
-                "entry only appears once its material is behind the frontier: it is gated by " +
-                "vanilla's own TradeItem.m_requiredGlobalKey, set to the boss key for " +
+                "An entry only appears once its material is from a tier your group has moved " +
+                "past. Comma-separated PrefabName:stack:price entries added to the trader's " +
+                "stock. An entry only appears once its material is behind the frontier: it is " +
+                "gated by vanilla's own TradeItem.m_requiredGlobalKey, set to the boss key for " +
                 "(material tier + [Frontier] TiersBehind). Unknown prefab names are logged and " +
                 "skipped. Materials at tier 0, or whose gating boss is past the last tier, are " +
                 "skipped too.",
-                Opt.T("Which trailing-tier items a trader stocks, and at what price")
+                Opt.T("Which items from tiers your group has moved past a trader stocks, and at what price")
                     .Pick(new PickerSpec(PickerSource.Materials,
                         new PickerField("Stack", 1, 50, 5, true),
                         new PickerField("Price", 1, 9999, 100, true))));
@@ -73,7 +74,7 @@ namespace NoVikingLeftBehind
                 "Comma-separated trader prefab names (or Trader.m_name values) that get the extra " +
                 "stock. Default: Haldor only. Add Hildir or BogWitch to include them. '*' means " +
                 "every trader.",
-                Opt.T("Which traders get the extra trailing-tier stock")
+                Opt.T("Which traders get the extra stock of old-tier items")
                     .Pick(new PickerSpec(PickerSource.Traders)));
         }
 

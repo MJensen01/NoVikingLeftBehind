@@ -16,8 +16,16 @@ namespace NoVikingLeftBehind
     ///
     /// Shape:
     /// { "entries": [ { "prefabHash":123, "name":"rock4_copper", "tier":1, "day":5,
-    ///                  "x":1.0, "y":2.0, "z":3.0, "rx":0.0, "ry":0.0, "rz":0.0 }, ... ] }
-    /// Unknown keys are ignored; a malformed record is skipped, not fatal.
+    ///                  "x":1.0, "y":2.0, "z":3.0, "rx":0.0, "ry":0.0, "rz":0.0,
+    ///                  "fails":0 }, ... ] }
+    /// Unknown keys are ignored; a malformed record is skipped, not fatal. "fails" is written
+    /// only when it is non-zero and is absent from every file written before 0.10.3, where it
+    /// reads back as 0 - and an older NoVikingLeftBehind reading a file that has it simply does
+    /// not look for the key, so the store stays readable in both directions.
+    ///
+    /// INTEGERS ARE READ AS INTEGERS (0.10.3, issue #6). Every whole-number field goes through
+    /// Int(), never through Num(): Num returns a float, whose 24-bit mantissa cannot hold a
+    /// full-range int32 such as a Valheim prefab hash. See the comment on Int().
     /// </summary>
     internal static class RegrowthJson
     {
@@ -41,6 +49,8 @@ namespace NoVikingLeftBehind
                 sb.Append(",\"rx\":").Append(F(e.rx));
                 sb.Append(",\"ry\":").Append(F(e.ry));
                 sb.Append(",\"rz\":").Append(F(e.rz));
+                // Only written when it matters, so a healthy store is byte-identical to a pre-0.10.3 one.
+                if (e.fails > 0) sb.Append(",\"fails\":").Append(e.fails.ToString(Inv));
                 sb.Append('}');
                 if (i < entries.Count - 1) sb.Append(',');
                 sb.Append('\n');
@@ -85,14 +95,17 @@ namespace NoVikingLeftBehind
             {
                 var e = new RegrowthEntry
                 {
-                    prefabHash = (int)Num(body, "prefabHash"),
+                    prefabHash = Int(body, "prefabHash"),
                     name = Str(body, "name"),
-                    tier = (int)Num(body, "tier"),
-                    day = (int)Num(body, "day"),
+                    tier = Int(body, "tier"),
+                    day = Int(body, "day"),
                     x = Num(body, "x"), y = Num(body, "y"), z = Num(body, "z"),
-                    rx = Num(body, "rx"), ry = Num(body, "ry"), rz = Num(body, "rz")
+                    rx = Num(body, "rx"), ry = Num(body, "ry"), rz = Num(body, "rz"),
+                    fails = Int(body, "fails")
                 };
-                return e.prefabHash == 0 ? null : e;
+                // A record with neither a usable hash nor a name is unrecoverable; one that still
+                // has its name is kept, because LoadStore rebuilds the hash from the name.
+                return e.prefabHash == 0 && string.IsNullOrEmpty(e.name) ? null : e;
             }
             catch { return null; }
         }
@@ -121,6 +134,34 @@ namespace NoVikingLeftBehind
                                          body[end] == '.' || body[end] == 'e' || body[end] == 'E')) end++;
             float v;
             return float.TryParse(body.Substring(p, end - p), NumberStyles.Float, Inv, out v) ? v : 0f;
+        }
+
+        /// <summary>
+        /// Value of "key": as a 32-bit integer; 0 when absent or unreadable.
+        ///
+        /// WHY THIS EXISTS (issue #6). Num() returns a float, and float has a 24-bit mantissa,
+        /// while Valheim's GetStableHashCode returns a full-range int32. Reading prefabHash
+        /// through Num and casting therefore ROUNDED every ore hash on load - MineRock_Tin
+        /// -1882492588 became -1882492544, MineRock_Obsidian 820355464 -> 820355456, silvervein
+        /// 1611466255 -> 1611466240 - and the rounded value was then written back, so a record
+        /// was fine until the first restart and permanently unresolvable after it:
+        /// ZNetScene.GetPrefab(hash) returned null and the node never came back.
+        ///
+        /// It parses via long so a corrupt or hand-edited file with an out-of-range number
+        /// clamps instead of throwing; a value written with a decimal point (never by Write, but
+        /// possible by hand) truncates at the '.', which is what a whole-number field wants.
+        /// </summary>
+        private static int Int(string body, string key)
+        {
+            int p = ValueStart(body, key);
+            if (p < 0) return 0;
+            int end = p;
+            while (end < body.Length && (char.IsDigit(body[end]) || body[end] == '-' || body[end] == '+')) end++;
+            long v;
+            if (!long.TryParse(body.Substring(p, end - p), NumberStyles.Integer, Inv, out v)) return 0;
+            if (v > int.MaxValue) return int.MaxValue;
+            if (v < int.MinValue) return int.MinValue;
+            return (int)v;
         }
 
         /// <summary>Value of "key": as a string; "" when absent.</summary>

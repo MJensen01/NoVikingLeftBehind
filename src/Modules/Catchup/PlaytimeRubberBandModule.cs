@@ -135,7 +135,8 @@ namespace NoVikingLeftBehind
                 Opt.N("Minimum group size before any catch-up bonus applies", 1, 20));
             _maxBonus = BindSynced("MaxBonus", 1.0f,
                 "Maximum bonus. 1.0 = at most double rate for the furthest-behind player.",
-                Opt.N("Biggest possible gathering and XP bonus", 0, 5, 0.1));
+                Opt.N("Biggest possible gathering and XP bonus", 0, 5, 0.1)
+                    .As("Help for players who are behind (1 = up to double)"));
             _gatherBonusEnabled = BindSynced("GatherBonusEnabled", true,
                 "Apply the catch-up factor to item drops the client produces (ore, wood, loot).",
                 Opt.B("Give the furthest-behind players extra item drops"));
@@ -147,7 +148,7 @@ namespace NoVikingLeftBehind
                 CatchupUtil.SelfTestCfg = BindLocal("Catchup", "SelfTest", false,
                     "LOCAL diagnostic. Seeds fake playtime and skill data once, logs the computed " +
                     "median / factors / ceilings, then does nothing more. Never sync this on.",
-                    Opt.B("Run a one-time diagnostic test with fake data").Admin());
+                    Opt.B("Run a one-time diagnostic test with fake data").Admin().Diag());
         }
 
         protected override void ApplyPatches()

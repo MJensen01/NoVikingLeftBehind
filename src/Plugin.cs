@@ -26,7 +26,7 @@ namespace NoVikingLeftBehind
     {
         public const string PluginGuid = "Nosferatu.NoVikingLeftBehind";
         public const string PluginName = "NoVikingLeftBehind";
-        public const string PluginVersion = "0.10.2";
+        public const string PluginVersion = "0.11.0";
 
         internal static ManualLogSource Log;
         internal static ConfigSync ConfigSync;
@@ -62,12 +62,12 @@ namespace NoVikingLeftBehind
             ModeCfg = BindLocal("General", "Mode", RunMode.Auto,
                 "Which half of the mod to run. Auto = dedicated server (-batchmode) runs the " +
                 "server half, everything else runs the client half. Machine-local, never synced.",
-                null, Opt.C("Which half of the mod this install runs").Admin().Restart());
+                null, Opt.C("Which half of the mod this install runs").Admin().Restart().Diag());
 
             HotReloadCfg = BindLocal("General", "HotReload", true,
                 "Watch this plugin's own cfg file on disk and reload it automatically when it " +
                 "changes, so edits take effect without a server restart. Machine-local, never synced.",
-                null, Opt.B("Apply config edits without a restart").Admin());
+                null, Opt.B("Apply config edits without a restart").Admin().Diag());
 
             EnforceClientMod = BindSynced("General", "EnforceClientMod", true,
                 "Server: require every connecting client to run NoVikingLeftBehind " + PluginVersion +
@@ -75,7 +75,8 @@ namespace NoVikingLeftBehind
                 "with an explanatory message. Also locks the synced config so only the server " +
                 "(and admins) can change it. Turn off to let vanilla clients join - the server " +
                 "half still works, the client-side features simply do not exist for them.",
-                null, Opt.B("Require every player to run this mod").Admin());
+                null, Opt.B("Off lets vanilla clients in; the server half still works").Admin()
+                          .Simple(SimpleGroups.Server, 20).As("Everyone must have this mod to join"));
             ConfigSync.AddLockingConfigEntry(EnforceClientMod);
             EnforceClientMod.SettingChanged += (s, a) => ApplyEnforcement();
             ApplyEnforcement();

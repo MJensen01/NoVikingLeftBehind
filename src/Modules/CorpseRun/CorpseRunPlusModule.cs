@@ -189,12 +189,14 @@ namespace NoVikingLeftBehind
                 "registers the status effect and runs the self test (top-10 stamina foods, the " +
                 "vanilla Rested/CorpseRun fields, and the pull/duration maths) with zero players. " +
                 "Never synced. Leave false in normal play.",
-                Opt.B("Prove the corpse-run buffs work with no players online").Admin().Restart());
+                Opt.B("Prove the corpse-run buffs work with no players online").Admin().Restart().Diag());
 
             _compassEnabled = BindSynced("CompassEnabled", true,
                 "GraveCompass: show a HUD arrow and distance pointing at your death point until " +
                 "you reach or loot the grave.",
-                Opt.B("Show a compass pointing at your death point"));
+                Opt.B("A HUD arrow and distance, until you reach or loot the grave")
+                    .As("Compass pointing to where you died")
+                    .Simple(SimpleGroups.Death, 10));
             _compassHideDistance = BindSynced("CompassHideDistance", 10f,
                 "GraveCompass: hide the compass once you are this close to the grave, in metres.",
                 Opt.N("Metres from the grave before the compass hides", 0, 50));

@@ -1,6 +1,81 @@
 
 # Changelog — NoVikingLeftBehind
 
+## 0.11.0 (2026-09-15)
+
+Settings tab
+
+The settings tab has a **Simple** view and now opens on it: one page, eight plain-language groups, about thirty-four
+rows - the settings most groups actually change - and Advanced, unchanged, one click away in the header. The detail:
+* **The tab opens on a Simple view: the settings most groups change, in plain language, eight groups, one page.** No module
+  names, no scrolling past forty entries to find the one dial you came for — just the settings that actually get changed,
+  under headings like "Inventory & carrying" and "Gathering & the world", with a read-only "Achievement-safe" verdict where
+  it matters. **Advanced is one click away in the header and is completely unchanged**: every setting, module by module,
+  exactly where it has always been. Each Simple row has a `▸` that opens Advanced at the module that setting belongs to,
+  scrolled to the row, so nothing is a dead end. Which view you last used is remembered on your own machine.
+* **Diagnostics are hidden unless you ask for them.** The self-test, dry-run and debugging switches — and the modules that
+  are nothing but those — are out of the way behind a "Show diagnostics" checkbox in Advanced.
+* **Search still covers everything.** Typing in the search box looks at every setting in the mod, including the advanced and
+  diagnostic ones, from either view, and says so above the results. Restart-only switches now say what to do about it
+  ("Restart to turn on") instead of sitting there greyed, and turning a module off tells you it needs a restart to come back.
+* **The settings that confuse people are labelled in plain language.** Every row on the Simple page is titled by what it
+  does ("Bars per ore when smelting old metal", "Days before mined ore comes back", "Who may change these settings")
+  instead of by its config key humanised into "Output multiplier" or "Regrow days", and the line underneath now *adds*
+  something - the units, what 1 means, what 0 means - rather than repeating the title. The key itself is unchanged and
+  is still what search, the cfg file and `nvlb.catalog` use.
+
+Fixes
+* **OreRegrowth: pending ore never respawned after a server restart** (the store rounded prefab hashes through a float on
+  load — all ores, reported as tin, issue #6). Existing records self-repair from their prefab name on the next start; a
+  record that still fails is dropped after 5 attempts instead of flooding the log.
+* **A `[ServerKeys]` flag set to off no longer deletes the world's own key.** Off now means "not managed by
+  NoVikingLeftBehind", not "delete": a server launched with a vanilla `-modifier deathpenalty casual` flag kept losing
+  `DeathKeepEquip` (and its skill-loss setting) on *every* world load, because the module re-asserted its whole key set
+  right after the launch flag applied it — silently, so nobody had a reason to look. Skill rates left at their default
+  1.0 are likewise no longer written at all, so the world's own value stands. `[ServerKeys] RemoveKeys` is now the only
+  setting that takes a key off a world, and an override of an existing key value is logged as a warning. (GitHub issue #8)
+* **Skill rates are applied without a world key, so a dedicated server's world is no longer flagged as cheated.**
+  Valheim has no skill modifier in its World Modifiers menu, so *any* stored `skillgainrate` key makes the game treat the
+  world as cheated and turns achievements off for every player on the server — which is what a modded server with a
+  non-vanilla XP rate had been doing. The new `[ServerKeys] RatesWithoutWorldKeys=true` (default on, server-synced)
+  applies `SkillGainRate`/`SkillReductionRate` directly to the values the game reads, on the server and on every client,
+  and writes no key. **An existing world has the stray key removed on its first start with this version**, with the rate
+  unchanged; `nvlb.status` prints the mode, the effective rates and an `achievement-safe: yes/no` verdict. Set
+  `RatesWithoutWorldKeys=false` to go back to storing the rates in the world file. (GitHub issue #4)
+* **`[Slots]` an item move no longer re-equips what is parked in an equipment slot.** Moving anything in the extra-slot panel
+  re-ran the equipment sync, which wore *everything* it found unequipped in an equipment slot — so a Wisplight switched off but
+  left in a utility slot came straight back on at the next drag. An item is now equipped only when it is newly placed in the
+  slot; a deliberate unequip sticks. New machine-local `[Slots] Diagnostics` logs every equip this module performs and why.
+* **`[Slots]` AutoEat waits until the food in that slot has `AutoEatWhenSecondsLeft` seconds left when FoodNoDecay is on
+  (issue #2), and eats through the game's own consume path so it can no longer trigger whatever you were looking at.**
+  New server-synced `[Slots] AutoEatWhenSecondsLeft` (default 10, 0–120; 0 = the old "eat as soon as the game allows").
+  Vanilla lets you eat again at half the burn time because the food is decaying by then — with FoodNoDecay it is still at
+  full strength, so the old timing threw away the whole second half of every item. The wait is per food slot, so a sausage
+  with twenty minutes on it no longer holds back honey in another slot, and with FoodNoDecay off the timing is unchanged.
+
+`[Chests]` CraftFromChests
+* **Containers that already existed are discovered when the module is turned on, or when a world loads.** Previously a
+  container only entered the nearby-containers registry through `Container.Awake`, which only registers while `[Chests]
+  Enabled=true` - a chest built (or already sitting there) while the module was off was never picked up, even after turning
+  it back on. Enabling the module now backfills the registry from every live container in the scene, and the same backfill
+  runs once per world load in case anything was missed before the patches were even installed.
+* **"Any one of these ingredients" recipes can now craft from chests.** Some cauldron/cooking recipes only need ONE of
+  several listed ingredients (`m_requireOnlyOneIngredient`) rather than all of them - these previously fell back to fully
+  vanilla behaviour (bag only) because saying "yes, craftable" without also being able to hand over a concrete item would
+  leave the Craft button clickable but doing nothing. They now count bag + nearby containers per listed ingredient, and the
+  one that's actually available (in bag, in a chest, or split across both) is what gets consumed.
+
+New settings
+* **`[Slots] AutoEatWhenSecondsLeft`** (server-synced, default 10, 0-120) - how little must be left on the food in a
+  food slot before AutoEat replaces it. 0 = the old "eat as soon as the game allows".
+* **`[ServerKeys] RatesWithoutWorldKeys`** (server-synced, admin, default on) - apply the skill rates directly instead
+  of storing them as a world key, so the world is never flagged as cheated and achievements keep working.
+* **`[SettingsMenu] View`** (machine-local, default `Simple`) - which of the two views the tab opens on; it remembers
+  your last choice by itself.
+* **`[SettingsMenu] ShowDiagnostics`** (machine-local, default off) - show the self-test and debugging rows in Advanced.
+* **`[SettingsMenu] FirstRunHintShown`** (machine-local, default off) - set once you dismiss the one-line "New here?"
+  strip at the top of Simple.
+
 ## 0.10.2
 
 New module **CarryWeight** `[Carry]` — a Viking who can carry a run's worth of ore home, and a Megingjord worth the belt slot.

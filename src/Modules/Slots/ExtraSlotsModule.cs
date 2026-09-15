@@ -40,19 +40,35 @@ namespace NoVikingLeftBehind
         private ConfigEntry<int> _quickSlots;
         private ConfigEntry<int> _genericSlots;
         private ConfigEntry<bool> _autoEat;
+        private ConfigEntry<float> _autoEatSeconds;
         private ConfigEntry<bool> _stackAllGuard;
         private ConfigEntry<bool> _showUi;
         private ConfigEntry<string> _quickKeys;
         private ConfigEntry<float> _panelOffsetX;
         private ConfigEntry<float> _panelOffsetY;
         private ConfigEntry<float> _panelScale;
+        private static ConfigEntry<bool> _diag;
 
         private static KeyCode[] _keys = new KeyCode[0];
         private static readonly ItemDrop.ItemData[] ExtraUtility = new ItemDrop.ItemData[3];
+
+        /// <summary>
+        /// The item object this module last saw in each equipment slot, by slot key. It is what
+        /// tells "the player just put this here" (equip it) apart from "this has been sitting here
+        /// and the player unequipped it on purpose" (leave it alone) - see SyncEquipment.
+        /// </summary>
+        private static readonly Dictionary<string, ItemDrop.ItemData> _lastInSlot =
+            new Dictionary<string, ItemDrop.ItemData>();
+
+        private static string _lastDiag;
+        private static float _lastDiagAt;
         private static bool _syncing;
         private static float _eatTimer;
         private static int _tickErrors;
         private static bool _commandRegistered;
+
+        /// <summary>How many food buffs vanilla runs at once (Player.EatFood, Player.cs:2316/2390).</summary>
+        private const int VanillaFoodEffects = 3;
 
         private static readonly MethodInfo SetupEquipmentMi = AccessTools.Method(typeof(Humanoid), "SetupEquipment");
         private static readonly FieldInfo EquipSeFi = AccessTools.Field(typeof(Humanoid), "m_equipmentStatusEffects");
@@ -65,33 +81,45 @@ namespace NoVikingLeftBehind
             _equipmentSlots = BindSynced("EquipmentSlots", true,
                 "Server: give every player four dedicated equipment slots (head, chest, legs, cape). " +
                 "Off removes the four slots; anything in them is moved back into the bag first.",
-                Opt.B("Give every player four dedicated equipment slots"));
+                Opt.B("Off puts whatever is in them back in your bag first")
+                    .As("Dedicated gear slots (head, chest, legs, cape)")
+                    .Simple(SimpleGroups.Inventory, 30));
             _utilitySlots = BindSynced("UtilitySlots", 2,
                 "Server: how many utility slots (0-4). 2 lets a player wear Megingjord and the " +
                 "Wishbone at the same time. 0 disables the group.",
-                Opt.N("How many extra utility (belt-type) slots", 0, 4));
+                Opt.N("0-4. Two lets you wear Megingjord and the Wishbone at once", 0, 4)
+                    .As("Belt and utility slots").Simple(SimpleGroups.Inventory, 60));
             _foodSlots = BindSynced("FoodSlots", 3,
                 "Server: how many food slots (0-3). Only food goes in them.",
-                Opt.N("How many dedicated food slots", 0, 3));
+                Opt.N("0-3. Only food goes in them", 0, 3)
+                    .As("Food slots").Simple(SimpleGroups.Inventory, 40));
             _ammoSlots = BindSynced("AmmoSlots", 3,
                 "Server: how many ammo slots (0-4). The equipped ammo stack lives here. " +
                 "3 since 0.10.1 (was 2) - a group request; existing cfg files keep their own value.",
-                Opt.N("How many dedicated ammo slots", 0, 4));
+                Opt.N("0-4. The equipped ammo stack lives here", 0, 4)
+                    .As("Ammo slots").Simple(SimpleGroups.Inventory, 50));
             _quickSlots = BindSynced("QuickSlots", 0,
                 "Server: how many quick slots (0-8). Anything can go in them; a hotkey uses it. " +
                 "0 by default since 0.4.2 - the bottom row is GenericSlots plain storage instead. " +
                 "Set it above 0 to bring the hotkey row back; quick slots are drawn first, then " +
                 "the generic ones, on the same row.",
-                Opt.N("How many hotkeyed quick-use slots", 0, 8));
+                Opt.N("Extra hotbar slots with their own keys, set below (0 = none)", 0, 8)
+                    .As("Quick slots (hotbar row)").Simple(SimpleGroups.Inventory, 80));
             _genericSlots = BindSynced("GenericSlots", 2,
                 "Server: how many plain storage slots (0-8) on the bottom row. Any item fits, " +
                 "there is no hotkey and nothing is drawn on the cell - they are simply two more " +
                 "places to put things.",
-                Opt.N("How many plain extra storage slots", 0, 8));
+                Opt.N("0-8 on the bottom row. Any item, no hotkey", 0, 8)
+                    .As("Spare storage slots").Simple(SimpleGroups.Inventory, 70));
             _autoEat = BindSynced("AutoEatFromFoodSlots", true,
                 "Server: when a food buff runs out and the same food is sitting in a food slot, " +
                 "eat it automatically.",
                 Opt.B("Automatically eat from a food slot when a buff runs out"));
+            _autoEatSeconds = BindSynced("AutoEatWhenSecondsLeft", 10f,
+                "With food that keeps full strength (FoodNoDecay), wait until the food in that " +
+                "slot has this many seconds left before eating the next one. 0 = eat as soon as " +
+                "the game allows.",
+                Opt.N("Auto-eat when this many seconds are left (0 = as soon as allowed)", 0, 120, 1));
             _stackAllGuard = BindSynced("StackAllProtectsSlots", true,
                 "Server: keep the vanilla 'Stack all' button and hold-E on a chest out of the extra " +
                 "slots. Vanilla walks the whole bag with no row filter, so a chest holding arrows or " +
@@ -106,7 +134,8 @@ namespace NoVikingLeftBehind
                 "leave a single quick slot without a hotkey. Pick keys the game is not already " +
                 "using for something else, or you will fight vanilla for that key. Never synced, " +
                 "so each player picks their own.",
-                Opt.T("Keys for the quick slots, in order - unset by default; avoid keys vanilla already uses"));
+                Opt.T("In order; avoid keys vanilla already uses; saved on your own machine")
+                    .As("Keys for the quick slots").Simple(SimpleGroups.Powers, 50));
             _showUi = BindLocal("ShowUI", true,
                 "Local: draw the extra slots in their own panel beside the inventory window. " +
                 "Turn off if a game update breaks the layout - the items stay exactly where they " +
@@ -123,6 +152,12 @@ namespace NoVikingLeftBehind
                 "Local: size of the extra-slot panel relative to the inventory grid (0.4-2.5). " +
                 "1 draws the slots exactly the size of the bag's own slots.",
                 Opt.N("Size of the extra-slot panel relative to the inventory grid", 0.4, 2.5, 0.05));
+            _diag = BindLocal("Diagnostics", false,
+                "Machine-local. Log every equip or unequip this module performs by itself, with the " +
+                "slot and the reason, and every drop into an extra slot (one line per change, " +
+                "throttled). Turn on only while chasing an 'it equipped something by itself' " +
+                "report; noisy otherwise.",
+                Opt.B("Log the extra-slot equip decisions").Diag());
 
             ParseKeys();
             RebuildLayout();
@@ -275,6 +310,10 @@ namespace NoVikingLeftBehind
         /// <summary>Rebuild the layout and move every extra-slot item to where it belongs now.</summary>
         private void Relayout()
         {
+            // The slot keys themselves are about to move, so nothing remembered about them means
+            // anything any more; after a relayout every equipment slot is worn afresh.
+            ForgetSlotMemory();
+
             var inv = SlotStore.Managed;
             if (inv == null) { RebuildLayout(); return; }
 
@@ -455,6 +494,38 @@ namespace NoVikingLeftBehind
             return inv != null && ReferenceEquals(inv, SlotStore.Managed);
         }
 
+        // ---- diagnostics -------------------------------------------------------------------------
+
+        /// <summary>
+        /// [Slots] Diagnostics only: one line per distinct message, at most every 2 s. Every equip
+        /// or unequip this module performs by itself goes through here, so a player who is asked
+        /// "did the mod do that, or the game?" can answer it from their own log.
+        /// </summary>
+        private static void Diag(string what)
+        {
+            if (_diag == null || !_diag.Value) return;
+            string msg = "[Slots] " + what;
+            if (msg == _lastDiag && Time.realtimeSinceStartup - _lastDiagAt < 2f) return;
+            _lastDiag = msg; _lastDiagAt = Time.realtimeSinceStartup;
+            Log.LogInfo(msg);
+        }
+
+        private static string ItemName(ItemDrop.ItemData item)
+        {
+            if (item == null) return "(none)";
+            try { return item.m_dropPrefab != null ? item.m_dropPrefab.name : item.m_shared.m_name; }
+            catch { return "?"; }
+        }
+
+        /// <summary>
+        /// Forget which item was in which equipment slot. Everything then counts as newly placed,
+        /// which is exactly what a fresh login or a layout change should do: wear what is there.
+        /// </summary>
+        private static void ForgetSlotMemory()
+        {
+            _lastInSlot.Clear();
+        }
+
         // ---- persistence ------------------------------------------------------------------------
 
         /// <summary>Fresh blob into custom data, before vanilla Player.Save serialises it.</summary>
@@ -495,6 +566,7 @@ namespace NoVikingLeftBehind
             {
                 var inv = __instance.GetInventory();
                 SlotStore.Managed = inv;
+                ForgetSlotMemory();
 
                 // Before anything else: a lift left open by an earlier save would make the NEXT
                 // save write the extra-slot items into the vanilla package. Start from zero.
@@ -687,6 +759,7 @@ namespace NoVikingLeftBehind
                 var inv = __instance.GetInventory();
                 SlotStore.Managed = inv;
                 SlotStore.ResetLift();
+                ForgetSlotMemory();
                 SlotStore.SetHeight(inv, SlotLayout.TotalHeight);
                 var orphans = SlotStore.Orphans(inv);
                 if (orphans.Count > 0) SlotStore.Evacuate(__instance, inv, orphans, "no slot at that cell");
@@ -748,7 +821,11 @@ namespace NoVikingLeftBehind
             if (!IsManaged(inv) || !SlotLayout.IsExtra(pos)) return true;
 
             var slot = SlotLayout.At(pos);
-            if (slot != null && SlotLayout.Accepts(slot, item)) return true;
+            if (slot != null && SlotLayout.Accepts(slot, item))
+            {
+                Diag("drop " + ItemName(item) + " into " + slot.Key);
+                return true;
+            }
 
             var p = Player.m_localPlayer;
             if (p != null)
@@ -884,15 +961,30 @@ namespace NoVikingLeftBehind
         }
 
         /// <summary>
-        /// Wear whatever sits in an equipment slot. The items are ordinary members of the player's
-        /// inventory, so the four armour slots and the FIRST utility slot go straight through
-        /// vanilla Humanoid.EquipItem. Utility slots 2+ have no vanilla field to live in
+        /// Wear whatever a player just PUT in an equipment slot. The items are ordinary members of
+        /// the player's inventory, so the four armour slots and the FIRST utility slot go straight
+        /// through vanilla Humanoid.EquipItem. Utility slots 2+ have no vanilla field to live in
         /// (Humanoid.m_utilityItem is a single reference), so they are held here and their equip
         /// status effect is re-applied in UpdateEquipSePostfix.
+        ///
+        /// "Just put" is the whole point (0.10.3). This runs off Player.OnInventoryChanged, which
+        /// fires for EVERY inventory change - every drag inside the panel, every pickup, every
+        /// craft, and twice per drop (Inventory.RemoveItem and AddItem both call Changed()). Until
+        /// 0.10.2 it equipped anything found unequipped in an equipment slot, so a Wisplight the
+        /// player had deliberately switched off but left parked in a utility slot was switched
+        /// straight back on by the next item move - reported from live play. An item is therefore
+        /// only equipped when it is NEW to that slot, measured against _lastInSlot; an item that
+        /// was already there keeps whatever equipped state the player gave it. Vanilla itself never
+        /// re-equips on an inventory change (Humanoid.EquipItem is only ever called from a player
+        /// action or InventoryGui's own drop handling), so this matches the game's own rule.
         /// </summary>
         internal static void SyncEquipment(Player p)
         {
             if (_syncing || p == null) return;
+            // A save has the extra-slot items lifted out of the inventory list (SlotStore.Stash),
+            // so every equipment slot reads empty. Recording that would make every item look new
+            // to its slot the moment it is put back, and re-equip the lot on every autosave.
+            if (SlotStore.Lifted) return;
             _syncing = true;
             try
             {
@@ -910,6 +1002,7 @@ namespace NoVikingLeftBehind
                         held.m_equipped = false;
                         ExtraUtility[i] = null;
                         extraChanged = true;
+                        Diag("unequip " + ItemName(held) + " because it left utility" + (i + 2));
                     }
                 }
 
@@ -919,22 +1012,39 @@ namespace NoVikingLeftBehind
                     var s = slots[i];
                     if (!SlotLayout.IsEquipmentKind(s.Kind)) continue;
                     var item = inv.GetItemAt(s.Pos.x, s.Pos.y);
+
+                    // Is this item NEW to this slot? _lastInSlot is written for every equipment
+                    // slot on every pass, empty cells included, so an item that comes back to a
+                    // slot it was dragged out of counts as new and is equipped again, while an
+                    // item nobody touched never is.
+                    ItemDrop.ItemData before;
+                    bool known = _lastInSlot.TryGetValue(s.Key, out before);
+                    bool isNew = !known || !ReferenceEquals(before, item);
+                    _lastInSlot[s.Key] = item;
+
                     if (item == null) continue;
 
                     if (s.Kind == SlotKind.Utility && s.Index >= 2)
                     {
                         int idx = s.Index - 2;
                         if (idx >= ExtraUtility.Length) continue;
+                        // Not claimed and not new = the player unequipped it and left it parked.
                         if (!ReferenceEquals(ExtraUtility[idx], item))
                         {
+                            if (!isNew) continue;
                             ExtraUtility[idx] = item;
                             item.m_equipped = true;
                             extraChanged = true;
+                            Diag("equip " + ItemName(item) + " because it was put in " + s.Key);
                         }
                         continue;
                     }
 
-                    if (!p.IsItemEquiped(item)) p.EquipItem(item, false);
+                    if (isNew && !p.IsItemEquiped(item))
+                    {
+                        Diag("equip " + ItemName(item) + " because it was put in " + s.Key);
+                        p.EquipItem(item, false);
+                    }
                 }
 
                 if (extraChanged && SetupEquipmentMi != null) SetupEquipmentMi.Invoke(p, null);
@@ -982,6 +1092,7 @@ namespace NoVikingLeftBehind
                 if (!ReferenceEquals(ExtraUtility[i], item)) continue;
                 ExtraUtility[i] = null;
                 item.m_equipped = false;
+                Diag("unequip " + ItemName(item) + " because the game unequipped it (utility" + (i + 2) + ")");
             }
         }
 
@@ -1061,9 +1172,32 @@ namespace NoVikingLeftBehind
             }
         }
 
+        /// <summary>
+        /// One pass over the food slots, once a second (see the tick above). Eats at most one item
+        /// per pass, exactly like a player pressing a key.
+        ///
+        /// GRACE PERIOD (0.11.0, issue #2): vanilla lets you eat again at half the burn time
+        /// (<c>Player.Food.CanEatAgain() =&gt; m_time &lt; m_foodBurnTime / 2</c>, Player.cs:36-39),
+        /// because vanilla food is decaying towards nothing by then and topping it up is a gain.
+        /// With FoodNoDecay on it is NOT decaying - it is still at full strength - so eating at the
+        /// half mark throws away the whole second half of the sausage. AutoEatWhenSecondsLeft makes
+        /// us wait until the food in THAT slot is nearly gone. The check is per-candidate on
+        /// purpose: a sausage with 20 minutes left must not stop honey in another slot from being
+        /// topped up.
+        ///
+        /// <c>Food.m_time</c> is REMAINING seconds, not elapsed - Player.UpdateFood does
+        /// <c>food.m_time -= 1f</c> each second and removes the food at <c>m_time &lt;= 0</c>
+        /// (Player.cs:2433-2439), and EatFood sets it to the full <c>m_foodBurnTime</c> on eating.
+        /// </summary>
         private static void AutoEat(Player p, Inventory inv)
         {
             if (p.IsDead() || p.InCutscene()) return;
+
+            float grace = Inst != null && Inst._autoEatSeconds != null ? Inst._autoEatSeconds.Value : 0f;
+            // Only meaningful while food actually keeps its strength; with vanilla decay the old
+            // "eat as soon as the game allows" timing is the right one and we leave it alone.
+            bool hold = grace > 0f && FoodNoDecayModule.NoDecayActive();
+
             for (int i = 1; i <= SlotLayout.FoodCount; i++)
             {
                 var slot = SlotLayout.ByKey("food" + i);
@@ -1071,9 +1205,63 @@ namespace NoVikingLeftBehind
                 var item = inv.GetItemAt(slot.Pos.x, slot.Pos.y);
                 if (item == null || !SlotLayout.IsFood(item)) continue;
                 if (!p.CanEat(item, false)) continue;
-                p.UseItem(null, item, false);
+
+                // Skip only THIS candidate while its own buff still has plenty of time left. The
+                // loop carries on to the next slot, and a skipped slot is simply re-tested on the
+                // next tick - nothing is remembered between passes.
+                if (hold && RemainingFoodTime(p, item) > grace) continue;
+
+                // Straight down the game's own consume path: Player.ConsumeItem (Player.cs:6059)
+                // re-checks CanConsumeItem (world level, CanEat, the $msg_cantconsume status-effect
+                // conflict), applies m_shared.m_consumeStatusEffect, calls EatFood, and removes the
+                // item with inventory.RemoveOneItem(item) - exactly once, and only on success.
+                // We deliberately no longer go through Humanoid.UseItem: it looks at
+                // GetHoverObject() first and hands the item to whatever Interactable you happen to
+                // be looking at (a fermenter, a beehive, a tamed boar), which is not what an
+                // automatic bite should ever do.
+                if (!p.ConsumeItem(inv, item, false)) continue;
+
+                Log.LogInfo("[Slots] auto-ate " + item.m_shared.m_name + " from food slot " + i);
                 return;   // one bite per tick, exactly like a player pressing the key
             }
+        }
+
+        /// <summary>
+        /// Seconds left on the food effect this item would consume, or 0 when nothing would be
+        /// thrown away by eating it right now.
+        ///
+        /// Vanilla EatFood (Player.cs:2355-2420) does one of three things: refresh the effect with
+        /// the SAME shared name (2374), ADD a new one while fewer than three are running (2390), or
+        /// overwrite GetMostDepletedFood() (2407). The first and third destroy whatever time was
+        /// left on that effect, so those are the ones worth waiting for; the second costs nothing,
+        /// hence 0.
+        /// </summary>
+        private static float RemainingFoodTime(Player p, ItemDrop.ItemData item)
+        {
+            var foods = p.GetFoods();
+            if (foods == null || item == null || item.m_shared == null) return 0f;
+
+            for (int i = 0; i < foods.Count; i++)
+            {
+                var f = foods[i];
+                if (f == null || f.m_item == null || f.m_item.m_shared == null) continue;
+                if (f.m_item.m_shared.m_name == item.m_shared.m_name) return f.m_time;
+            }
+
+            // No effect of this food running. Vanilla only keeps three at a time, so below that
+            // this is a free addition; at three it would evict the most depleted one instead.
+            if (foods.Count < VanillaFoodEffects) return 0f;
+
+            float lowest = 0f;
+            bool any = false;
+            for (int i = 0; i < foods.Count; i++)
+            {
+                var f = foods[i];
+                if (f == null || f.m_item == null || f.m_item.m_shared == null) continue;
+                if (!f.CanEatAgain()) continue;             // not a candidate for eviction
+                if (!any || f.m_time < lowest) { lowest = f.m_time; any = true; }
+            }
+            return any ? lowest : 0f;
         }
 
         private static bool InputAllowed(Player me)
@@ -1161,6 +1349,7 @@ namespace NoVikingLeftBehind
         public override string StatusDetail()
         {
             var s = SlotLayout.Describe() + " autoEat=" + (_autoEat != null && _autoEat.Value) +
+                    " autoEatAt=" + (_autoEatSeconds != null ? _autoEatSeconds.Value : 0f) + "s" +
                     " ui=" + (_showUi != null && _showUi.Value) +
                     (SlotLayout.QuickCount > 0 ? " keys=" + (_quickKeys != null ? _quickKeys.Value : "") : "");
             if (SlotStore.Managed != null)

@@ -46,7 +46,7 @@ namespace NoVikingLeftBehind
                 "Diagnostic. Once per world load, prove the extra-slot storage layer headlessly: " +
                 "save lift, blob round trip, migration rescue and loadout encoding. Machine-local, " +
                 "never synced. Leave it false in normal use.",
-                Opt.B("Prove the extra-slot storage code works with no players online").Admin().Restart());
+                Opt.B("Prove the extra-slot storage code works with no players online").Admin().Restart().Diag());
         }
 
         protected override void ApplyPatches()

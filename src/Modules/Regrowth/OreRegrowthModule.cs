@@ -58,8 +58,9 @@ namespace NoVikingLeftBehind
         public override string Hint => "Mined ore nodes come back after a while";
 
         protected override string EnabledDescription =>
-            "Regrow mined-out ore nodes whose material tier is behind the frontier. " +
-            "Server only: recording and respawning both happen on the dedicated server.";
+            "Regrow mined-out ore nodes from tiers your group has moved past. Regrow mined-out " +
+            "ore nodes whose material tier is behind the frontier. Server only: recording and " +
+            "respawning both happen on the dedicated server.";
 
         // ---- config -------------------------------------------------------------------
 
@@ -90,6 +91,15 @@ namespace NoVikingLeftBehind
 
         /// <summary>Metres: a node is not respawned if one is already standing this close.</summary>
         private const float DedupeRadius = 4f;
+
+        /// <summary>
+        /// How many failed respawns a record gets before it is dropped. A respawn only throws for
+        /// reasons that do not fix themselves (the prefab is not in ZNetScene, it has no ZNetView),
+        /// so retrying for ever just floods the log - issue #6 saw 88 unresolvable records produce
+        /// 176 LogError lines a minute. Five attempts is enough to ride out a boot where the
+        /// allowlist or ObjectDB was not ready yet, and is reached within five sweeps.
+        /// </summary>
+        private const int MaxRespawnFailures = 5;
 
         // ---- state --------------------------------------------------------------------
 
@@ -140,7 +150,9 @@ namespace NoVikingLeftBehind
             _regrowDays = BindSynced("RegrowDays", 14,
                 "In-game days a mined-out node stays gone before it may regrow. To turn ore " +
                 "regrowth off entirely, set [Regrowth] Enabled=false rather than raising this.",
-                Opt.N("Days before a mined ore node comes back", 0, 60));
+                Opt.N("In-game days. 0 = as soon as the server next looks", 0, 60)
+                    .As("Days before mined ore comes back")
+                    .Simple(SimpleGroups.Gathering, 30));
 
             _checkIntervalSec = BindSynced("CheckIntervalSec", 60f,
                 "Real seconds between respawn sweeps on the server.",
@@ -156,12 +168,13 @@ namespace NoVikingLeftBehind
 
             _dryRun = BindLocal("DryRun", false,
                 "Log what would be respawned without creating any ZDO. Machine-local.",
-                Opt.B("Log what would respawn without actually doing it").Admin());
+                Opt.B("Log what would respawn without actually doing it").Admin().Diag());
 
             _selfTest = BindLocal("SelfTest", false,
-                "Headless proof: pick an existing copper node, fake a due destroy record for it, " +
+                "Headless proof: round-trip a record through regrowth.json and check its prefab hash " +
+                "survives, then pick an existing copper node, fake a due destroy record for it, " +
                 "run one sweep and verify a new ZDO appeared. Machine-local, runs once per boot.",
-                Opt.B("Run a one-time headless test of ore regrowth").Admin());
+                Opt.B("Run a one-time headless test of ore regrowth").Admin().Diag());
         }
 
         protected override void ApplyPatches()
@@ -472,9 +485,11 @@ namespace NoVikingLeftBehind
                 try { zdo = Respawn(e); }
                 catch (Exception ex)
                 {
-                    Log.LogError("[OreRegrowth] respawn of " + e.name + " at " + Fmt(e.Pos) + " failed: " + ex.Message);
+                    NoteFailure(i, e, ex.Message);
                     continue;
                 }
+                // null = ZNetScene/ZDOMan are not up yet: a whole-server condition, not this
+                // record's fault, so it does not count against the record's attempts.
                 if (zdo == null) continue;
 
                 _pending.RemoveAt(i);
@@ -487,6 +502,35 @@ namespace NoVikingLeftBehind
 
             if (_dirty) SaveStore();
             return done;
+        }
+
+        /// <summary>
+        /// A respawn that threw, at index `index` of _pending.
+        ///
+        /// Two deliberate properties (issue #6):
+        ///   * a failure NEVER consumes the MaxPerTick budget - `done` is only incremented by a
+        ///     real respawn - so a broken record cannot starve the good records behind it in the
+        ///     list, however many of them there are;
+        ///   * the attempt count is on the record and is persisted, so the work a permanently
+        ///     broken record can cost is capped at MaxRespawnFailures sweeps, after which it is
+        ///     dropped. Only the first failure is an error; the rest are debug, so a stuck record
+        ///     cannot flood the log while it counts down.
+        /// </summary>
+        private void NoteFailure(int index, RegrowthEntry e, string why)
+        {
+            e.fails++;
+            _dirty = true;
+
+            var msg = "[OreRegrowth] respawn of " + e.name + " at " + Fmt(e.Pos) + " failed: " + why;
+            if (e.fails == 1) Log.LogError(msg);
+            else Log.LogDebug(msg + " (attempt " + e.fails + " of " + MaxRespawnFailures + ")");
+
+            if (e.fails < MaxRespawnFailures) return;
+
+            _pending.RemoveAt(index);
+            Log.LogWarning("[OreRegrowth] gave up on " + e.name + " at " + Fmt(e.Pos) + " after " +
+                           e.fails + " failed respawn attempts; record dropped (pending=" +
+                           _pending.Count + ")");
         }
 
         /// <summary>
@@ -601,14 +645,53 @@ namespace NoVikingLeftBehind
                 }
                 var json = File.ReadAllText(path);
                 var loaded = RegrowthJson.Read(json);
+                int repaired = RepairHashes(loaded);
                 _pending.AddRange(loaded);
                 Log.LogInfo("[OreRegrowth] loaded " + _pending.Count + " pending node(s) from " + path);
+
+                if (repaired > 0)
+                {
+                    // Write the repaired hashes straight back: the sweep would save them anyway,
+                    // but only once it has a reason to run, and a store that is correct on disk
+                    // is one a downgrade or a crash cannot un-repair.
+                    Log.LogInfo("[OreRegrowth] repaired " + repaired + " prefab hashes from names");
+                    _dirty = true;
+                    SaveStore();
+                }
             }
             catch (Exception e)
             {
                 Log.LogError("[OreRegrowth] could not read the store, starting empty: " + e.Message);
                 _pending.Clear();
             }
+        }
+
+        /// <summary>
+        /// Self-heal for every store written before 0.10.3 (issue #6): the name is authoritative,
+        /// so any entry that still has one gets its hash recomputed the same way the recorder
+        /// computed it in the first place. Returns how many were actually changed.
+        ///
+        /// This needs no world and no ZNetScene - GetStableHashCode is a pure function of the
+        /// string - so it can run inside LoadStore, before anything tries to resolve a prefab.
+        /// A repaired record also has its attempt count cleared: whatever it failed at before, it
+        /// was failing with the wrong hash and deserves the full MaxRespawnFailures again.
+        /// </summary>
+        private static int RepairHashes(List<RegrowthEntry> entries)
+        {
+            int repaired = 0;
+            for (int i = 0; i < entries.Count; i++)
+            {
+                var e = entries[i];
+                if (e == null || string.IsNullOrEmpty(e.name)) continue;
+
+                int want = e.name.GetStableHashCode();
+                if (e.prefabHash == want) continue;
+
+                e.prefabHash = want;
+                e.fails = 0;
+                repaired++;
+            }
+            return repaired;
         }
 
         /// <summary>Atomic-ish write: full file to .tmp, then replace. Never throws.</summary>
@@ -637,6 +720,78 @@ namespace NoVikingLeftBehind
         // ---- headless self test ---------------------------------------------------------
 
         /// <summary>
+        /// The world-free half of the self test, and the regression guard for issue #6: a record
+        /// must survive a write/read round trip through regrowth.json with its prefab hash intact.
+        /// Pure arithmetic and string handling - no ZDOMan, no ZNetScene, no players - so it can
+        /// run on any boot and is the first thing the self test reports.
+        ///
+        /// Also pins the constant the bug was found with: "MineRock_Tin" hashes to -1882492588,
+        /// a value a float cannot hold (it rounds to -1882492544).
+        /// </summary>
+        internal static void RunStoreSelfTest()
+        {
+            try
+            {
+                const int tinHash = -1882492588;
+                int live = "MineRock_Tin".GetStableHashCode();
+                Ok("store 1: \"MineRock_Tin\".GetStableHashCode()=" + live + ", want " + tinHash,
+                   live == tinHash);
+                int viaFloat = (int)(float)live;        // exactly what the pre-0.10.3 reader did
+                Ok("store 2: that hash does not survive a float: (int)(float)" + live + "=" + viaFloat,
+                   viaFloat != tinHash);
+
+                var one = new RegrowthEntry
+                {
+                    prefabHash = tinHash, name = "MineRock_Tin", tier = 1, day = 1234567,
+                    x = 1234.5f, y = -67.25f, z = -8910.5f, ry = 180f, fails = 3
+                };
+                var round = RegrowthJson.Read(RegrowthJson.Write(new List<RegrowthEntry> { one }));
+                if (round.Count != 1)
+                {
+                    Ok("store 3: round trip returned " + round.Count + " entries, want 1", false);
+                    return;
+                }
+                var back = round[0];
+                Ok("store 3: prefabHash " + tinHash + " -> " + back.prefabHash, back.prefabHash == tinHash);
+                Ok("store 4: name/tier/day " + back.name + "/" + back.tier + "/" + back.day,
+                   back.name == one.name && back.tier == one.tier && back.day == one.day);
+                Ok("store 5: pos " + Fmt(back.Pos) + " ry=" + back.ry.ToString("0.#", CultureInfo.InvariantCulture),
+                   back.x == one.x && back.y == one.y && back.z == one.z && back.ry == one.ry);
+                Ok("store 6: fails " + back.fails + " persisted", back.fails == one.fails);
+
+                // A pre-0.10.3 record - no "fails" key at all - must still read, with fails = 0.
+                const string legacy =
+                    "{\n  \"entries\": [\n    {\"prefabHash\":-1882492588,\"name\":\"MineRock_Tin\"," +
+                    "\"tier\":1,\"day\":42,\"x\":1,\"y\":2,\"z\":3,\"rx\":0,\"ry\":0,\"rz\":0}\n  ]\n}\n";
+                var old = RegrowthJson.Read(legacy);
+                Ok("store 7: a pre-0.10.3 record reads back (" + old.Count + " entry) with hash " +
+                   (old.Count == 1 ? old[0].prefabHash.ToString(CultureInfo.InvariantCulture) : "-") +
+                   " and fails=" + (old.Count == 1 ? old[0].fails.ToString(CultureInfo.InvariantCulture) : "-"),
+                   old.Count == 1 && old[0].prefabHash == tinHash && old[0].fails == 0);
+
+                // And the self-heal: a rounded hash with a good name is put right on load.
+                var broken = new List<RegrowthEntry>
+                {
+                    new RegrowthEntry { prefabHash = viaFloat, name = "MineRock_Tin", tier = 1, fails = 4 }
+                };
+                int fixedCount = RepairHashes(broken);
+                Ok("store 8: self-heal repaired " + fixedCount + " record(s) -> hash " +
+                   broken[0].prefabHash + ", fails reset to " + broken[0].fails,
+                   fixedCount == 1 && broken[0].prefabHash == tinHash && broken[0].fails == 0);
+            }
+            catch (Exception ex)
+            {
+                Log.LogError("[OreRegrowth][SelfTest] store test threw: " + ex);
+            }
+        }
+
+        private static void Ok(string what, bool pass)
+        {
+            var line = "[OreRegrowth][SelfTest] " + what + (pass ? "  PASS" : "  *** FAIL ***");
+            if (pass) Log.LogInfo(line); else Log.LogError(line);
+        }
+
+        /// <summary>
         /// Proves the 0.4.5 contract end to end on a headless server, with no players:
         ///   1. a rock4_copper_frac ZDO destroyed through the real funnel records "rock4_copper";
         ///   2. the sweep then respawns the ORIGINAL vein, not the fractured stage;
@@ -646,6 +801,11 @@ namespace NoVikingLeftBehind
         internal void RunSelfTest()
         {
             _selfTestDone = true;
+
+            // The store half needs no world at all, so it runs first and always reports, even on
+            // a server whose ZDOMan/ZNetScene are not up or whose world has no copper in it.
+            RunStoreSelfTest();
+
             try
             {
                 EnsureAllowlist();
@@ -816,6 +976,14 @@ namespace NoVikingLeftBehind
         public int day;
         public float x, y, z;
         public float rx, ry, rz;
+
+        /// <summary>
+        /// How many times respawning this record has thrown. Persisted (only when non-zero), so a
+        /// record that cannot be respawned is given up on after OreRegrowthModule.MaxRespawnFailures
+        /// attempts instead of failing - and logging - once per sweep for ever. 0 in any store
+        /// written before 0.10.3.
+        /// </summary>
+        public int fails;
 
         public Vector3 Pos { get { return new Vector3(x, y, z); } }
         public Quaternion Rot { get { return Quaternion.Euler(rx, ry, rz); } }

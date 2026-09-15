@@ -136,7 +136,8 @@ namespace NoVikingLeftBehind
             _slots = BindSynced("Slots", 2,
                 "How many Forsaken powers you can hold at once. 1 = vanilla. 2 = the second slot " +
                 "on SecondSlotKey. 3 works too but you must also set ThirdSlotKey.",
-                Opt.N("How many Forsaken powers you can carry at once", 1, 3, 1));
+                Opt.N("1 = vanilla", 1, 3, 1)
+                    .As("Forsaken powers you can carry at once").Simple(SimpleGroups.Powers, 10));
             _independentCooldowns = BindSynced("IndependentCooldowns", true,
                 "True: every slot has its own cooldown. False: one shared vanilla cooldown, so " +
                 "using either power puts both on cooldown.",
@@ -148,11 +149,13 @@ namespace NoVikingLeftBehind
             _secondSlotKey = BindLocal("SecondSlotKey", "G",
                 "Machine-local. UnityEngine.KeyCode name for the second power slot (vanilla's F " +
                 "always stays slot 1). Examples: G, H, LeftAlt, Mouse3, JoystickButton5.",
-                Opt.T("Key that activates the second power slot"));
+                Opt.T("Key that activates the second power slot")
+                    .As("Key for your second power").Simple(SimpleGroups.Powers, 20));
             _thirdSlotKey = BindLocal("ThirdSlotKey", "None",
                 "Machine-local. KeyCode for a third slot, only used when Slots = 3. " +
                 "'None' disables it.",
-                Opt.T("Key that activates the third power slot"));
+                Opt.T("Key that activates the third power slot")
+                    .As("Key for your third power").Simple(SimpleGroups.Powers, 30));
             _secondSlotModifier = BindLocal("SecondSlotModifier", "LeftShift",
                 "Machine-local. Hold this while activating a boss altar to put the power in SLOT 2. " +
                 "The whole altar scheme: interact on its own = slot 1, exactly " +
@@ -160,20 +163,22 @@ namespace NoVikingLeftBehind
                 "= slot 3 (only when Slots = 3). The slot is decided the moment you interact, so you " +
                 "can let go while the stone charges. 'None' disables it. " +
                 "LeftShift/LeftControl/LeftAlt also accept their right-hand twin.",
-                Opt.T("Modifier key held at an altar to set the second power slot"));
+                Opt.T("Modifier key held at an altar to set the second power slot")
+                    .As("Modifier held with the second-power key").Simple(SimpleGroups.Powers, 25));
             _thirdSlotModifier = BindLocal("ThirdSlotModifier", "LeftControl",
                 "Machine-local. Hold this while activating a boss altar to put the power in SLOT 3. " +
                 "Ignored unless Slots = 3. Same scheme as SecondSlotModifier: interact alone = slot 1, " +
                 "SecondSlotModifier = slot 2, ThirdSlotModifier = slot 3. If you bind both to the " +
                 "same key the lower slot wins. 'None' disables it.",
-                Opt.T("Modifier key held at an altar to set the third power slot"));
+                Opt.T("Modifier key held at an altar to set the third power slot")
+                    .As("Modifier held with the third-power key").Simple(SimpleGroups.Powers, 35));
             _slot1Modifier = BindLocal("Slot1Modifier", "LeftShift",
                 "OBSOLETE - this setting does nothing at all any more. It is still here only so an " +
                 "existing cfg keeps loading without an error. Up to 0.7.x a plain altar interact " +
                 "filled the first EMPTY slot and this key forced slot 1, which felt backwards; from " +
                 "0.8.0 a plain interact always sets slot 1 (vanilla) and the modifiers pick the extra " +
                 "slots instead. Use SecondSlotModifier / ThirdSlotModifier. Safe to delete.",
-                Opt.T("Obsolete - replaced by SecondSlotModifier and ThirdSlotModifier"));
+                Opt.T("Obsolete - replaced by SecondSlotModifier and ThirdSlotModifier").Diag().Hidden());
             _showHud = BindLocal("ShowHud", true,
                 "Machine-local. Clone the vanilla power icon so slot 2 gets its own icon, name " +
                 "and cooldown readout. Turn off if it clashes with another HUD mod.",
@@ -211,7 +216,7 @@ namespace NoVikingLeftBehind
             _selfTest = BindLocal("SelfTest", false,
                 "Diagnostic, machine-local. Runs the module on a dedicated server too and logs a " +
                 "storage + recharge self test at world load. Leave false in normal use.",
-                Opt.B("Run power-slot self tests on a dedicated server").Admin().Restart());
+                Opt.B("Run power-slot self tests on a dedicated server").Admin().Restart().Diag());
 
             _inst = this;
             Push();

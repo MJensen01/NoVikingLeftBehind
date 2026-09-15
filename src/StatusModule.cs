@@ -49,8 +49,10 @@ namespace NoVikingLeftBehind
                     new Terminal.ConsoleEvent(Run));
 
                 new Terminal.ConsoleCommand("nvlb.catalog",
-                    "nvlb.catalog [text] - every NoVikingLeftBehind setting with its hint, type, " +
-                    "range, permission tier and whether it applies live. Optionally filtered.",
+                    "nvlb.catalog [text|simple|selftest] - every NoVikingLeftBehind setting with " +
+                    "its hint, type, range, permission tier and whether it applies live, " +
+                    "optionally filtered. 'simple' prints the Simple view as text; 'selftest' " +
+                    "checks the Simple/Advanced metadata.",
                     new Terminal.ConsoleEvent(RunCatalog));
 
                 Log.LogInfo("[Status] console commands 'nvlb.status', 'nvlb.catalog' registered");
@@ -83,7 +85,17 @@ namespace NoVikingLeftBehind
             if (args != null && args.Args != null && args.Args.Length > 1)
                 filter = string.Join(" ", args.Args, 1, args.Args.Length - 1);
 
-            foreach (var line in ConfigCatalog.DumpLines(filter))
+            // Two words are reserved, both about the Simple/Advanced split: neither is a plausible
+            // search term, and both answer "what did the tagging actually produce?" from a log.
+            System.Collections.Generic.List<string> lines;
+            if (string.Equals(filter, "simple", StringComparison.OrdinalIgnoreCase))
+                lines = ConfigCatalog.SimpleLines();
+            else if (string.Equals(filter, "selftest", StringComparison.OrdinalIgnoreCase))
+                lines = ConfigCatalog.SelfTestLines();
+            else
+                lines = ConfigCatalog.DumpLines(filter);
+
+            foreach (var line in lines)
             {
                 if (args != null && args.Context != null) args.Context.AddString(line);
                 Log.LogInfo(line);
