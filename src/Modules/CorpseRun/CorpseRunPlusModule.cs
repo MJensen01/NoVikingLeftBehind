@@ -194,7 +194,9 @@ namespace NoVikingLeftBehind
             _compassEnabled = BindSynced("CompassEnabled", true,
                 "GraveCompass: show a HUD arrow and distance pointing at your death point until " +
                 "you reach or loot the grave.",
-                Opt.B("Show a compass pointing at your death point"));
+                Opt.B("Show a compass pointing at your death point")
+                    .As("Compass pointing to where you died")
+                    .Simple(SimpleGroups.Death, 10));
             _compassHideDistance = BindSynced("CompassHideDistance", 10f,
                 "GraveCompass: hide the compass once you are this close to the grave, in metres.",
                 Opt.N("Metres from the grave before the compass hides", 0, 50));
