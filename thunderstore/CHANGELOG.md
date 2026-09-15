@@ -1,9 +1,12 @@
 
 # Changelog — NoVikingLeftBehind
 
-## 0.10.3 (2026-09-15)
+## 0.11.0 (2026-09-15)
 
 Settings tab
+
+The settings tab has a **Simple** view and now opens on it: one page, seven plain-language groups, about twenty-eight
+rows - the settings most groups actually change - and Advanced, unchanged, one click away in the header. The detail:
 * **The tab opens on a Simple view: the settings most groups change, in plain language, seven groups, one page.** No module
   names, no scrolling past forty entries to find the one dial you came for — just the settings that actually get changed,
   under headings like "Inventory & carrying" and "Gathering & the world", with a read-only "Achievement-safe" verdict where
@@ -15,6 +18,11 @@ Settings tab
 * **Search still covers everything.** Typing in the search box looks at every setting in the mod, including the advanced and
   diagnostic ones, from either view, and says so above the results. Restart-only switches now say what to do about it
   ("Restart to turn on") instead of sitting there greyed, and turning a module off tells you it needs a restart to come back.
+* **The settings that confuse people are labelled in plain language.** Every row on the Simple page is titled by what it
+  does ("Bars per ore when smelting old metal", "Days before mined ore comes back", "Who may change these settings")
+  instead of by its config key humanised into "Output multiplier" or "Regrow days", and the line underneath now *adds*
+  something - the units, what 1 means, what 0 means - rather than repeating the title. The key itself is unchanged and
+  is still what search, the cfg file and `nvlb.catalog` use.
 
 Fixes
 * **OreRegrowth: pending ore never respawned after a server restart** (the store rounded prefab hashes through a float on
@@ -56,6 +64,17 @@ Fixes
   vanilla behaviour (bag only) because saying "yes, craftable" without also being able to hand over a concrete item would
   leave the Craft button clickable but doing nothing. They now count bag + nearby containers per listed ingredient, and the
   one that's actually available (in bag, in a chest, or split across both) is what gets consumed.
+
+New settings
+* **`[Slots] AutoEatWhenSecondsLeft`** (server-synced, default 10, 0-120) - how little must be left on the food in a
+  food slot before AutoEat replaces it. 0 = the old "eat as soon as the game allows".
+* **`[ServerKeys] RatesWithoutWorldKeys`** (server-synced, admin, default on) - apply the skill rates directly instead
+  of storing them as a world key, so the world is never flagged as cheated and achievements keep working.
+* **`[SettingsMenu] View`** (machine-local, default `Simple`) - which of the two views the tab opens on; it remembers
+  your last choice by itself.
+* **`[SettingsMenu] ShowDiagnostics`** (machine-local, default off) - show the self-test and debugging rows in Advanced.
+* **`[SettingsMenu] FirstRunHintShown`** (machine-local, default off) - set once you dismiss the one-line "New here?"
+  strip at the top of Simple.
 
 ## 0.10.2
 

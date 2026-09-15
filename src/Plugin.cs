@@ -26,7 +26,7 @@ namespace NoVikingLeftBehind
     {
         public const string PluginGuid = "Nosferatu.NoVikingLeftBehind";
         public const string PluginName = "NoVikingLeftBehind";
-        public const string PluginVersion = "0.10.3";
+        public const string PluginVersion = "0.11.0";
 
         internal static ManualLogSource Log;
         internal static ConfigSync ConfigSync;
@@ -75,8 +75,8 @@ namespace NoVikingLeftBehind
                 "with an explanatory message. Also locks the synced config so only the server " +
                 "(and admins) can change it. Turn off to let vanilla clients join - the server " +
                 "half still works, the client-side features simply do not exist for them.",
-                null, Opt.B("Require every player to run this mod").Admin()
-                          .Simple(SimpleGroups.Server, 20).As("Everyone must have this mod installed to join"));
+                null, Opt.B("Off lets vanilla clients in; the server half still works").Admin()
+                          .Simple(SimpleGroups.Server, 20).As("Everyone must have this mod to join"));
             ConfigSync.AddLockingConfigEntry(EnforceClientMod);
             EnforceClientMod.SettingChanged += (s, a) => ApplyEnforcement();
             ApplyEnforcement();

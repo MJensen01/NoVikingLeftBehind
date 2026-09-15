@@ -94,7 +94,7 @@ and `nvlb-catalog.tsv` gains two **appended** columns (`level`, `simplegroup`). 
 prints the Simple view as text and `nvlb.catalog selftest` (also run headlessly on a dedicated
 server by `[PickerSelfTest] SelfTest`) checks it: every Essential row names a group that exists
 (FAIL), every group has rows and no Essential row is restart-only (WARN), and the Essential count
-stays inside its budget of 45 (FAIL) — a page that grows back into 294 rows helps nobody.
+stays inside its budget of 45 (FAIL) — a page that grows back into 298 rows helps nobody.
 
 **The settings tab's two views (0.11.0)**: the tab opens on **Simple** — one page of the settings
 most groups actually change, under the seven plain-language `SimpleGroups` headings, ignoring

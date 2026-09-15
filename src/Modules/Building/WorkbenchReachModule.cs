@@ -124,7 +124,8 @@ namespace NoVikingLeftBehind
             _maxRange = BindSynced("MaxRangeMetres", 60f,
                 "Hard cap on the effective build range in metres, whatever the tier and level add " +
                 "up to. The result is also never below the vanilla range.",
-                Opt.N("Furthest a workbench can reach (metres)", 10, 200, 5)
+                Opt.N("In metres, whatever the tier and level add up to", 10, 200, 5)
+                    .As("Furthest a workbench can reach")
                     .Simple(SimpleGroups.Building, 30));
 
             _stationsCfg = BindSynced("Stations", DefaultStations,

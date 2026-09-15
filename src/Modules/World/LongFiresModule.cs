@@ -88,8 +88,8 @@ namespace NoVikingLeftBehind
                 "Fireplace component) consume fuel this many times slower. Fireplace.m_secPerFuel " +
                 "is multiplied on Awake for every fire already standing and every new one placed. " +
                 "1 = vanilla.",
-                Opt.N("How many times slower fires and hearths burn through fuel", 1, 20)
-                    .As("Fires burn this many times longer (1 = normal)")
+                Opt.N("1 = normal. Campfires, hearths, torches, braziers, sconces", 1, 20)
+                    .As("Fires burn this many times longer")
                     .Simple(SimpleGroups.Gathering, 50));
 
             _infiniteFuel = BindSynced("InfiniteFuel", false,

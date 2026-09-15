@@ -58,7 +58,8 @@ namespace NoVikingLeftBehind
         public override string Hint => "Craft, build, smelt and cook from nearby containers";
 
         protected override Opt EnabledOpt =>
-            base.EnabledOpt.Simple(SimpleGroups.Crafting, 10).As("Craft and build from nearby chests");
+            Opt.B("Recipes take their materials from containers within range")
+               .Simple(SimpleGroups.Crafting, 10).As("Craft and build from nearby chests");
 
         private static CraftFromChestsModule _self;
 
@@ -169,7 +170,8 @@ namespace NoVikingLeftBehind
 
             _range = BindSynced("Range", 20f,
                 "How far a container may be from the player and still count, in metres.",
-                Opt.N("How far away a chest can be (metres)", 0, 100).Simple(SimpleGroups.Crafting, 20));
+                Opt.N("In metres, measured from you", 0, 100)
+                    .As("How far away a chest can be").Simple(SimpleGroups.Crafting, 20));
 
             _pullCrafting = BindSynced("PullForCrafting", true,
                 "Recipes in the crafting / forge / workbench GUI, upgrades included, may take " +

@@ -106,8 +106,8 @@ namespace NoVikingLeftBehind
                 "300 (Player.m_maxCarryWeight). Applied as a difference on top of whatever the " +
                 "field actually holds, and scaled by the world's carry-weight modifier exactly " +
                 "like vanilla's own number, so a world set to 'lighter'/'heavier' still works.",
-                Opt.N("Base carry weight (vanilla 300)", 300, 1000, 10)
-                    .As("Carry weight (vanilla 300)")
+                Opt.N("Before any belt. Vanilla is 300", 300, 1000, 10)
+                    .As("Carry weight")
                     .Simple(SimpleGroups.Inventory, 10));
 
             _beltBonus = BindSynced("BeltBonus", 300f,
@@ -115,8 +115,8 @@ namespace NoVikingLeftBehind
                 "150 (the m_addMaxCarryWeight on the belt's equip status effect). The shared " +
                 "status-effect asset is never written - the difference is applied as the game asks " +
                 "for the number - so turning this module off restores vanilla exactly.",
-                Opt.N("Megingjord carry bonus (vanilla 150)", 0, 1000, 10)
-                    .As("Extra carry weight from the Megingjord belt (vanilla 150)")
+                Opt.N("While the belt is worn. Vanilla is 150", 0, 1000, 10)
+                    .As("Extra carry weight from the Megingjord belt")
                     .Simple(SimpleGroups.Inventory, 20));
 
             _beltItems = BindSynced("BeltItems", "BeltStrength",

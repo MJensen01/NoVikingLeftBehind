@@ -213,7 +213,7 @@ Open **Settings** — from the pause menu in game, or from the main menu — and
 **NoVikingLeftBehind** tab next to Gameplay, Audio and the rest. Everything below is in it: modules
 down the left, grouped by theme with an on/off switch each; the selected module's settings down the
 right, one row apiece with a plain one-line hint under the name and the full explanation on hover.
-A search box at the top finds any of the 276 settings by name, key, hint or description. Section headings
+A search box at the top finds any of the 298 settings by name, key, hint or description. Section headings
 are buttons — click one to jump the list to it.
 
 **Lists are picked, not typed.** Settings like `[Mining] OreNodes` are a list of things in the

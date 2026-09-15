@@ -64,8 +64,8 @@ namespace NoVikingLeftBehind
             _allowBehindFrontier = BindSynced("AllowBehindFrontier", true,
                 "Raw ore and metal from tiers your group has moved past can go through portals. " +
                 "The newest tier you are still farming stays blocked, like vanilla.",
-                Opt.B("Let ore from tiers your group has moved past ride a portal")
-                    .As("Carry old ore (copper, tin, iron…) through portals")
+                Opt.B("Copper, tin, iron... the newest tier stays blocked, like vanilla")
+                    .As("Carry old ore through portals")
                     .Simple(SimpleGroups.Gathering, 40));
 
             _extraTiersBehind = BindSynced("ExtraTiersBehind", 0,

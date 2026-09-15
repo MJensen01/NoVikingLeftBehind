@@ -226,8 +226,10 @@ namespace NoVikingLeftBehind
             _costMultiplier = BindSynced("CostMultiplier", 0.5f,
                 "Recipes and build pieces from tiers your group has moved past cost this much of " +
                 "the normal price. 1 = full price, 0.5 = half. Never makes anything more expensive.",
-                Opt.N("Old-gear recipes cost this much (1 = full price, 0.5 = half)",
-                    0.01, 1, 0.05).Simple(SimpleGroups.Building, 10));
+                Opt.N("1 = full price, 0.5 = half. Never makes anything dearer",
+                    0.01, 1, 0.05)
+                    .As("Old-gear recipes cost this much")
+                    .Simple(SimpleGroups.Building, 10));
 
             _extraPerTierBehind = BindSynced("ExtraPerTierBehind", 0.0f,
                 "Extra discount for every further tier your group has moved past. Extra discount " +

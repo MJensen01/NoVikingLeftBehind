@@ -150,7 +150,8 @@ namespace NoVikingLeftBehind
             _regrowDays = BindSynced("RegrowDays", 14,
                 "In-game days a mined-out node stays gone before it may regrow. To turn ore " +
                 "regrowth off entirely, set [Regrowth] Enabled=false rather than raising this.",
-                Opt.N("Days before mined ore comes back (0 = instantly)", 0, 60)
+                Opt.N("In-game days. 0 = as soon as the server next looks", 0, 60)
+                    .As("Days before mined ore comes back")
                     .Simple(SimpleGroups.Gathering, 30));
 
             _checkIntervalSec = BindSynced("CheckIntervalSec", 60f,

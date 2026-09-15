@@ -564,7 +564,8 @@ namespace NoVikingLeftBehind
                 "little cheaper the more you have built. Tracked by this mod in the character " +
                 "file (not a vanilla skill), so it is never lost on death and never shows up in " +
                 "the vanilla skills panel. Off = no skill discount and no XP is recorded.",
-                Opt.B("Building gets cheaper the more you build")
+                Opt.B("A Builder skill, 0-100, that shaves a little off every piece")
+                    .As("Building gets cheaper the more you build")
                     .Simple(SimpleGroups.Building, 20));
 
             _skillXpPerMaterial = BindSynced("SkillXpPerMaterial", 1f,

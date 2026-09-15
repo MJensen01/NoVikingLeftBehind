@@ -110,7 +110,8 @@ namespace NoVikingLeftBehind
                 "stamina/eitr benefit right up until it runs out. A lower value lets that benefit " +
                 "fade as the food's timer counts down, the way vanilla food decays, but never " +
                 "below this fraction of its full value. 0.0 = vanilla behaviour, unchanged.",
-                Opt.N("Food keeps its full benefit until it runs out (1 = yes)", 0, 1, 0.05)
+                Opt.N("1 = full strength to the last second, 0 = vanilla decay", 0, 1, 0.05)
+                    .As("Food keeps its full benefit until it runs out")
                     .Simple(SimpleGroups.Gathering, 60));
 
             _curveExponent = BindSynced("CurveExponent", 0.3f,

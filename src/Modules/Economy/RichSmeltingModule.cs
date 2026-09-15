@@ -59,7 +59,8 @@ namespace NoVikingLeftBehind
                 "blast furnaces and kilns produce this many items per input when the OUTPUT " +
                 "material is behind the frontier (bronze/iron once the group has moved on). " +
                 "1 = vanilla. Clamped to at least 1 and to the item's max stack size.",
-                Opt.N("Bars per ore when smelting old metal (1 = normal)", 1, 10, 1)
+                Opt.N("1 = normal. Only metal your group has moved past", 1, 10, 1)
+                    .As("Bars per ore when smelting old metal")
                     .Simple(SimpleGroups.Gathering, 20));
 
             _recipeYieldMultiplier = BindSynced("RecipeYieldMultiplier", 2,

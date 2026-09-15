@@ -113,7 +113,8 @@ namespace NoVikingLeftBehind
             _speedMult = BindSynced("SpeedMultiplier", 3.0f,
                 "Pickaxe damage multiplier applied to a hit on an ore node whose material tier is " +
                 "behind the frontier (see [Frontier] TiersBehind). 1.0 = vanilla speed.",
-                Opt.N("Mining speed on old ore (1 = normal)", 1, 10, 0.5)
+                Opt.N("1 = normal. Only ore your group has moved past", 1, 10, 0.5)
+                    .As("Mining speed on old ore")
                     .Simple(SimpleGroups.Gathering, 10));
 
             _dropMult = BindSynced("DropMultiplier", 1.0f,

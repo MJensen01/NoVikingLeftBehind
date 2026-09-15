@@ -19,7 +19,7 @@ runs, guardian powers, ore regrowth, portals and a frontier-based catch-up syste
 every player. The server enforces every setting (via [ServerSync](https://github.com/blaxxun-boop/ServerSync)),
 so nobody has to agree on config by hand.
 
-0.10.3 is built against the Valheim `1.0.7` assemblies and smoke-tested on `1.0.12` (network version 40) / BepInEx `5.4.2350`.
+0.11.0 is built against the Valheim `1.0.7` assemblies and smoke-tested on `1.0.12` (network version 40) / BepInEx `5.4.2350`.
 For servers held on the `default_pre1_0` branch (0.221.12) use 0.8.8.
 
 ## Install (players, via r2modman / Thunderstore)
@@ -219,7 +219,7 @@ easier — the newest tier is never touched.
 ### In-game settings menu
 
 `SettingsMenu` `[SettingsMenu]` adds a **NoVikingLeftBehind** tab to Valheim's own Settings screen —
-from the pause menu in game and from the main menu — listing all 286 settings: modules by theme down
+from the pause menu in game and from the main menu — listing all 298 settings: modules by theme down
 the left with their `Enabled` toggles, the selected module's rows down the right with a one-line
 hint under each name, the full description on hover, a reset-to-default button, and a search box
 across name, key, hint and description.
