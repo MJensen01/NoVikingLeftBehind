@@ -65,8 +65,9 @@ namespace NoVikingLeftBehind
             TiersBehind = NoVikingLeftBehindPlugin.BindSynced(Section, "TiersBehind", 1,
                 "How many tiers below the world tier a material has to be before the catch-up " +
                 "rules apply to it. 1 = everything up to WorldTier-1 is 'behind the frontier' " +
-                "(the group killed the Elder -> WorldTier 2 -> bronze, tier 1, qualifies).", null,
-                Opt.N("How far behind the frontier a material must be to get catch-up help", 0, 7, 1));
+                "(the group killed the Elder -> WorldTier 2 -> bronze, tier 1, qualifies). " +
+                "Changes what counts as 'old' for every catch-up feature at once.", null,
+                Opt.N("How far past your group's progress a material must be to get catch-up help", 0, 7, 1));
 
             NoVikingLeftBehindPlugin.ConfigChanged += OnConfigChanged;
         }

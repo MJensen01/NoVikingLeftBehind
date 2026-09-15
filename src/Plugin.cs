@@ -75,7 +75,8 @@ namespace NoVikingLeftBehind
                 "with an explanatory message. Also locks the synced config so only the server " +
                 "(and admins) can change it. Turn off to let vanilla clients join - the server " +
                 "half still works, the client-side features simply do not exist for them.",
-                null, Opt.B("Require every player to run this mod").Admin());
+                null, Opt.B("Require every player to run this mod").Admin()
+                          .Simple(SimpleGroups.Server, 20).As("Everyone must have this mod installed to join"));
             ConfigSync.AddLockingConfigEntry(EnforceClientMod);
             EnforceClientMod.SettingChanged += (s, a) => ApplyEnforcement();
             ApplyEnforcement();
