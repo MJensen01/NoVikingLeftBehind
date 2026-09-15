@@ -81,18 +81,18 @@ namespace NoVikingLeftBehind
             _equipmentSlots = BindSynced("EquipmentSlots", true,
                 "Server: give every player four dedicated equipment slots (head, chest, legs, cape). " +
                 "Off removes the four slots; anything in them is moved back into the bag first.",
-                Opt.B("Give every player four dedicated equipment slots"));
+                Opt.B("Dedicated gear slots (head, chest, legs, cape)").Simple(SimpleGroups.Inventory, 30));
             _utilitySlots = BindSynced("UtilitySlots", 2,
                 "Server: how many utility slots (0-4). 2 lets a player wear Megingjord and the " +
                 "Wishbone at the same time. 0 disables the group.",
-                Opt.N("How many extra utility (belt-type) slots", 0, 4));
+                Opt.N("Belt and utility slots", 0, 4).Simple(SimpleGroups.Inventory, 60));
             _foodSlots = BindSynced("FoodSlots", 3,
                 "Server: how many food slots (0-3). Only food goes in them.",
-                Opt.N("How many dedicated food slots", 0, 3));
+                Opt.N("Food slots", 0, 3).Simple(SimpleGroups.Inventory, 40));
             _ammoSlots = BindSynced("AmmoSlots", 3,
                 "Server: how many ammo slots (0-4). The equipped ammo stack lives here. " +
                 "3 since 0.10.1 (was 2) - a group request; existing cfg files keep their own value.",
-                Opt.N("How many dedicated ammo slots", 0, 4));
+                Opt.N("Ammo slots", 0, 4).Simple(SimpleGroups.Inventory, 50));
             _quickSlots = BindSynced("QuickSlots", 0,
                 "Server: how many quick slots (0-8). Anything can go in them; a hotkey uses it. " +
                 "0 by default since 0.4.2 - the bottom row is GenericSlots plain storage instead. " +
@@ -103,7 +103,7 @@ namespace NoVikingLeftBehind
                 "Server: how many plain storage slots (0-8) on the bottom row. Any item fits, " +
                 "there is no hotkey and nothing is drawn on the cell - they are simply two more " +
                 "places to put things.",
-                Opt.N("How many plain extra storage slots", 0, 8));
+                Opt.N("Spare storage slots", 0, 8).Simple(SimpleGroups.Inventory, 70));
             _autoEat = BindSynced("AutoEatFromFoodSlots", true,
                 "Server: when a food buff runs out and the same food is sitting in a food slot, " +
                 "eat it automatically.",
@@ -112,7 +112,7 @@ namespace NoVikingLeftBehind
                 "With food that keeps full strength (FoodNoDecay), wait until the food in that " +
                 "slot has this many seconds left before eating the next one. 0 = eat as soon as " +
                 "the game allows.",
-                Opt.N("Seconds left on a food before AutoEat tops it up", 0, 120, 1));
+                Opt.N("Auto-eat when this many seconds are left (0 = as soon as allowed)", 0, 120, 1));
             _stackAllGuard = BindSynced("StackAllProtectsSlots", true,
                 "Server: keep the vanilla 'Stack all' button and hold-E on a chest out of the extra " +
                 "slots. Vanilla walks the whole bag with no row filter, so a chest holding arrows or " +

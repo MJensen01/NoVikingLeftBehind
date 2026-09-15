@@ -113,7 +113,7 @@ namespace NoVikingLeftBehind
                 ".fch file into characters_local\\" + CharacterBackup.FolderName + "\\. Taken on a " +
                 "character's first login with this mod, and again any time items are rescued from " +
                 "an older extra-slots mod. Never synced - it is your own machine's disk.",
-                Opt.B("Copy your character file before this mod first changes it"));
+                Opt.B("Back up your character file").Simple(SimpleGroups.Server, 30));
 
             _keepBackups = BindLocal("KeepBackups", 3,
                 "Local: how many character-file backups to keep per character. The oldest is " +
