@@ -3,6 +3,19 @@
 
 ## 0.10.3 (2026-09-15)
 
+Settings tab
+* **The tab opens on a Simple view: the settings most groups change, in plain language, seven groups, one page.** No module
+  names, no scrolling past forty entries to find the one dial you came for — just the settings that actually get changed,
+  under headings like "Inventory & carrying" and "Gathering & the world", with a read-only "Achievement-safe" verdict where
+  it matters. **Advanced is one click away in the header and is completely unchanged**: every setting, module by module,
+  exactly where it has always been. Each Simple row has a `▸` that opens Advanced at the module that setting belongs to,
+  scrolled to the row, so nothing is a dead end. Which view you last used is remembered on your own machine.
+* **Diagnostics are hidden unless you ask for them.** The self-test, dry-run and debugging switches — and the modules that
+  are nothing but those — are out of the way behind a "Show diagnostics" checkbox in Advanced.
+* **Search still covers everything.** Typing in the search box looks at every setting in the mod, including the advanced and
+  diagnostic ones, from either view, and says so above the results. Restart-only switches now say what to do about it
+  ("Restart to turn on") instead of sitting there greyed, and turning a module off tells you it needs a restart to come back.
+
 Fixes
 * **OreRegrowth: pending ore never respawned after a server restart** (the store rounded prefab hashes through a float on
   load — all ores, reported as tin, issue #6). Existing records self-repair from their prefab name on the next start; a

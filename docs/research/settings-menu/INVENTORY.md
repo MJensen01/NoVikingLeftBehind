@@ -835,6 +835,8 @@ toggles disappear entirely unless a "Show diagnostics" checkbox is ticked.
 - The Simple/Advanced/Diagnostics choice is itself a setting: put it next to
   `[SettingsMenu] ShowUnavailable` as a local `[SettingsMenu] View` (`Simple` | `Advanced`) plus
   `[SettingsMenu] ShowDiagnostics` (bool, local, default false). That is +2 settings → 296.
+  Built: the UI needed one more, `[SettingsMenu] FirstRunHintShown` (bool, local, default false,
+  tagged `.Diag()`), which remembers that the Simple view's one-time hint has been dismissed → **297**.
 - The derived preset needs no new storage: read-back is "do the live values match a preset row",
   which is exactly `SmoothServerBridge`'s `ProfileDriven` check, and the write is an ordered batch
   through `TweakDoor.Request`, which the tab already does for `Save changes (N)`.
