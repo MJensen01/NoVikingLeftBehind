@@ -44,7 +44,7 @@ namespace NoVikingLeftBehind
 
         public override string Theme => "World";
 
-        public override string Hint => "Let ore behind the frontier travel through portals";
+        public override string Hint => "Let ore from tiers your group has moved past travel through portals";
 
         private ConfigEntry<bool> _allowBehindFrontier;
         private ConfigEntry<int> _extraTiersBehind;
@@ -62,11 +62,11 @@ namespace NoVikingLeftBehind
             _self = this;
 
             _allowBehindFrontier = BindSynced("AllowBehindFrontier", true,
-                "A non-teleportable item (m_shared.m_teleportable == false, e.g. raw ore) is " +
-                "still let through a portal if its material tier is behind the frontier " +
-                "(Tiers.IsBehind, same rule every other catch-up module uses). The newest tier " +
-                "the group is still actively farming stays blocked, same as vanilla.",
-                Opt.B("Let ore behind the frontier ride a portal"));
+                "Raw ore and metal from tiers your group has moved past can go through portals. " +
+                "The newest tier you are still farming stays blocked, like vanilla.",
+                Opt.B("Let ore from tiers your group has moved past ride a portal")
+                    .As("Carry old ore (copper, tin, iron…) through portals")
+                    .Simple(SimpleGroups.Gathering, 40));
 
             _extraTiersBehind = BindSynced("ExtraTiersBehind", 0,
                 "Extra margin on top of [Frontier] TiersBehind before a material's raw ore counts " +

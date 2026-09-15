@@ -142,7 +142,7 @@ namespace NoVikingLeftBehind
             _maxCrewCounted = BindSynced("MaxCrewCounted", MaxTableCrew,
                 "Crew above this number stops helping (1-" + MaxTableCrew + "). 1 turns the " +
                 "narrowing off entirely without disabling the module.",
-                Opt.N("How much crew keeps helping the ship point into the wind", 1, MaxTableCrew, 1));
+                Opt.N("How much crew keeps helping the ship point into the wind (1 = off)", 1, MaxTableCrew, 1));
 
             _passengerGauge = BindLocal("PassengerWindGauge", true,
                 "Local: show the read-only ship wind arrow on your HUD while you are aboard a " +
