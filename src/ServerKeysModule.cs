@@ -138,7 +138,7 @@ namespace NoVikingLeftBehind
                 "the wrong key (that is how 'enemyleveluprate 250' and 'playerevents 0' got onto a world on " +
                 "2026-09-09). Keys named here are removed and never re-added by NoVikingLeftBehind; clear the " +
                 "list afterwards.",
-                Opt.T("Global keys to remove from the world").Admin());
+                Opt.T("Global keys to remove from the world").Admin().Diag());
         }
 
         protected override void ApplyPatches()

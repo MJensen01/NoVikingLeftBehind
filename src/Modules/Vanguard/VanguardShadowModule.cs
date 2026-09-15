@@ -120,7 +120,7 @@ namespace NoVikingLeftBehind
             _selfTest = BindLocal("SelfTest", false,
                 "Diagnostic, machine-local. Runs the module on a dedicated server too and logs a " +
                 "registration + gear-tier self test at world load. Leave false in normal use.",
-                Opt.B("Run gear-tier self tests on a dedicated server").Admin().Restart());
+                Opt.B("Run gear-tier self tests on a dedicated server").Admin().Restart().Diag());
 
             _inst = this;
             PushNumbers();

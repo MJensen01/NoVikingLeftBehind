@@ -73,6 +73,29 @@ next to its cfg at boot. Ranges are **not** passed to BepInEx as `AcceptableValu
 BepInEx clamps to an acceptable range on load, which would silently rewrite an existing server cfg;
 the range is advisory for the UI and enforced only by the door, where a refusal is visible.
 
+**Setting levels (0.11.0)**: the same `Opt` also says *how prominent* a setting is — which of the
+settings tab's two views it appears on. This is separate from the Tier, which says who may change
+it. `SettingLevel` is `Essential` | `Advanced` | `Diagnostic`, and **Advanced is the default**, so a
+setting nobody has classified stays exactly where it is today and nothing is ever lost by omission.
+Three chainable modifiers set it at the bind site:
+`.Simple(SimpleGroups.Gathering, 20)` makes a row Essential and puts it on the Simple view under a
+plain-language heading (`src/Config/SimpleGroups.cs` holds the seven group names and their order —
+always the constant, never a literal); `.Diag()` marks a self-test / dry-run / debugging knob, shown
+in Advanced only when the player ticks "Show diagnostics"; `.Hidden()` drops a row from both views
+for good (obsolete settings such as `[Powers] Slot1Modifier`, still bound so an old cfg file parses).
+A module whose whole point is its on/off switch needs no new API —
+`protected override Opt EnabledOpt => base.EnabledOpt.Simple(SimpleGroups.Inventory, 10);`. Two
+machine-local keys drive the views: **`[SettingsMenu] View`** (`Simple`|`Advanced`, default `Simple`)
+and **`[SettingsMenu] ShowDiagnostics`** (default false), read and written through
+`SettingsMenuModule.View` / `.ShowDiagnostics`. None of this is serialised — it is compile-time
+metadata on `Opt`, so the cfg file format is untouched — but `ConfigCatalog` carries it onto every
+`SettingInfo`, `EssentialGroupsForUi()` builds the Simple page from it, `SummaryLine()` counts it,
+and `nvlb-catalog.tsv` gains two **appended** columns (`level`, `simplegroup`). `nvlb.catalog simple`
+prints the Simple view as text and `nvlb.catalog selftest` (also run headlessly on a dedicated
+server by `[PickerSelfTest] SelfTest`) checks it: every Essential row names a group that exists
+(FAIL), every group has rows and no Essential row is restart-only (WARN), and the Essential count
+stays inside its budget of 45 (FAIL) — a page that grows back into 294 rows helps nobody.
+
 | Name | Side | Section | Purpose | Key settings (defaults) | Hot-reload | Restart for Enabled toggle |
 |---|---|---|---|---|---|---|
 | Status | Client | Status | Registers the `nvlb.status` console command (world tier, catch-up settings, module state); the dedicated server logs the same lines at `ZNet.Start` regardless. | *(no settings of its own)* | n/a | on: restart / off: live |

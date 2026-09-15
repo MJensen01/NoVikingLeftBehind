@@ -157,7 +157,7 @@ namespace NoVikingLeftBehind
                 "sample targets (tree / log / rock / destructible) with the component family and " +
                 "m_minToolTier read from the real prefabs, and the resulting damage multiplier " +
                 "for tool tiers 0-4. Changes no game state. Leave false in normal use.",
-                Opt.B("Log a one-time table proving the tool tier maths").Admin());
+                Opt.B("Log a one-time table proving the tool tier maths").Admin().Diag());
         }
 
         public override void OnConfigChanged(ConfigEntryBase entry)

@@ -38,7 +38,7 @@ namespace NoVikingLeftBehind
                 "tier, ObjectDB and ZNetScene, once per world load. Machine-local and never " +
                 "synced, so turning it on for a server boot does not affect any client. Leave it " +
                 "false in normal use.",
-                Opt.B("Log what the World modules would do at world load").Admin());
+                Opt.B("Log what the World modules would do at world load").Admin().Diag());
         }
 
         protected override void ApplyPatches()

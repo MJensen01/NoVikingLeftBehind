@@ -89,6 +89,16 @@ namespace NoVikingLeftBehind
             /// door refuses it with a sentence that says what to do instead.
             /// </summary>
             public bool ProfileDriven;
+
+            /// <summary>
+            /// Which view this row appears on, exactly as for one of our own settings. Advanced by
+            /// default: a foreign row is never in the <see cref="ConfigCatalog"/>, so this is the
+            /// only place it can be said.
+            /// </summary>
+            public SettingLevel Level = SettingLevel.Advanced;
+
+            /// <summary>The Simple view's heading for this row. Set only with Essential.</summary>
+            public string SimpleGroup;
         }
 
         /// <summary>
@@ -103,6 +113,7 @@ namespace NoVikingLeftBehind
                 TypeName = "enum", EnumTypeName = "NetProfile",
                 Choices = new[] { "Default", "FastLink", "Custom" },
                 Tier = SettingTier.Everyone,
+                Level = SettingLevel.Essential, SimpleGroup = SimpleGroups.Server,
                 Hint = "Default is the safe choice if people rubber-band; FastLink is for strong " +
                        "PCs on good connections",
                 About = "Default: vanilla-like, and the safest choice if anyone is rubber-banding.\n" +
@@ -124,6 +135,7 @@ namespace NoVikingLeftBehind
             {
                 Section = "Map", Key = "Enabled", Label = "Shared map",
                 TypeName = "bool", Tier = SettingTier.Everyone,
+                Level = SettingLevel.Essential, SimpleGroup = SimpleGroups.Server,
                 Hint = "Everyone explores the same map, and shares pins",
                 About = "Everyone explores one shared map and sees each other's pins.",
                 Extra = null
@@ -301,7 +313,10 @@ namespace NoVikingLeftBehind
                 Theme = PanelTheme,
                 ModuleHint = PanelHint,
                 IsEnabledToggle = false,
-                ForeignTag = Tag
+                ForeignTag = Tag,
+                Level = a.Level,
+                SimpleGroup = a.SimpleGroup,
+                SimpleOrder = 50
             };
         }
 

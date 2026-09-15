@@ -131,7 +131,7 @@ namespace NoVikingLeftBehind
                 "much of a burst comes out of the bag, how much out of nearby containers, and where " +
                 "the caps bite). Pure maths against numbers this module makes up - it touches no " +
                 "station, no inventory and no ZDO. Machine-local, never synced.",
-                Opt.B("Log a one-time check of the stack-insert maths"));
+                Opt.B("Log a one-time check of the stack-insert maths").Diag());
 
             Push();
         }

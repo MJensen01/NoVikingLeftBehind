@@ -165,13 +165,13 @@ namespace NoVikingLeftBehind
 
             _dryRun = BindLocal("DryRun", false,
                 "Log what would be respawned without creating any ZDO. Machine-local.",
-                Opt.B("Log what would respawn without actually doing it").Admin());
+                Opt.B("Log what would respawn without actually doing it").Admin().Diag());
 
             _selfTest = BindLocal("SelfTest", false,
                 "Headless proof: round-trip a record through regrowth.json and check its prefab hash " +
                 "survives, then pick an existing copper node, fake a due destroy record for it, " +
                 "run one sweep and verify a new ZDO appeared. Machine-local, runs once per boot.",
-                Opt.B("Run a one-time headless test of ore regrowth").Admin());
+                Opt.B("Run a one-time headless test of ore regrowth").Admin().Diag());
         }
 
         protected override void ApplyPatches()

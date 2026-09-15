@@ -140,7 +140,7 @@ namespace NoVikingLeftBehind
                 "slot and the reason, and every drop into an extra slot (one line per change, " +
                 "throttled). Turn on only while chasing an 'it equipped something by itself' " +
                 "report; noisy otherwise.",
-                Opt.B("Log the extra-slot equip decisions"));
+                Opt.B("Log the extra-slot equip decisions").Diag());
 
             ParseKeys();
             RebuildLayout();

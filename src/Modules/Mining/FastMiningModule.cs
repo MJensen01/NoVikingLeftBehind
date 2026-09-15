@@ -142,7 +142,7 @@ namespace NoVikingLeftBehind
                 "and m_minToolTier, then runs the pure speed-multiplier function against " +
                 "rock4_copper and silvervein with a fake 30-damage hit and logs the result. " +
                 "Changes no game state. Leave false in normal use.",
-                Opt.B("Log ore node speed test results once per load").Admin().Restart());
+                Opt.B("Log ore node speed test results once per load").Admin().Restart().Diag());
         }
 
         protected override void ApplyPatches()
