@@ -3,7 +3,7 @@
   "author": "Nosferatu",
   "version_number": "0.11.0",
   "website_url": "https://github.com/MJensen01/NoVikingLeftBehind",
-  "description": "The ultimate Valheim quality-of-life mod! 41 modules, one install: overkill tools, workbench reach, cheaper building, lighter loads, repair-all, catch-up mechanics, extra slots, loadouts, chest crafting & more. Every setting is live on the server, and the in-game settings tab now opens on a plain-language Simple view of the settings most groups change.",
+  "description": "Valheim quality-of-life mod: 41 modules, one install. Overkill tools, workbench reach, cheaper building, lighter loads, repair-all, catch-up, extra slots, loadouts, chest crafting. Every setting live on the server; a Simple settings view in-game.",
   "dependencies": [
     "denikson-BepInExPack_Valheim-5.4.2350"
   ]
