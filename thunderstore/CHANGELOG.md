@@ -1,6 +1,13 @@
 
 # Changelog — NoVikingLeftBehind
 
+## 0.10.3 (unreleased)
+
+Fixes
+* **OreRegrowth: pending ore never respawned after a server restart** (the store rounded prefab hashes through a float on
+  load — all ores, reported as tin, issue #6). Existing records self-repair from their prefab name on the next start; a
+  record that still fails is dropped after 5 attempts instead of flooding the log.
+
 ## 0.10.2
 
 New module **CarryWeight** `[Carry]` — a Viking who can carry a run's worth of ore home, and a Megingjord worth the belt slot.
