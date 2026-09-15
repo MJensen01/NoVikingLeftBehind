@@ -5,8 +5,8 @@ using HarmonyLib;
 namespace NoVikingLeftBehind
 {
     /// <summary>
-    /// Headless proof for the two client-side World modules (PortalTrail, LongFires). Both run on
-    /// a player's PC, so on a dedicated server they correctly report disabled(side) and never
+    /// Headless proof for the client-side World modules (PortalTrail, LongFires, CarryWeight). All
+    /// run on a player's PC, so on a dedicated server they correctly report disabled(side) and never
     /// patch anything - that makes them unprovable by a server boot alone. Their DECISIONS are
     /// still pure functions of ObjectDB, ZNetScene, the frontier and the synced config, all of
     /// which the dedicated server has (same pattern as EconomySelfTestModule in §13-Economy).
@@ -34,11 +34,11 @@ namespace NoVikingLeftBehind
         protected override void Bind()
         {
             _selfTest = BindLocal("SelfTest", false,
-                "Diagnostic. Log what PortalTrail and LongFires WOULD do with the current world " +
+                "Diagnostic. Log what PortalTrail, LongFires and CarryWeight WOULD do with the current world " +
                 "tier, ObjectDB and ZNetScene, once per world load. Machine-local and never " +
                 "synced, so turning it on for a server boot does not affect any client. Leave it " +
                 "false in normal use.",
-                Opt.B("Log what PortalTrail and LongFires would do at world load").Admin());
+                Opt.B("Log what the World modules would do at world load").Admin());
         }
 
         protected override void ApplyPatches()
@@ -60,6 +60,7 @@ namespace NoVikingLeftBehind
             Log.LogInfo("[WorldSelfTest] --- begin ---");
             One("PortalTrail", PortalTrailModule.SelfTest);
             One("LongFires", LongFiresModule.SelfTest);
+            One("CarryWeight", CarryWeightModule.SelfTest);
             Log.LogInfo("[WorldSelfTest] --- end ---");
         }
 

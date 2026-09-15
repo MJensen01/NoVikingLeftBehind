@@ -13,13 +13,13 @@
 A BepInEx 5 mod for Valheim 1.0, built and maintained for a small dedicated-server group
 and released here for anyone to use. MIT licensed.
 
-All-in-one, server-enforced quality-of-life and catch-up mechanics: 40 modules covering inventory,
+All-in-one, server-enforced quality-of-life and catch-up mechanics: 41 modules covering inventory,
 loadouts, combat (fists + shield), crafting from chests, building and gathering, food, corpse
 runs, guardian powers, ore regrowth, portals and a frontier-based catch-up system. One DLL, installed on the server and by
 every player. The server enforces every setting (via [ServerSync](https://github.com/blaxxun-boop/ServerSync)),
 so nobody has to agree on config by hand.
 
-0.10.1 is built and tested against Valheim `1.0.7` (network version 39) / BepInEx `5.4.2350`.
+0.10.2 is built against the Valheim `1.0.7` assemblies and smoke-tested on `1.0.12` (network version 40) / BepInEx `5.4.2350`.
 For servers held on the `default_pre1_0` branch (0.221.12) use 0.8.8.
 
 ## Install (players, via r2modman / Thunderstore)
@@ -43,8 +43,8 @@ For servers held on the `default_pre1_0` branch (0.221.12) use 0.8.8.
 
 ## Config overview
 
-40 modules, each with its own `[Section] Enabled` toggle, plus `Tiers` (shared config, always on,
-no toggle of its own) — 41 rows in `docs/MODULES.md`, the full per-module table (side, section,
+41 modules, each with its own `[Section] Enabled` toggle, plus `Tiers` (shared config, always on,
+no toggle of its own) — 42 rows in `docs/MODULES.md`, the full per-module table (side, section,
 settings, defaults, hot-reload). Every gameplay number is server-synced and hot-reloads (edit the
 cfg, it applies within a second — `Enabled` toggles need a restart to turn *on*, off is instant);
 hotkeys and HUD offsets (`ExtraSlots`, `AmmoHud`, `Loadouts`, `CorpseRunPlus`) are per-player, local settings.
@@ -179,6 +179,11 @@ easier — the newest tier is never touched.
   linearly (`KeepFraction=1.0`, `HidePulse=true`).
 - **LongFires** `[Fires]` — fireplace fuel and hand torches last much longer
   (`FuelDurationMultiplier=5`, `HandTorchDurabilityMultiplier=5`).
+- **CarryWeight** `[Carry]` — a higher base carry limit and a Megingjord worth its slot
+  (`BaseCarryWeight=450` vs vanilla 300, `BeltBonus=300` vs vanilla 150,
+  `BeltItems="BeltStrength"`). Nothing is written to the game's own fields: both numbers are
+  applied as the game asks for them, and they follow the world's carry-weight modifier the way
+  vanilla's do. The belt's tooltip shows the configured bonus.
 - **CorpseRunPlus** `[CorpseRun]` — grave compass, respawn fed + Rested
   (`RestedMinutes=10`), Grave Pull stamina boost that fades as you near your grave
   (`PullMinDistance=50m`, `PullFullDistance=1000m`), and the vanilla Corpse Run buff scaled by

@@ -1,7 +1,40 @@
 
 # Changelog — NoVikingLeftBehind
 
-## Unreleased — install-and-forget defaults + frontier-aware respawn food
+## 0.10.2
+
+New module **CarryWeight** `[Carry]` — a Viking who can carry a run's worth of ore home, and a Megingjord worth the belt slot.
+* **`BaseCarryWeight=450`** (vanilla 300) and **`BeltBonus=300`** (vanilla's Megingjord is +150). Both are server-synced and
+  hot-reload: they are read at the moment the game asks for the number, so a cfg edit or a settings-tab change applies to the
+  very next weight check — no relog, no restart.
+* **Nothing in the game's own data is written.** Both numbers are Harmony postfixes on the value being returned
+  (`Player.GetMaxCarryWeight`, `SE_Stats.ModifyMaxCarryWeight`). The base is computed as a *difference* from whatever
+  `m_maxCarryWeight` actually holds, so it stacks correctly with any other mod that raised it, and it is scaled by the world's
+  own carry-weight modifier exactly as vanilla's is. The belt's `SE_Stats` asset is shared by every copy of the effect and by
+  the tooltip, so it is read, never edited — the same reasoning `PortalTrail` uses for `m_teleportable`.
+* The belt's tooltip shows the configured bonus instead of a stale `+150`.
+* `[Carry] BeltItems="BeltStrength"` lists which items count as a carry belt, so another mod's belt can be put under the same
+  server rule. `[World] SelfTest` proves the belt resolution and the arithmetic headlessly, with no player in the world.
+* Turn `[Carry] Enabled=false` (or uninstall) and every number is vanilla again, to the float.
+
+Fixes
+* **Deconstruct refunds exactly what the piece cost, wherever it was built.** Only beams and poles used to write down what
+  they were actually paid; everything else was refunded by recomputing the price at its cheapest — the right answer for a
+  transient discount like the yard, but the wrong one for a piece that was never in a yard to begin with. It paid the wild
+  price and got the yard price back: a Sap extractor placed out on a Mistlands root cost about 3 black metal and refunded 1.
+  Every piece now records what the hammer actually took. **Pieces built before 0.10.2 keep the old rule** (there is nothing
+  written on them to read), and `[Builders] RecordAllPieces=false` restores the old behaviour outright.
+* **Raw ore can ride a portal again.** `PortalTrail` resolves the carried item's own drop-prefab name, and the tier map only
+  listed the *smelted bars* — `Copper`, `Iron`, `Silver`... Bars are already teleportable in vanilla, so the rule had nothing
+  to relax: the actual non-teleportable prefabs (`CopperOre`, `TinOre`, `CopperScrap`, `IronScrap`, `SilverOre`,
+  `BlackMetalScrap`, `FlametalOre`, `FlametalOreNew`) scored tier 0 and were never "behind the frontier". They are now in
+  `[Tiers] MaterialTiers` at the tier of their own metal (47 entries, all verified present in the 1.0 ObjectDB). A server whose
+  cfg already holds its own `MaterialTiers` keeps it — add the eight names by hand, or delete the line to take the new default.
+* `[World] SelfTest` now probes the raw ore as well as the bars, so the headless proof covers the case that was broken.
+
+### Also in 0.10.2 — install-and-forget defaults + frontier-aware respawn food
+
+_Written after 0.10.1 was tagged and never shipped on its own; it rides out with this release._
 
 Tuning pass on the shipped defaults for the returning-veteran audience (a full audit of all 276 settings is in the
 repo under `research/`); existing servers keep the values already written in their cfg, only fresh installs see these.

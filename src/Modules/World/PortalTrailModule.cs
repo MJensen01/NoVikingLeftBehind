@@ -210,7 +210,13 @@ namespace NoVikingLeftBehind
               .Append(" WorldTier=").Append(Frontier.Describe())
               .Append(" TiersBehind=").Append(Frontier.TiersBehind != null ? Frontier.TiersBehind.Value : 1);
 
-            string[] probe = { "Copper", "Tin", "Bronze", "Iron", "Silver", "BlackMetal", "DragonEgg" };
+            // Bars first, then the RAW ore/scrap prefabs the portal rule actually has to relax
+            // (0.10.2) - a bar is teleportable in vanilla, so only these lines prove anything.
+            string[] probe =
+            {
+                "Copper", "Tin", "Bronze", "Iron", "Silver", "BlackMetal", "DragonEgg",
+                "CopperOre", "TinOre", "IronScrap", "SilverOre", "BlackMetalScrap", "FlametalOre"
+            };
             foreach (var name in probe)
             {
                 int tier = Tiers.OfItem(name);

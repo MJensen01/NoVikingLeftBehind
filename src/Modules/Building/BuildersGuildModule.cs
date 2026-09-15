@@ -58,9 +58,12 @@ namespace NoVikingLeftBehind
     /// writes what it actually paid onto the piece: <c>nvlb.paid</c> (how many materials were
     /// recorded, the presence marker, because a recorded amount of 0 is legitimate) plus one
     /// <c>nvlb.paid.&lt;Material&gt;</c> int per requirement. <c>Piece.DropResources</c> then refunds
-    /// exactly that: 0 for a free attached beam, 1 for the paid root of the chain. A structural
-    /// piece with no record - anything built before this version - refunds through the normal
-    /// multiplier pipeline instead, which can only ever give back today's price.
+    /// exactly that: 0 for a free attached beam, 1 for the paid root of the chain. Since 0.10.2
+    /// EVERY piece with a cost carries that record, not only the structural ones
+    /// (<c>RecordAllPieces</c>, on by default) - see the note in <see cref="MaterialFactor"/> for
+    /// why the old structural-only rule short-changed anything built away from a yard. A piece with
+    /// NO record - anything built before 0.10.2, or built with <c>RecordAllPieces</c> off - still
+    /// refunds through the normal multiplier pipeline, which can only ever give back today's price.
     ///
     /// KNOWN, DELIBERATE: the yard factor is transient, so a piece built next to a stonecutter and
     /// deconstructed after that stonecutter is gone refunds the un-discounted price. That is the
@@ -122,6 +125,7 @@ namespace NoVikingLeftBehind
         private static ConfigEntry<int> _structuralFirstCost;
         private static ConfigEntry<int> _structuralAttachedCost;
         private static ConfigEntry<bool> _structuralInYardOnly;
+        private static ConfigEntry<bool> _recordAllPieces;
         private static ConfigEntry<float> _hysteresis;
         private static ConfigEntry<float> _checkInterval;
         private static ConfigEntry<bool> _showTooltip;
@@ -526,6 +530,17 @@ namespace NoVikingLeftBehind
                 "price.",
                 Opt.B("Only apply the framing rule inside a yard"));
 
+            _recordAllPieces = BindSynced("RecordAllPieces", true,
+                "On (the default): EVERY build piece writes down what it actually paid, so tearing " +
+                "it down gives back exactly that - wherever it was built. Off restores the " +
+                "behaviour before 0.10.2, where only beams and poles kept a record and everything " +
+                "else was refunded by recomputing the price at its cheapest, which short-changed " +
+                "anything built away from a yard (a Sap extractor placed out on a Mistlands root " +
+                "cost about 3 black metal and gave back 1). Read at the moment the hammer swings, " +
+                "so a change applies to the next piece placed; pieces already standing keep " +
+                "whatever record they were built with.",
+                Opt.B("Refund exactly what a piece cost, wherever it was built"));
+
             _hysteresis = BindSynced("HysteresisSeconds", 3f,
                 "How long a station keeps counting as \"in range\" after you walk out of its " +
                 "yard, so a displayed cost cannot flicker while you stand on the boundary. " +
@@ -904,9 +919,14 @@ namespace NoVikingLeftBehind
         /// though the builder were standing inside EVERY yard with every station fully upgraded -
         /// the cheapest this piece could ever have been - which makes "a refund never exceeds what
         /// was paid" true by construction rather than by luck of where the player is standing.
-        /// The documented cost of that rule: deconstructing something you built out in the wild
-        /// gives back the yard price, i.e. slightly less than you paid. Deliberate, and the same
-        /// direction of error [Settlement] already errs in.
+        /// The cost of that rule USED to be that deconstructing something built out in the wild
+        /// gave back the yard price, i.e. less than was paid - a Sap extractor placed on a Mistlands
+        /// root cost about 3 black metal and refunded 1. Since 0.10.2 that case does not reach here
+        /// at all: every piece records what it was actually paid ([Builders] RecordAllPieces, on by
+        /// default) and PieceAmount's tracked-refund branch wins outright. This "cheapest factor"
+        /// pricing is now only ever the answer for a piece with NO record - one built before 0.10.2,
+        /// or built with RecordAllPieces off - where erring downwards is still the right direction,
+        /// and the same one [Settlement] errs in.
         /// </summary>
         internal static float MaterialFactor(Piece piece, Piece.Requirement req, bool cheapest = false)
         {
@@ -1082,9 +1102,19 @@ namespace NoVikingLeftBehind
                 _pendingPrefab = null;
                 _pendingFrame = -1;
 
-                // Only structural pieces carry a record: everything else is priced by the
-                // multipliers, which the refund path recomputes the same way.
-                if (!IsStructural(piece) || !TrailingTierDiscountModule.BuildCostsActive()) return;
+                // EVERY piece carries a record (0.10.2). Before that only beams and poles did,
+                // and everything else was refunded by recomputing the price at its "cheapest" -
+                // which is the RIGHT answer for a transient factor like the yard, but the WRONG one
+                // for a piece that was never in a yard to begin with: it paid the wild price and got
+                // the yard price back. A SapCollector (10 YggdrasilWood, 5 BlackMetal,
+                // 1 DvergrExtractor) placed out on a Mistlands root cost ~3 black metal and refunded
+                // 1. Recording what was actually taken makes the refund exact in both directions.
+                // [Builders] RecordAllPieces=false restores the old structural-only behaviour.
+                if (!TrailingTierDiscountModule.BuildCostsActive()) return;
+                if (_recordAllPieces == null || !_recordAllPieces.Value)
+                {
+                    if (!IsStructural(piece)) return;
+                }
                 if (piece.m_resources == null) return;
 
                 for (int i = 0; i < piece.m_resources.Length; i++)
@@ -1425,6 +1455,8 @@ namespace NoVikingLeftBehind
                    " framing=" + (_structuralFirstCost != null ? _structuralFirstCost.Value : 1) + "/" +
                    (_structuralAttachedCost != null ? _structuralAttachedCost.Value : 0) +
                    (_structuralInYardOnly != null && _structuralInYardOnly.Value ? " (yard only)" : "") +
+                   " records=" + (_recordAllPieces == null || _recordAllPieces.Value
+                                      ? "every piece" : "structural only") +
                    " structural=" + _structural.Count + (_structuralResolved ? "" : " (not resolved yet)") +
                    " skill=" + (_skillEnabled != null && _skillEnabled.Value
                                     ? "max -" + Mathf.RoundToInt((_skillMaxDiscount != null ? _skillMaxDiscount.Value : 0f) * 100f) +
@@ -1826,6 +1858,74 @@ namespace NoVikingLeftBehind
                     _matFloor = savedFloors;
                 }
 
+                // ---- (6) the wild refund: a NON-structural piece built outside every yard ------
+                // The bug 0.10.2 fixes. Before it only structural pieces carried a ZDO record, so a
+                // SapCollector placed out on a Mistlands root paid the WILD price and was refunded
+                // at the "cheapest factor" price - the yard price it never got. Both pricing paths
+                // are exercised here through the same shared function the game calls; the record is
+                // faked with _testRecord because a headless server can place no piece and therefore
+                // owns no ZDO.
+                var wild = FindPiece(scene, "SapCollector", "piece_sapcollector", "eitrrefinery",
+                                     "smelter", "charcoal_kiln", "blastfurnace");
+                if (wild != null && IsStructural(wild)) wild = null;
+                if (wild == null) wild = FindNonStructuralDiscounted(scene);
+
+                if (wild == null)
+                {
+                    sb.Append("\n  no non-structural piece with a discounted material in this build" +
+                              " - the wild-refund check was skipped");
+                }
+                else
+                {
+                    string wildName = Utils.GetPrefabName(wild.gameObject);
+
+                    // Outside EVERY yard, nothing snapped, no record yet: exactly what the hammer
+                    // takes out of the inventory, and exactly what PlacePiecePre now writes down.
+                    _testStationsInRange = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+                    _testAttached = 0;
+                    _testRecord = null;
+                    RhythmReset();
+
+                    var paidWild = PriceAll(wild, false);
+                    var refundNoRecord = PriceAll(wild, true);
+
+                    // The record PlacePiecePre writes: one entry per requirement, including the
+                    // ones that computed to 0, so a zero-cost material refunds 0 and not "today's
+                    // price of a material we never charged for".
+                    var rec = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
+                    for (int i = 0; i < wild.m_resources.Length; i++)
+                    {
+                        var r = wild.m_resources[i];
+                        if (r == null || r.m_resItem == null || r.m_amount <= 0) continue;
+                        rec[Tiers.CleanName(r.m_resItem.name)] = paidWild[i];
+                    }
+                    _testRecord = rec;
+                    var refundRecorded = PriceAll(wild, true);
+                    _testRecord = null;
+                    _testAttached = -1;
+
+                    sb.Append("\n  ").Append(wildName).Append(" built outside every yard: paid ")
+                      .Append(Describe(wild, paidWild))
+                      .Append("\n    refund WITHOUT a record (pre-0.10.2): ")
+                      .Append(Describe(wild, refundNoRecord))
+                      .Append("\n    refund WITH the record (0.10.2): ")
+                      .Append(Describe(wild, refundRecorded))
+                      .Append("\n    recorded: ").Append(rec.Count).Append(" material(s), ")
+                      .Append(wild.m_resources.Length).Append(" requirement(s) on the piece");
+
+                    check(!IsStructural(wild), wildName + " is not in the structural set");
+                    check(SameAmounts(refundRecorded, paidWild),
+                          "a non-structural piece built in the wild refunds EXACTLY what it paid");
+                    check(NoneExceeds(refundRecorded, paidWild),
+                          "the tracked refund still never exceeds what was paid");
+                    if (!SameAmounts(refundNoRecord, paidWild))
+                        sb.Append("\n    (this is the bug: without a record the same piece gave back ")
+                          .Append(Describe(wild, refundNoRecord)).Append(')');
+                    check(rec.Count > 0, "every priced requirement of " + wildName + " is in the record");
+
+                    _testStationsInRange = null;
+                }
+
                 SkillSelfTest(sb, check);
                 RhythmSelfTest(sb, check, scene);
             }
@@ -2064,6 +2164,41 @@ namespace NoVikingLeftBehind
                     FirstRequirement(piece) != null) return piece;
             }
             return null;
+        }
+
+        /// <summary>
+        /// The first NON-structural piece in the scene that costs a material the yard discounts -
+        /// i.e. one whose refund used to be recomputed rather than recorded. Used by the wild-refund
+        /// self-test when this build has no SapCollector to point at.
+        /// </summary>
+        private static Piece FindNonStructuralDiscounted(ZNetScene scene)
+        {
+            if (scene == null || scene.m_prefabs == null || _matMult.Count == 0) return null;
+            foreach (var go in scene.m_prefabs)
+            {
+                if (go == null) continue;
+                var piece = go.GetComponent<Piece>();
+                if (piece == null || piece.m_resources == null || piece.m_resources.Length == 0) continue;
+                if (FirstRequirement(piece) == null || IsStructural(piece)) continue;
+
+                for (int i = 0; i < piece.m_resources.Length; i++)
+                {
+                    var r = piece.m_resources[i];
+                    if (r == null || r.m_resItem == null || r.m_amount <= 0) continue;
+                    float m;
+                    if (_matMult.TryGetValue(Tiers.CleanName(r.m_resItem.name), out m) && m < 1f)
+                        return piece;
+                }
+            }
+            return null;
+        }
+
+        /// <summary>Two per-requirement price arrays agree element for element.</summary>
+        private static bool SameAmounts(int[] a, int[] b)
+        {
+            if (a == null || b == null || a.Length != b.Length) return false;
+            for (int i = 0; i < a.Length; i++) if (a[i] != b[i]) return false;
+            return true;
         }
 
         /// <summary>The first structural piece that costs the named material (any, if null).</summary>
