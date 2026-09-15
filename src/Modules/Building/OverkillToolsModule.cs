@@ -127,10 +127,11 @@ namespace NoVikingLeftBehind
             _self = this;
 
             _perTierBonus = BindSynced("PerTierBonus", 0.5f,
-                "Extra damage per tool tier ABOVE the target's own required tier. 0.5 = +50% per " +
-                "tier of overkill: one tier above is x1.5, two x2.0, four x3.0 (capped by " +
-                "MaxMultiplier). 0 turns the module off without unpatching it.",
-                Opt.N("Extra damage per tool tier above the target's required tier", 0, 3.0, 0.05));
+                "Late-game tools clear old trees and rocks faster. Extra damage per tool tier " +
+                "ABOVE the target's own required tier. 0.5 = +50% per tier of overkill: one tier " +
+                "above is x1.5, two x2.0, four x3.0 (capped by MaxMultiplier). 0 turns the module " +
+                "off without unpatching it.",
+                Opt.N("Late-game tools clear old trees and rocks faster", 0, 3.0, 0.05));
 
             _maxMultiplier = BindSynced("MaxMultiplier", 3.0f,
                 "Hard cap on the damage multiplier, however large the tier gap. Clamped to a " +

@@ -91,7 +91,7 @@ namespace NoVikingLeftBehind
 
         public override string Theme => "Catching up";
 
-        public override string Hint => "Trailing-tier recipes and build pieces cost less";
+        public override string Hint => "Recipes and build pieces from tiers your group has moved past cost less";
 
         private static ConfigEntry<float> _costMultiplier;
         private static ConfigEntry<float> _extraPerTierBehind;
@@ -224,18 +224,18 @@ namespace NoVikingLeftBehind
             _self = this;
 
             _costMultiplier = BindSynced("CostMultiplier", 0.5f,
-                "Cost of a recipe or build piece whose tier is behind the frontier, as a fraction " +
-                "of vanilla. 0.5 = half price. 1 = no discount. Values above 1 are clamped to 1: " +
-                "this module never makes anything more expensive.",
-                Opt.N("Cost of a trailing-tier recipe or build piece, as a fraction of vanilla",
-                    0.01, 1, 0.05));
+                "Recipes and build pieces from tiers your group has moved past cost this much of " +
+                "the normal price. 1 = full price, 0.5 = half. Never makes anything more expensive.",
+                Opt.N("Old-gear recipes cost this much (1 = full price, 0.5 = half)",
+                    0.01, 1, 0.05).Simple(SimpleGroups.Building, 10));
 
             _extraPerTierBehind = BindSynced("ExtraPerTierBehind", 0.0f,
-                "Extra discount per FURTHER tier behind the frontier. 0 = the same discount " +
-                "whether the recipe is 1 or 3 tiers behind. 0.1 with CostMultiplier 0.5 means " +
-                "0.5 at the threshold, 0.4 one tier further back, 0.3 two tiers further back. " +
-                "The multiplier is clamped to a minimum of 0.01.",
-                Opt.N("Extra discount per further tier behind the frontier", 0, 0.5, 0.05));
+                "Extra discount for every further tier your group has moved past. Extra discount " +
+                "per FURTHER tier behind the frontier. 0 = the same discount whether the recipe " +
+                "is 1 or 3 tiers behind. 0.1 with CostMultiplier 0.5 means 0.5 at the threshold, " +
+                "0.4 one tier further back, 0.3 two tiers further back. The multiplier is clamped " +
+                "to a minimum of 0.01.",
+                Opt.N("Extra discount for every further tier your group has moved past", 0, 0.5, 0.05));
 
             _minAmount = BindSynced("MinAmount", 1,
                 "Floor for a discounted requirement. 1 = a cost never drops to zero. A " +
