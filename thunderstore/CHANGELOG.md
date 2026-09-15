@@ -25,6 +25,12 @@ Fixes
   re-ran the equipment sync, which wore *everything* it found unequipped in an equipment slot — so a Wisplight switched off but
   left in a utility slot came straight back on at the next drag. An item is now equipped only when it is newly placed in the
   slot; a deliberate unequip sticks. New machine-local `[Slots] Diagnostics` logs every equip this module performs and why.
+* **`[Slots]` AutoEat waits until the food in that slot has `AutoEatWhenSecondsLeft` seconds left when FoodNoDecay is on
+  (issue #2), and eats through the game's own consume path so it can no longer trigger whatever you were looking at.**
+  New server-synced `[Slots] AutoEatWhenSecondsLeft` (default 10, 0–120; 0 = the old "eat as soon as the game allows").
+  Vanilla lets you eat again at half the burn time because the food is decaying by then — with FoodNoDecay it is still at
+  full strength, so the old timing threw away the whole second half of every item. The wait is per food slot, so a sausage
+  with twenty minutes on it no longer holds back honey in another slot, and with FoodNoDecay off the timing is unchanged.
 
 `[Chests]` CraftFromChests
 * **Containers that already existed are discovered when the module is turned on, or when a world loads.** Previously a

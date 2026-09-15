@@ -90,6 +90,17 @@ namespace NoVikingLeftBehind
             return _self != null && _self.Active && ClientActive();
         }
 
+        /// <summary>
+        /// True when eaten food really is holding its value on this client - the module is on AND
+        /// KeepFraction is above 0 (0 is documented as "vanilla behaviour, unchanged", so there is
+        /// nothing to protect). ExtraSlots' AutoEat asks this before holding a bite back:
+        /// waiting only makes sense while the food in the buff is not decaying anyway.
+        /// </summary>
+        internal static bool NoDecayActive()
+        {
+            return Live() && _keepFraction != null && _keepFraction.Value > 0f;
+        }
+
         protected override void Bind()
         {
             _self = this;
