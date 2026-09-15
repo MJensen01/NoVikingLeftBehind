@@ -1,6 +1,20 @@
 
 # Changelog — NoVikingLeftBehind
 
+## 0.10.3 (unreleased)
+
+`[Chests]` CraftFromChests
+* **Containers that already existed are discovered when the module is turned on, or when a world loads.** Previously a
+  container only entered the nearby-containers registry through `Container.Awake`, which only registers while `[Chests]
+  Enabled=true` - a chest built (or already sitting there) while the module was off was never picked up, even after turning
+  it back on. Enabling the module now backfills the registry from every live container in the scene, and the same backfill
+  runs once per world load in case anything was missed before the patches were even installed.
+* **"Any one of these ingredients" recipes can now craft from chests.** Some cauldron/cooking recipes only need ONE of
+  several listed ingredients (`m_requireOnlyOneIngredient`) rather than all of them - these previously fell back to fully
+  vanilla behaviour (bag only) because saying "yes, craftable" without also being able to hand over a concrete item would
+  leave the Craft button clickable but doing nothing. They now count bag + nearby containers per listed ingredient, and the
+  one that's actually available (in bag, in a chest, or split across both) is what gets consumed.
+
 ## 0.10.2
 
 New module **CarryWeight** `[Carry]` — a Viking who can carry a run's worth of ore home, and a Megingjord worth the belt slot.

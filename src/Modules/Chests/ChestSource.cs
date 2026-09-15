@@ -33,10 +33,12 @@ namespace NoVikingLeftBehind
     /// <summary>
     /// The nearby-container registry and the counting/consuming core shared by every Chests patch.
     ///
-    /// Registry: Container.Awake adds, Container.OnDestroyed removes. Nothing is filtered at
-    /// registration time - access, privacy, distance and exclusion are all re-checked on every
-    /// query, because all of them can change while a chest sits in the list (a ward is built, the
-    /// player walks away, the server pushes a new ExcludedContainers).
+    /// Registry: Container.Awake adds, Container.OnDestroyed removes, and DiscoverExisting backfills
+    /// anything Awake missed (module was off when it spawned, or a world load happened before we
+    /// were watching). Nothing is filtered at registration time - access, privacy, distance and
+    /// exclusion are all re-checked on every query, because all of them can change while a chest
+    /// sits in the list (a ward is built, the player walks away, the server pushes a new
+    /// ExcludedContainers).
     ///
     /// Queries are cached for the frame: a single hammer placement or crafting-panel refresh asks
     /// several times per frame and the answer cannot change in between.
@@ -96,6 +98,39 @@ namespace NoVikingLeftBehind
             _all.Clear();
             _cached.Clear();
             _cacheFrame = -1;
+        }
+
+        /// <summary>
+        /// Backfill the registry with containers that already existed when we started paying
+        /// attention: spawned while the module was disabled, or (defensively) spawned before our
+        /// Container.Awake patch was installed at all. Called on the module's Enabled off-to-on
+        /// transition and once per world load - never gated on "registry is empty", because a
+        /// registry that already has some containers from Awake can still be missing others.
+        /// Register is idempotent, so re-running this after Awake has already caught most of them
+        /// costs one dictionary lookup per container and adds nothing twice.
+        /// </summary>
+        internal static void DiscoverExisting()
+        {
+            int total = 0, added = 0;
+            try
+            {
+                var containers = Resources.FindObjectsOfTypeAll<Container>();
+                for (int i = 0; i < containers.Length; i++)
+                {
+                    var c = containers[i];
+                    if (c == null || c.gameObject == null || !c.gameObject.scene.IsValid()) continue; // prefab asset, not a live instance
+                    total++;
+                    if (_all.ContainsKey(c)) continue;
+                    Register(c);
+                    added++;
+                }
+            }
+            catch (Exception e)
+            {
+                NoVikingLeftBehindPlugin.Log.LogWarning("[Chests] existing-container discovery failed: " + e.Message);
+                return;
+            }
+            NoVikingLeftBehindPlugin.Log.LogInfo("[Chests] discovered " + total + " existing containers (" + added + " new)");
         }
 
         // ---- query ------------------------------------------------------------------------------
