@@ -117,9 +117,9 @@ namespace NoVikingLeftBehind
         {
             _slots = BindSynced("Slots", 1,
                 "Server: how many weapon loadouts each player gets (0-" + MaxSlots + "). 1 by " +
-                "default - only loadout 1 is on out of the box. Set it to 2 to bring back a " +
-                "second loadout (and give Loadout2Key a key, since it has none by default).",
-                Opt.N("How many weapon loadouts each player gets - 1 by default, 2 for a second", 0, MaxSlots, 1));
+                "default - only the first loadout is on out of the box. Set it to 2 to bring back " +
+                "a second loadout - loadout 2 also needs a key set below, since it has none by default.",
+                Opt.N("Weapon loadouts you can save", 0, MaxSlots, 1));
             _key1 = BindLocal("Loadout1Key", "Z",
                 "Local: DEFAULT key that equips loadout 1 - the loadout that is on out of the box " +
                 "(see [Loadouts] Slots). Since 0.8.1 this is a real Valheim keybinding, so it can " +

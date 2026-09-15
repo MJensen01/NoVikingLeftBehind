@@ -106,11 +106,12 @@ namespace NoVikingLeftBehind
             _self = this;
 
             _keepFraction = BindSynced("KeepFraction", 1f,
-                "Floor applied to each eaten food's health/stamina/eitr contribution, as a " +
-                "fraction of its full (freshly-eaten) value: 1.0 = no decay at all until the food " +
-                "expires (default). 0.5 = the value never decays below half, but may still decay " +
-                "further towards 0.5 like vanilla. 0.0 = vanilla behaviour, unchanged.",
-                Opt.N("Lowest fraction eaten food keeps before expiring", 0, 1, 0.05));
+                "1.0 (the default) means eaten food never weakens - it keeps its full health/" +
+                "stamina/eitr benefit right up until it runs out. A lower value lets that benefit " +
+                "fade as the food's timer counts down, the way vanilla food decays, but never " +
+                "below this fraction of its full value. 0.0 = vanilla behaviour, unchanged.",
+                Opt.N("Food keeps its full benefit until it runs out (1 = yes)", 0, 1, 0.05)
+                    .Simple(SimpleGroups.Gathering, 60));
 
             _curveExponent = BindSynced("CurveExponent", 0.3f,
                 "Exponent used for the vanilla decay curve before the KeepFraction floor is " +
