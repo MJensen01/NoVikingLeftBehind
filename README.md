@@ -19,7 +19,7 @@ runs, guardian powers, ore regrowth, portals and a frontier-based catch-up syste
 every player. The server enforces every setting (via [ServerSync](https://github.com/blaxxun-boop/ServerSync)),
 so nobody has to agree on config by hand.
 
-0.11.1 is built against the Valheim `1.0.14` assemblies and smoke-tested on `1.0.14` (network version 40) / BepInEx `5.4.2350`.
+0.11.2 is built against the Valheim `1.0.14` assemblies and smoke-tested on `1.0.14` (network version 40) / BepInEx `5.4.2350`.
 For servers held on the `default_pre1_0` branch (0.221.12) use 0.8.8.
 
 ## Install (players, via r2modman / Thunderstore)
@@ -77,7 +77,7 @@ easier — the newest tier is never touched.
 ### Combat & powers
 
 - **DualPowers** `[Powers]` — carry two (optionally three) Forsaken powers with independent
-  cooldowns and a second hotkey (`Slots=2`, `IndependentCooldowns=true`, local `SecondSlotKey="G"`).
+  cooldowns and a second hotkey (`Slots=2`, `IndependentCooldowns=true`, local `SecondSlotKey="H"`; G until 0.11.1, moved because 1.0 put its radial menu on G).
   At a boss altar plain E sets slot 1 (vanilla), Shift+E slot 2 and Ctrl+E slot 3, and the
   stone's tooltip says so (local `SecondSlotModifier="LeftShift"`, `ThirdSlotModifier="LeftControl"`);
   also draws every power icon as a circle with a thin cooldown/charge ring, generated at runtime

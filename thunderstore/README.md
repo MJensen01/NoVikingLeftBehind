@@ -74,13 +74,13 @@ all. The mod never makes the leaders' game easier; it only softens the trail beh
 
 ### Combat & powers
 
-- **DualPowers** — carry two Forsaken powers at once, each on its own cooldown, and hit **G** to
+- **DualPowers** — carry two Forsaken powers at once, each on its own cooldown, and hit **H** to
   fire the other one mid-fight instead of waiting out the first (the key is written on the second
   power icon, so you never have to guess). At a boss altar it works the way round you'd expect:
   plain **E** sets slot 1 exactly like vanilla, **Shift+E** sets slot 2, **Ctrl+E** sets slot 3 if
   you run three — and the stone's own tooltip says so, naming your keys and telling you which
   power it would replace. `nvlb.power clear 1|2` and `nvlb.power swap` fix a power in the wrong
-  slot. `Tune it:` `[Powers] Slots=2`, `IndependentCooldowns=true`, `CooldownMultiplier=1.0`, local `SecondSlotKey="G"`, local `SecondSlotModifier="LeftShift"`, `ThirdSlotModifier="LeftControl"`
+  slot. `Tune it:` `[Powers] Slots=2`, `IndependentCooldowns=true`, `CooldownMultiplier=1.0`, local `SecondSlotKey="H"` (G before 0.11.2 - Valheim 1.0 uses G for its radial menu; an untouched G is moved for you), local `SecondSlotModifier="LeftShift"`, `ThirdSlotModifier="LeftControl"`
 - **Power HUD** — every Forsaken power icon is drawn as a circle with a thin charge ring around
   it that fills as the cooldown recovers: full ring means ready, and every second CombatRecharge
   shaves off jumps the ring forward, so you can *see* the power charging while you fight. Built

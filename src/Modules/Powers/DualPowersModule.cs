@@ -146,9 +146,10 @@ namespace NoVikingLeftBehind
                 "Multiplies the cooldown every guardian power starts, in every slot. " +
                 "0.5 = half-length cooldowns, 1 = vanilla.",
                 Opt.N("Multiplier applied to every power's cooldown length", 0, 5, 0.05));
-            _secondSlotKey = BindLocal("SecondSlotKey", "G",
+            _secondSlotKey = BindLocal("SecondSlotKey", "H",
                 "Machine-local. UnityEngine.KeyCode name for the second power slot (vanilla's F " +
-                "always stays slot 1). Examples: G, H, LeftAlt, Mouse3, JoystickButton5.",
+                "always stays slot 1). Examples: H, LeftAlt, Mouse3, JoystickButton5. (G was the " +
+                "default before 0.11.2; Valheim 1.0 put its radial/hotbar menu on G.)",
                 Opt.T("Key that activates the second power slot")
                     .As("Key for your second power").Simple(SimpleGroups.Powers, 20));
             _thirdSlotKey = BindLocal("ThirdSlotKey", "None",
@@ -219,7 +220,37 @@ namespace NoVikingLeftBehind
                 Opt.B("Run power-slot self tests on a dedicated server").Admin().Restart().Diag());
 
             _inst = this;
+            MigrateSecondSlotKey();
             Push();
+        }
+
+        /// <summary>
+        /// 0.11.1 and earlier defaulted SecondSlotKey to G. Valheim 1.0 binds G to its own radial /
+        /// hotbar menu ("OpenRadial", ZInput.cs), so the second power and the menu fought over the
+        /// same key. A cfg still holding exactly the old default is moved to the new one; a saved
+        /// Valheim binding that is still exactly G moves with it (NvlbKeys.MigrateSavedBinding),
+        /// while a binding the player chose is left alone. Same shape as Loadouts' V -> None move.
+        /// </summary>
+        private const string OldSecondSlotDefault = "G";
+        private static bool _secondKeyMigrationLogged;
+
+        private void MigrateSecondSlotKey()
+        {
+            try
+            {
+                if (_secondSlotKey == null || _secondSlotKey.Value != OldSecondSlotDefault) return;
+                _secondSlotKey.Value = (string)_secondSlotKey.DefaultValue;
+                NvlbKeys.MigrateSavedBinding(PowerKeyId(1), KeyCode.G, KeyCode.H);
+                if (_secondKeyMigrationLogged) return;
+                _secondKeyMigrationLogged = true;
+                Log.LogWarning("[DualPowers] SecondSlotKey was still the old default 'G', which Valheim 1.0 " +
+                               "uses for its radial menu - moved to '" + _secondSlotKey.Value + "'. Rebind it " +
+                               "on Valheim's Keyboard & Mouse settings page if you want something else.");
+            }
+            catch (Exception e)
+            {
+                Log.LogWarning("[DualPowers] could not migrate SecondSlotKey off G: " + e.Message);
+            }
         }
 
         private void Push()
@@ -227,7 +258,7 @@ namespace NoVikingLeftBehind
             PowerSlots.SlotCount = Mathf.Clamp(_slots.Value, 1, PowerSlots.MaxSlots);
             PowerSlots.IndependentCooldowns = _independentCooldowns.Value;
             PowerSlots.CooldownMultiplier = Mathf.Clamp(_cooldownMultiplier.Value, 0f, 100f);
-            Keys[0] = ParseKey(_secondSlotKey.Value, KeyCode.G, "SecondSlotKey");
+            Keys[0] = ParseKey(_secondSlotKey.Value, KeyCode.H, "SecondSlotKey");
             if (Keys.Length > 1) Keys[1] = ParseKey(_thirdSlotKey.Value, KeyCode.None, "ThirdSlotKey");
             Mods[0] = ParseKey(_secondSlotModifier.Value, KeyCode.LeftShift, "SecondSlotModifier");
             if (Mods.Length > 1) Mods[1] = ParseKey(_thirdSlotModifier.Value, KeyCode.LeftControl, "ThirdSlotModifier");
@@ -242,7 +273,7 @@ namespace NoVikingLeftBehind
 
             PowerHud.SetOffset(new Vector2(_hudOffsetX.Value, _hudOffsetY.Value));
             // The whole point of 0.4.5's Powers half: the key is written ON the icon, so nobody has
-            // to read the config to discover that the second power is on G.
+            // to read the config to discover that the second power is on H.
             PowerHud.KeyLabel = KeyLabel(1);
             // 0.4.8: round icons + charge ring. Cosmetic and machine-local, so it is pushed the
             // same way as everything else and re-applies live on a config edit.
