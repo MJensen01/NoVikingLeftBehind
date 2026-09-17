@@ -1,7 +1,7 @@
 
 # Changelog — NoVikingLeftBehind
 
-## 0.11.1 (unreleased)
+## 0.11.1 (2026-09-17)
 
 Compatibility fixes
 
