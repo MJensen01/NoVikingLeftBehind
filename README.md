@@ -273,9 +273,10 @@ python scripts\package.py   # builds thunderstore/dist zip
 
 ## Versioning
 
-Currently `0.4.3`. See [`thunderstore/CHANGELOG.md`](thunderstore/CHANGELOG.md) for the full
-version history, including the 0.3.0 rename from the project's original name (`OrionQoL`) and
-its one-time config-migration notes.
+The current version is the one in the build line at the top of this README, in
+`thunderstore/manifest.json`, and on [Thunderstore](https://thunderstore.io/c/valheim/p/Nosferatu/NoVikingLeftBehind/).
+See [`thunderstore/CHANGELOG.md`](thunderstore/CHANGELOG.md) for the full version history, including the 0.3.0
+rename from the project's original name (`OrionQoL`) and its one-time config-migration notes.
 
 Name and Thunderstore namespace are **final**: package namespace/team `Nosferatu`, package
 `NoVikingLeftBehind`. Both are immutable once the first version is uploaded — see
