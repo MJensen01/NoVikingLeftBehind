@@ -13,12 +13,9 @@ Compatibility fixes
   its gating boss key was set — which took Epic Loot's trader panel down with it, because Epic Loot 0.14.5 and older
   hang that panel off a Harmony postfix on `StoreGui.Show`, and a postfix does not run when the original throws. Entries
   are now fully populated and validated against ObjectDB before they are handed to the game (an item with no icon is
-  skipped and logged once), a guard re-checks NVLB's own entries every time the store window opens, and buying an added
-  item no longer throws either.
-* **New setting `[Trader] SkipWhenOtherTraderMods` (default `true`, server-synced).** When Epic Loot — or any other
-  plugin that has patched `StoreGui.FillList`/`Show` — is present, NVLB adds only stock it can fully validate and gives
-  each entry an explicit icon, so a window the other mod rebuilt still draws it. One info line in the log says which mod
-  was detected.
+  skipped and logged once) and each carries its prefab's icon explicitly, so a trader window another mod rebuilt still
+  draws it. A guard re-checks NVLB's own entries every time the store window opens — without touching a single entry
+  NVLB did not add — and buying an added item no longer throws either. No new settings.
 
 ## 0.11.0 (2026-09-15)
 

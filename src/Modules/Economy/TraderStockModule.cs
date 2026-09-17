@@ -65,7 +65,6 @@ namespace NoVikingLeftBehind
 
         private static ConfigEntry<string> _items;
         private static ConfigEntry<string> _traderNames;
-        private static ConfigEntry<bool> _skipWhenOther;
         private static TraderStockModule _self;
 
         /// <summary>Items this module put in a trader's list, by reference. Weak, so a trader that
@@ -77,8 +76,7 @@ namespace NoVikingLeftBehind
         private static readonly HashSet<string> Warned = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
 
         private static FieldInfo _traderField;
-        private static int _otherTraderMod = -1;   // -1 not asked yet, 0 no, 1 yes
-        private static string _guidPrefix = NoVikingLeftBehindPlugin.PluginGuid;
+        private static readonly string GuidPrefix = NoVikingLeftBehindPlugin.PluginGuid;
 
         private static bool Live()
         {
@@ -115,15 +113,6 @@ namespace NoVikingLeftBehind
                 "every trader.",
                 Opt.T("Which traders get the extra stock of old-tier items")
                     .Pick(new PickerSpec(PickerSource.Traders)));
-
-            _skipWhenOther = BindSynced("SkipWhenOtherTraderMods", true,
-                "Compatibility. When another mod also shapes the trader window - Epic Loot and " +
-                "the like - add only stock this mod can fully validate (prefab present in " +
-                "ObjectDB and carrying an icon), and give every added entry an explicit icon so " +
-                "a window the other mod rebuilt still draws it. Anything that cannot be validated " +
-                "is skipped rather than handed over half-built. Turn it off to inject exactly as " +
-                "on a vanilla trader. Leave it on: it costs nothing when no such mod is present.",
-                Opt.B("Be extra careful with trader stock when another trader mod is installed").Admin());
         }
 
         protected override void ApplyPatches()
@@ -137,7 +126,10 @@ namespace NoVikingLeftBehind
             // one does not throw.
             var fill = AccessTools.Method(typeof(StoreGui), "FillList");
             if (fill != null)
-                Harmony.Patch(fill, prefix: new HarmonyMethod(typeof(TraderStockModule), nameof(FillListPre)));
+                Harmony.Patch(fill, prefix: new HarmonyMethod(typeof(TraderStockModule), nameof(FillListPre))
+                {
+                    priority = Priority.First
+                });
             else
                 Log.LogWarning("[TraderStock] StoreGui.FillList() not found - store-window guard not installed");
 
@@ -166,7 +158,7 @@ namespace NoVikingLeftBehind
             foreach (var it in trader.m_items)
                 if (it != null && it.m_prefab != null) have.Add(Tiers.CleanName(it.m_prefab.name));
 
-            bool careful = Careful();
+            NoteOtherTraderMod();
 
             int added = 0;
             foreach (var e in Parse(_items != null ? _items.Value : DefaultItems, true))
@@ -192,10 +184,6 @@ namespace NoVikingLeftBehind
                     m_requiredGlobalKey = key
                 });
 
-                // A window rebuilt by another mod may read m_icon and never look at m_prefab.
-                if (careful) item.m_icon = IconOf(drop);
-
-                Ours.Remove(item);
                 Ours.Add(item, Marker);
                 trader.m_items.Add(item);
                 have.Add(e.Prefab);
@@ -239,6 +227,11 @@ namespace NoVikingLeftBehind
             if (it.m_incrementKey == null) it.m_incrementKey = "";
             if (it.m_requiredGlobalKey == null) it.m_requiredGlobalKey = "";
             if (it.m_buyPlayerEffects == null) it.m_buyPlayerEffects = new EffectList();  // BuySelectedItem: .Create()
+
+            // Vanilla falls back to the prefab's icon when m_icon is empty, so stamping it is a
+            // no-op there; it is what saves the row in a window another mod rebuilt from m_icon.
+            if (it.m_icon == null) it.m_icon = IconOf(it.m_prefab);
+
             if (it.m_stack < 1) it.m_stack = 1;
             if (it.m_price < 0) it.m_price = 0;
             return it;
@@ -263,7 +256,6 @@ namespace NoVikingLeftBehind
         internal static Trader.TradeItem Mine(Trader.TradeItem it)
         {
             if (it == null) return null;
-            Ours.Remove(it);
             Ours.Add(it, Marker);
             return it;
         }
@@ -286,8 +278,7 @@ namespace NoVikingLeftBehind
             int dropped = 0;
             for (int i = items.Count - 1; i >= 0; i--)
             {
-                Trader.TradeItem it;
-                try { it = items[i]; } catch { continue; }
+                var it = items[i];
                 if (!IsOurs(it)) continue;
 
                 if (!Usable(it.m_prefab))
@@ -305,13 +296,16 @@ namespace NoVikingLeftBehind
         /// <summary>
         /// Guard-only prefix on StoreGui.FillList(). Returns void, so vanilla always runs; bails
         /// out quietly on anything unexpected rather than throwing into another mod's call stack.
+        /// Runs at Priority.First so a foreign prefix that returns false cannot skip the repair -
+        /// the entries would still be sitting in the trader's list for whatever draws it instead.
+        /// It looks at nothing but the trader's item list, so a mod that repoints m_listRoot or
+        /// m_listElement is none of its business.
         /// </summary>
         private static void FillListPre(StoreGui __instance)
         {
             try
             {
                 if (__instance == null) return;
-                if (__instance.m_listRoot == null || __instance.m_listElement == null) return;
 
                 if (_traderField == null) _traderField = AccessTools.Field(typeof(StoreGui), "m_trader");
                 var trader = _traderField != null ? _traderField.GetValue(__instance) as Trader : null;
@@ -325,40 +319,41 @@ namespace NoVikingLeftBehind
             }
         }
 
-        // ---- compatibility with other trader mods ---------------------------------------------------
+        // ---- other trader mods: diagnostics only ----------------------------------------------------
 
-        /// <summary>[Trader] SkipWhenOtherTraderMods, answered once another trader mod is known.</summary>
-        private static bool Careful()
+        /// <summary>
+        /// Who else is shaping the trader window, for the log and the self-test. It changes
+        /// nothing about what this module does - the guards above run the same either way - but
+        /// when an issue like #9 comes in it is the first line worth reading. A negative answer is
+        /// re-asked, because another plugin can patch StoreGui long after the first trader spawned.
+        /// </summary>
+        internal static string OtherTraderMod()
         {
-            if (_skipWhenOther != null && !_skipWhenOther.Value) return false;
-            return OtherTraderMod() != null;
-        }
-
-        private static string OtherTraderMod()
-        {
-            if (_otherTraderMod >= 0) return _otherTraderMod == 1 ? _otherName : null;
-            _otherTraderMod = 0;
+            if (_otherName != null) return _otherName;
             try
             {
                 BepInEx.PluginInfo info;
                 if (Chainloader.PluginInfos != null &&
                     Chainloader.PluginInfos.TryGetValue(EpicLootGuid, out info) && info != null)
-                    _otherName = "Epic Loot";
-                else
-                    _otherName = ForeignPatcher("FillList") ?? ForeignPatcher("Show");
+                    return _otherName = "Epic Loot";
+                return _otherName = (ForeignPatcher("FillList") ?? ForeignPatcher("Show"));
             }
-            catch { _otherName = null; }
+            catch { return null; }
+        }
 
-            if (!string.IsNullOrEmpty(_otherName))
-            {
-                _otherTraderMod = 1;
-                Log.LogInfo("[TraderStock] " + _otherName + " also shapes the trader window - " +
-                            "adding only fully validated stock ([Trader] SkipWhenOtherTraderMods=true)");
-            }
-            return _otherTraderMod == 1 ? _otherName : null;
+        /// <summary>One info line, the first time another trader mod is seen.</summary>
+        private static void NoteOtherTraderMod()
+        {
+            if (_noted) return;
+            var who = OtherTraderMod();
+            if (string.IsNullOrEmpty(who)) return;
+            _noted = true;
+            Log.LogInfo("[TraderStock] " + who + " also shapes the trader window - " +
+                        "added items are validated and the store-window guard is installed");
         }
 
         private static string _otherName;
+        private static bool _noted;
 
         /// <summary>Owner id of the first non-NVLB Harmony patch on StoreGui.&lt;method&gt;, or null.</summary>
         private static string ForeignPatcher(string method)
@@ -374,7 +369,7 @@ namespace NoVikingLeftBehind
                 foreach (var p in list)
                 {
                     if (p == null || string.IsNullOrEmpty(p.owner)) continue;
-                    if (p.owner.StartsWith(_guidPrefix, StringComparison.OrdinalIgnoreCase)) continue;
+                    if (p.owner.StartsWith(GuidPrefix, StringComparison.OrdinalIgnoreCase)) continue;
                     return p.owner;
                 }
             }
@@ -454,8 +449,7 @@ namespace NoVikingLeftBehind
             var parsed = Parse(_items.Value, false);
             return parsed.Count + " item(s) for " + _traderNames.Value +
                    " [" + _items.Value + "], gated by boss key for (tier + " +
-                   Frontier.TiersBehind.Value + ")" +
-                   (_skipWhenOther != null && _skipWhenOther.Value ? ", careful around other trader mods" : "");
+                   Frontier.TiersBehind.Value + ")";
         }
 
         public override void OnConfigChanged(ConfigEntryBase entry)
@@ -548,17 +542,13 @@ namespace NoVikingLeftBehind
             try
             {
                 FillListPre(null);
-                FillListPre(StoreGui.instance);   // null-trader / null-list-root path in a headless boot
+                FillListPre(StoreGui.instance);   // null store window / null trader in a headless boot
                 sb.Append("\n  FillList guard with no store window / no trader -> PASS");
             }
             catch (Exception e) { sb.Append("\n  FillList guard -> FAIL: " + e.GetType().Name + " " + e.Message); }
 
-            // 5. Which trader mod, if any, we are being careful around.
-            var other = OtherTraderMod();
-            sb.Append("\n  SkipWhenOtherTraderMods=")
-              .Append(_skipWhenOther != null ? _skipWhenOther.Value.ToString() : "?")
-              .Append(" other trader mod=").Append(other ?? "(none)")
-              .Append(" careful=").Append(Careful());
+            // 5. Diagnostics: who else shapes the trader window. Changes nothing, just worth logging.
+            sb.Append("\n  other trader mod=").Append(OtherTraderMod() ?? "(none)");
             return sb.ToString();
         }
     }
