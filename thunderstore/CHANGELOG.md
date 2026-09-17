@@ -1,6 +1,25 @@
 
 # Changelog — NoVikingLeftBehind
 
+## 0.11.1 (unreleased)
+
+Compatibility fixes
+
+* **TraderStock: no longer throws in `StoreGui.FillList()` when another mod (Epic Loot) reshapes the trader window — its
+  bounty menu was erased ([issue #9](https://github.com/MJensen01/NoVikingLeftBehind/issues/9)); injected items are
+  validated.** Valheim 1.0 added fields to `Trader.TradeItem` (`m_tooltip`, `m_name`, `m_buyKey`, `m_buyPlayerEffects`
+  …) that Unity fills in from a prefab but a code-built entry leaves null, and vanilla reads `m_tooltip.Length` with no
+  null check. Every trader-stock entry NVLB added therefore threw a NullReferenceException inside `FillList` as soon as
+  its gating boss key was set — which took Epic Loot's trader panel down with it, because Epic Loot 0.14.5 and older
+  hang that panel off a Harmony postfix on `StoreGui.Show`, and a postfix does not run when the original throws. Entries
+  are now fully populated and validated against ObjectDB before they are handed to the game (an item with no icon is
+  skipped and logged once), a guard re-checks NVLB's own entries every time the store window opens, and buying an added
+  item no longer throws either.
+* **New setting `[Trader] SkipWhenOtherTraderMods` (default `true`, server-synced).** When Epic Loot — or any other
+  plugin that has patched `StoreGui.FillList`/`Show` — is present, NVLB adds only stock it can fully validate and gives
+  each entry an explicit icon, so a window the other mod rebuilt still draws it. One info line in the log says which mod
+  was detected.
+
 ## 0.11.0 (2026-09-15)
 
 Settings tab
