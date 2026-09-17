@@ -1,6 +1,16 @@
 
 # Changelog — NoVikingLeftBehind
 
+## 0.11.2 (unreleased)
+
+Keybinds
+
+* **Second Forsaken power moves from G to H.** Valheim 1.0 bound G to its new radial / hotbar menu, so the second power
+  and the menu fought over the key. The default is now `[Powers] SecondSlotKey = H`. A cfg still on exactly `G` is moved
+  to `H` on the next start, and a Valheim keybinding that was only ever a saved copy of that default moves with it;
+  a key you chose yourself (in the cfg or on the Keyboard & Mouse page) is left alone. The HUD icon shows whichever
+  key is in force. One warning line in the log says when the move happened.
+
 ## 0.11.1 (2026-09-17)
 
 Compatibility fixes

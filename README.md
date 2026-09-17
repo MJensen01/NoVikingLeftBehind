@@ -77,7 +77,7 @@ easier — the newest tier is never touched.
 ### Combat & powers
 
 - **DualPowers** `[Powers]` — carry two (optionally three) Forsaken powers with independent
-  cooldowns and a second hotkey (`Slots=2`, `IndependentCooldowns=true`, local `SecondSlotKey="G"`).
+  cooldowns and a second hotkey (`Slots=2`, `IndependentCooldowns=true`, local `SecondSlotKey="H"`; G until 0.11.1, moved because 1.0 put its radial menu on G).
   At a boss altar plain E sets slot 1 (vanilla), Shift+E slot 2 and Ctrl+E slot 3, and the
   stone's tooltip says so (local `SecondSlotModifier="LeftShift"`, `ThirdSlotModifier="LeftControl"`);
   also draws every power icon as a circle with a thin cooldown/charge ring, generated at runtime
