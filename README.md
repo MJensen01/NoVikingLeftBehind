@@ -95,8 +95,10 @@ easier — the newest tier is never touched.
 - **ExtraSlots** `[Slots]` — dedicated equipment (helmet/chest/legs/cape), 2 utility, 3 food
   (auto-eat), 2 ammo and 2 plain generic slots outside the vanilla grid, so a vanilla client
   can't delete them (`QuickSlots` defaults to 0; raise it to swap the generic slots for a
-  hotkeyed row instead). 3 rolling backups + `nvlb.slots.restore`; rescues items left behind by
-  shudnal's ExtraSlots.
+  hotkeyed row instead). The extra rows sit under **whatever the vanilla bag currently is** — buy
+  a row from Haldor and the new row is an ordinary usable bag row while the extra slots slide down
+  under it, items and all (0.11.3, issues #11 / #12). 3 rolling backups + `nvlb.slots.restore`;
+  rescues items left behind by shudnal's ExtraSlots.
 - **AmmoHud** `[AmmoHud]` — a quiet readout of your ammo slots in the bottom-left corner:
   icon and count per non-empty slot, with the quiver you have equipped marked the way vanilla
   marks the equipped hotbar item. Every tile is a clone of vanilla's own hotbar element and the

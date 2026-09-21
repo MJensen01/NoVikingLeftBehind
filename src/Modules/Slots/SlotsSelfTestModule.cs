@@ -89,6 +89,7 @@ namespace NoVikingLeftBehind
                 TestMigrationRescue();
                 TestLoadoutRoundTrip();
                 TestAmmoHudEnumeration();
+                TestVanillaRowRebase();
             }
             catch (Exception e) { Log.LogError("[SlotsSelfTest] threw: " + e); _fail++; }
             Log.LogInfo("[SlotsSelfTest] --- end --- " + _pass + " passed, " + _fail + " FAILED");
@@ -885,6 +886,188 @@ namespace NoVikingLeftBehind
                   "a 1-entry buffer sees only ammo1 (empty) and does not overrun");
             Check(AmmoHudView.Collect(inv, new ItemDrop.ItemData[SlotLayout.AmmoCount + 3]) == 1,
                   "a buffer longer than the layout is padded with nulls, not read past the last slot");
+        }
+
+        // ---- test 5: Valheim 1.0's purchased bag rows (issues #11 and #12) -------------------------
+
+        /// <summary>
+        /// The layout's base used to be a <c>const 4</c>, so buying a row from Haldor put vanilla's
+        /// new fifth row and the mod's first extra row on the same eight cells. This proves the
+        /// dynamic base: the geometry at 4, 5, 6 and 8 rows, that a re-base carries the items in the
+        /// extra slots with their cells in BOTH directions and loses none, that the DropInvalidItems
+        /// guard still protects the extra rows at every height, and that re-basing to the height it
+        /// is already at changes nothing.
+        ///
+        /// Runs LAST and puts the base back in a finally, because every other test in this file
+        /// builds its inventories from <c>SlotLayout.VanillaHeight</c>.
+        /// </summary>
+        private static void TestVanillaRowRebase()
+        {
+            if (ObjectDB.instance == null) { Log.LogWarning("[SlotsSelfTest] ObjectDB not ready - test 5 skipped"); return; }
+
+            int restore = SlotLayout.VanillaHeight;
+            try
+            {
+                // --- 5a: pure layout maths at each bag height
+                int[] heights = { 4, 5, 6, 8 };
+                for (int h = 0; h < heights.Length; h++)
+                {
+                    int rows = heights[h];
+                    SlotLayout.Rebase(rows);
+                    Check(SlotLayout.VanillaHeight == rows,
+                          "base " + rows + ": VanillaHeight is " + SlotLayout.VanillaHeight);
+                    Check(SlotLayout.TotalHeight == rows + SlotLayout.Rows,
+                          "base " + rows + ": grid height is " + SlotLayout.TotalHeight + " (= " + rows +
+                          " + " + SlotLayout.Rows + " extra row(s))");
+
+                    var seen = new Dictionary<int, string>();
+                    var slots = SlotLayout.Slots;
+                    bool geometry = true, mapping = true, overlap = false, unique = true;
+                    for (int i = 0; i < slots.Count; i++)
+                    {
+                        var s = slots[i];
+                        if (s.Pos.x < 0 || s.Pos.x >= SlotLayout.VanillaWidth ||
+                            s.Pos.y < rows || s.Pos.y >= SlotLayout.TotalHeight) geometry = false;
+                        if (s.Pos.y < rows) overlap = true;             // would sit in a vanilla cell
+                        // index within the extra area, row-major, must be the slot's own order
+                        if ((s.Pos.y - rows) * SlotLayout.VanillaWidth + s.Pos.x != i) mapping = false;
+                        if (!ReferenceEquals(SlotLayout.At(s.Pos), s)) mapping = false;
+                        if (!ReferenceEquals(SlotLayout.ByKey(s.Key), s)) mapping = false;
+                        int cell = s.Pos.y * SlotLayout.VanillaWidth + s.Pos.x;
+                        if (seen.ContainsKey(cell)) unique = false; else seen[cell] = s.Key;
+                    }
+                    Check(geometry, "base " + rows + ": every slot is inside the extra area");
+                    Check(!overlap, "base " + rows + ": NO extra slot sits in a vanilla cell (rows 0-" + (rows - 1) + ")");
+                    Check(mapping, "base " + rows + ": cell index mapping, At() and ByKey() all agree");
+                    Check(unique, "base " + rows + ": no two slots share a cell");
+                    Check(!SlotLayout.IsExtra(new Vector2i(0, rows - 1)),
+                          "base " + rows + ": the last vanilla row is NOT extra");
+                    Check(SlotLayout.IsExtra(new Vector2i(0, rows)),
+                          "base " + rows + ": the first row below the bag IS extra");
+                }
+
+                // --- 5b: a re-base 4 -> 5 carries the items with their cells
+                SlotLayout.Rebase(SlotLayout.DefaultVanillaHeight);
+                var inv = new Inventory("nvlb-rebase", null, SlotLayout.VanillaWidth, SlotLayout.VanillaHeight);
+                SlotStore.SetHeight(inv, SlotLayout.TotalHeight);
+
+                var bag = Make("Wood", 12);
+                if (bag != null) SlotStore.PlaceRaw(inv, bag, new Vector2i(0, 0));
+
+                var placed = new Dictionary<string, ItemDrop.ItemData>();
+                var slotList = SlotLayout.Slots;
+                for (int i = 0; i < slotList.Count; i++)
+                {
+                    var s = slotList[i];
+                    var item = Make(PrefabFor(s.Kind), s.Kind == SlotKind.Ammo ? 20 : 1);
+                    if (item == null || !SlotLayout.Accepts(s, item)) continue;
+                    if (!SlotStore.PlaceRaw(inv, item, s.Pos)) continue;
+                    placed[s.Key] = item;
+                }
+                Check(placed.Count > 0, "5b: filled " + placed.Count + " extra slot(s) at base 4");
+                int before = inv.GetAllItems().Count;
+
+                int moved = ExtraSlotsModule.RebaseTo(inv, null, 5, "self test 4->5");
+                Check(SlotLayout.VanillaHeight == 5, "5b: base moved to 5");
+                Check(moved == placed.Count, "5b: re-base reported " + moved + " item(s) moved, expected " + placed.Count);
+                Check(inv.GetAllItems().Count == before,
+                      "5b: NOTHING lost or duplicated - " + inv.GetAllItems().Count + " item(s), was " + before);
+                Check(SlotStore.GetHeight(inv) == SlotLayout.TotalHeight,
+                      "5b: grid height followed the base to " + SlotStore.GetHeight(inv));
+                Check(CheckPlacement(inv, placed, "5b"), "5b: every item is in its own slot, one row lower");
+                Check(bag == null || ReferenceEquals(inv.GetItemAt(0, 0), bag),
+                      "5b: the ordinary bag item at 0,0 was not touched");
+                Check(NoneBelow(inv, placed, 5), "5b: no extra-slot item was left behind in a vanilla cell");
+
+                // --- 5c: idempotence
+                int again = ExtraSlotsModule.RebaseTo(inv, null, 5, "self test 5->5");
+                Check(again == 0 && SlotLayout.VanillaHeight == 5 && inv.GetAllItems().Count == before,
+                      "5c: re-basing to the height it is already at is a no-op (" + again + " moved)");
+                Check(CheckPlacement(inv, placed, "5c"), "5c: nothing moved on the no-op re-base");
+
+                // --- 5d: 5 -> 4, what loading an older character does
+                int back = ExtraSlotsModule.RebaseTo(inv, null, 4, "self test 5->4");
+                Check(SlotLayout.VanillaHeight == 4, "5d: base moved back to 4");
+                Check(back == placed.Count, "5d: re-base reported " + back + " item(s) moved, expected " + placed.Count);
+                Check(inv.GetAllItems().Count == before,
+                      "5d: still nothing lost - " + inv.GetAllItems().Count + " item(s)");
+                Check(CheckPlacement(inv, placed, "5d"), "5d: every item is back in its own slot at base 4");
+
+                // --- 5e: the DropInvalidItems guard at every height
+                for (int h = 0; h < heights.Length; h++)
+                {
+                    int rows = heights[h];
+                    ExtraSlotsModule.RebaseTo(inv, null, rows, "self test guard " + rows);
+                    // What vanilla does first inside Player.SetInventorySize: m_inventory.SetHeight(rows).
+                    SlotStore.SetHeight(inv, rows);
+                    Check(ExtraSlotsModule.GuardGridHeight(inv),
+                          "5e base " + rows + ": the guard put the grid back before DropInvalidItems scanned");
+                    Check(SlotStore.GetHeight(inv) == SlotLayout.TotalHeight,
+                          "5e base " + rows + ": grid is " + SlotStore.GetHeight(inv) + " rows again");
+                    int wouldDrop = 0;
+                    var all = inv.GetAllItems();
+                    for (int i = 0; i < all.Count; i++)
+                        if (all[i].m_gridPos.y >= SlotStore.GetHeight(inv) ||
+                            all[i].m_gridPos.x >= inv.GetWidth()) wouldDrop++;
+                    Check(wouldDrop == 0,
+                          "5e base " + rows + ": vanilla's own DropInvalidItems test would drop " + wouldDrop + " item(s)");
+                    Check(!ExtraSlotsModule.GuardGridHeight(inv),
+                          "5e base " + rows + ": the guard is idempotent - a second pass does nothing");
+                    Check(inv.GetAllItems().Count == before,
+                          "5e base " + rows + ": still " + inv.GetAllItems().Count + " item(s)");
+                }
+            }
+            catch (Exception e) { Check(false, "test 5 threw: " + e); }
+            finally
+            {
+                // Every other test in this file builds its inventories from SlotLayout.VanillaHeight,
+                // and a client that ran this must go back to the bag it actually has.
+                SlotLayout.Rebase(restore);
+            }
+        }
+
+        /// <summary>A prefab every slot of that kind will accept, for the synthetic re-base set.</summary>
+        private static string PrefabFor(SlotKind kind)
+        {
+            switch (kind)
+            {
+                case SlotKind.Helmet: return "HelmetBronze";
+                case SlotKind.Chest: return "ArmorBronzeChest";
+                case SlotKind.Legs: return "ArmorBronzeLegs";
+                case SlotKind.Cape: return "CapeDeerHide";
+                case SlotKind.Utility: return "BeltStrength";
+                case SlotKind.Food: return "CookedMeat";
+                case SlotKind.Ammo: return "ArrowWood";
+                default: return "Stone";
+            }
+        }
+
+        /// <summary>Every recorded item is the SAME object sitting in its own slot's current cell.</summary>
+        private static bool CheckPlacement(Inventory inv, Dictionary<string, ItemDrop.ItemData> placed, string tag)
+        {
+            bool ok = true;
+            foreach (var kv in placed)
+            {
+                var slot = SlotLayout.ByKey(kv.Key);
+                if (slot == null) { Log.LogError("[SlotsSelfTest] " + tag + ": slot '" + kv.Key + "' vanished"); ok = false; continue; }
+                var at = inv.GetItemAt(slot.Pos.x, slot.Pos.y);
+                if (ReferenceEquals(at, kv.Value) && kv.Value.m_gridPos.x == slot.Pos.x &&
+                    kv.Value.m_gridPos.y == slot.Pos.y) continue;
+                Log.LogError("[SlotsSelfTest] " + tag + ": slot '" + kv.Key + "' at " + slot.Pos.x + "," +
+                             slot.Pos.y + " holds " + (at == null ? "nothing" : SlotBlob.Describe(at)) +
+                             ", expected " + SlotBlob.Describe(kv.Value) + " (which thinks it is at " +
+                             kv.Value.m_gridPos.x + "," + kv.Value.m_gridPos.y + ")");
+                ok = false;
+            }
+            return ok;
+        }
+
+        /// <summary>No recorded extra-slot item was left sitting in a vanilla cell after a re-base.</summary>
+        private static bool NoneBelow(Inventory inv, Dictionary<string, ItemDrop.ItemData> placed, int rows)
+        {
+            foreach (var kv in placed)
+                if (kv.Value.m_gridPos.y < rows) return false;
+            return true;
         }
 
         public override string StatusDetail()
