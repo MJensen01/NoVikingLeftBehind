@@ -1,7 +1,7 @@
 
 # Changelog — NoVikingLeftBehind
 
-## 0.11.3 (unreleased)
+## 0.11.3 (2026-09-22)
 
 Inventory fixes
 
