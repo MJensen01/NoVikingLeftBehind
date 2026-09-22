@@ -41,7 +41,12 @@ namespace NoVikingLeftBehind
     /// <summary>
     /// The extra-slot grid layout.
     ///
-    /// The player's vanilla inventory is 8 x 4 (Humanoid.cs:67 - `new Inventory("Inventory", null, 8, 4)`).
+    /// The player's vanilla inventory starts at 8 x 4 (Humanoid.cs:67 - `new Inventory("Inventory",
+    /// null, 8, 4)`) and GROWS: Valheim 1.0 sells extra rows at Haldor, up to 9 in all, and the row
+    /// count is per character (`Player.SetInventorySize`, Player.cs:5039). <see cref="VanillaHeight"/>
+    /// is therefore a live number, not a constant, and <see cref="Rebase"/> slides the extra rows
+    /// down under whatever the bag currently is.
+    ///
     /// ExtraSlots-style modules make the extra slots real cells of that same Inventory by growing
     /// its height, which is what makes every piece of vanilla machinery - drag and drop, tooltips,
     /// durability bars, Humanoid.EquipItem's `m_inventory.ContainsItem(item)` guard, weight - work
@@ -70,10 +75,35 @@ namespace NoVikingLeftBehind
     internal static class SlotLayout
     {
         public const int VanillaWidth = 8;
-        public const int VanillaHeight = 4;
+
+        /// <summary>
+        /// The bag height a character starts with (Humanoid.cs:67, <c>new Inventory("Inventory",
+        /// null, 8, 4)</c>) and the fallback whenever vanilla has not said otherwise.
+        /// </summary>
+        public const int DefaultVanillaHeight = 4;
+
+        /// <summary>
+        /// The most rows vanilla will ever give a bag: <c>Player.SetInventorySize</c> opens with
+        /// <c>rows = Mathf.Clamp(rows, 0, 9)</c> (Player.cs:5041), so 9 is the hard ceiling on the
+        /// rows Haldor can sell. Nothing here may assume anything smaller.
+        /// </summary>
+        public const int MaxVanillaHeight = 9;
 
         /// <summary>Hard cap on extra rows. Also the height a tombstone container is widened to.</summary>
         public const int MaxExtraRows = 4;
+
+        /// <summary>
+        /// The bag's CURRENT vanilla row count - 4 plus however many rows this character has bought
+        /// from Haldor (Valheim 1.0's <c>"invrows"</c> unique key, Player.cs:109/2502/5039).
+        ///
+        /// This used to be a <c>const 4</c>, and that was issues #11 and #12: the moment a player
+        /// paid Haldor, vanilla's new fifth row and the mod's FIRST extra row were the same eight
+        /// cells. The purchased row was therefore invisible (the panel had taken its cells) and the
+        /// panel overlapped the taller bag. It is a live number now, moved by
+        /// <see cref="Rebase"/> whenever vanilla resizes the bag, and every consumer reads it
+        /// rather than assuming 4.
+        /// </summary>
+        public static int VanillaHeight { get; private set; }
 
         private static readonly List<SlotDef> _slots = new List<SlotDef>();
         private static readonly Dictionary<string, SlotDef> _byKey = new Dictionary<string, SlotDef>();
@@ -96,7 +126,45 @@ namespace NoVikingLeftBehind
 
         static SlotLayout()
         {
+            VanillaHeight = DefaultVanillaHeight;
             Rebuild(true, 2, 3, 2, 0, 2);
+        }
+
+        /// <summary>
+        /// Move the extra rows so they sit directly under a bag of <paramref name="vanillaRows"/>
+        /// rows. Returns the number of rows the extra area shifted by (0 when nothing changed, so a
+        /// caller can treat "no move" as a cheap no-op), positive when the extra rows moved DOWN.
+        ///
+        /// This only moves the CELLS. Moving the ITEMS that are sitting in them is
+        /// <c>ExtraSlotsModule.RebaseTo</c>'s job, and the two must always be done together - which
+        /// is why nothing outside this class calls this directly.
+        /// </summary>
+        internal static int Rebase(int vanillaRows)
+        {
+            int want = Mathf.Clamp(vanillaRows, 1, MaxVanillaHeight);
+            if (want == VanillaHeight) return 0;
+            int shift = want - VanillaHeight;
+            VanillaHeight = want;
+            ApplyPositions();
+            return shift;
+        }
+
+        /// <summary>
+        /// Give every slot its absolute cell, row-major over the extra rows starting at the first
+        /// row below the bag. Called on every <see cref="Rebuild"/> and every <see cref="Rebase"/>;
+        /// never on a hot path, and it allocates nothing beyond what it is handed.
+        /// </summary>
+        private static void ApplyPositions()
+        {
+            Array.Clear(_grid, 0, _grid.Length);
+            _byKey.Clear();
+            for (int i = 0; i < _slots.Count; i++)
+            {
+                var s = _slots[i];
+                s.Pos = new Vector2i(i % VanillaWidth, VanillaHeight + i / VanillaWidth);
+                _grid[s.Pos.x, s.Pos.y - VanillaHeight] = s;
+                _byKey[s.Key] = s;
+            }
         }
 
         /// <summary>Recompute the layout from the (synced) slot counts. Idempotent.</summary>
@@ -138,15 +206,7 @@ namespace NoVikingLeftBehind
             }
             Rows = rows;
 
-            _grid = new SlotDef[VanillaWidth, MaxExtraRows];
-            for (int i = 0; i < _slots.Count; i++)
-            {
-                var s = _slots[i];
-                s.Pos = new Vector2i(i % VanillaWidth, VanillaHeight + i / VanillaWidth);
-                _grid[s.Pos.x, s.Pos.y - VanillaHeight] = s;
-                _byKey[s.Key] = s;
-            }
-
+            ApplyPositions();
             ComputePanel();
         }
 
@@ -300,7 +360,8 @@ namespace NoVikingLeftBehind
             return "equipment=" + (EquipmentOn ? "on" : "off") +
                    " utility=" + UtilityCount + " food=" + FoodCount +
                    " ammo=" + AmmoCount + " quick=" + QuickCount + " generic=" + GenericCount +
-                   " -> " + _slots.Count + " slots in " + Rows + " row(s)";
+                   " -> " + _slots.Count + " slots in " + Rows + " row(s)" +
+                   " under a " + VanillaHeight + "-row bag (grid " + VanillaWidth + "x" + TotalHeight + ")";
         }
     }
 }

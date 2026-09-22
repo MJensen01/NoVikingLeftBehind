@@ -18,7 +18,9 @@ namespace NoVikingLeftBehind
     /// TryEnable checks the side). That is what stops two players on the same server disagreeing
     /// about the grid, which QOL-ARCHITECTURE section 4 rule 5 calls out as the other loss vector.
     ///
-    /// The slots are real cells of the player's own Inventory (height grown from 4 to 4 + rows),
+    /// The slots are real cells of the player's own Inventory (height grown from the bag's own row
+    /// count to that + rows - and since 0.11.3 that base follows the rows Valheim 1.0 sells at
+    /// Haldor instead of assuming 4, see <see cref="RebaseTo"/>),
     /// so drag and drop, tooltips, durability bars, weight and Humanoid.EquipItem all work with no
     /// code from us - see SlotLayout for why. They are NEVER written into the vanilla package; see
     /// SlotStore and SlotBlob.
@@ -556,8 +558,18 @@ namespace NoVikingLeftBehind
 
         /// <summary>
         /// Shrink the grid back to vanilla and arm the migration capture, so that every item the
-        /// package holds beyond row 3 is caught instead of deleted (shudnal's ExtraSlots put them
+        /// package holds beyond the bag is caught instead of deleted (shudnal's ExtraSlots put them
         /// there; ours never does).
+        ///
+        /// "Vanilla" here is <see cref="SlotLayout.MaxVanillaHeight"/>, not the character's own row
+        /// count, and that is deliberate (issues #11/#12). <c>Player.Load</c> reads the inventory
+        /// (Player.cs:4804) long BEFORE it reads <c>m_uniques</c> (:4850), so at this instant
+        /// nothing can know how many rows this character bought from Haldor. Capturing at 4 would
+        /// therefore have treated a purchased fifth row as a migration and shuffled those items
+        /// somewhere else on every single login. Capturing at 9 - vanilla's own hard ceiling
+        /// (Player.cs:5041) - catches only cells vanilla could never have written, and the rows
+        /// between the real bag height and 9 are sorted out in the postfix by
+        /// <see cref="SlotsRescue.AdoptStranded"/>, once "invrows" is finally readable.
         /// </summary>
         private static void PlayerLoadPrefix(Player __instance)
         {
@@ -572,7 +584,7 @@ namespace NoVikingLeftBehind
                 // save write the extra-slot items into the vanilla package. Start from zero.
                 SlotStore.ResetLift();
 
-                SlotStore.SetHeight(inv, SlotLayout.VanillaHeight);
+                SlotStore.SetHeight(inv, SlotLayout.MaxVanillaHeight);
                 SlotsRescue.BeginCapture(inv);
 
                 // The last instant at which the .fch on disk is still exactly what it was before
@@ -590,6 +602,20 @@ namespace NoVikingLeftBehind
                 SlotsRescue.EndCapture();
                 var inv = __instance.GetInventory();
                 SlotStore.Managed = inv;
+
+                // "invrows" is readable at last, so the extra rows can be put where this character
+                // actually needs them BEFORE a single item is injected. Nothing of ours is in the
+                // grid yet, so this only moves cells - see RebaseTo for the case that moves items.
+                int vanillaRows = VanillaRowsOf(__instance);
+                if (SlotLayout.Rebase(vanillaRows) != 0)
+                    Log.LogInfo("[Slots] vanilla bag is now " + vanillaRows +
+                                " rows - extra slots re-based below it (0 items moved, character load)");
+
+                // Everything the package left above the real bag: shudnal's ExtraSlots parks its
+                // items there, and the load grid was deliberately 9 rows tall so vanilla would not
+                // delete them. They are migration candidates, handled by the same rescue path.
+                SlotsRescue.AdoptStranded(inv, vanillaRows);
+
                 SlotStore.SetHeight(inv, SlotLayout.TotalHeight);
 
                 // What the character is CARRYING, before a single item is placed - so a session
@@ -699,40 +725,145 @@ namespace NoVikingLeftBehind
             return s;
         }
 
+        // ---- vanilla's own bag rows (Valheim 1.0, issues #11 and #12) ------------------------------
+
+        /// <summary>
+        /// <c>Player.TryGetUniqueKeyValue(string, out string)</c>, looked up rather than called, for
+        /// the same reason the two patches below are optional: on a pre-1.0 build it does not exist
+        /// and there are simply no purchased rows to read.
+        /// </summary>
+        private static readonly MethodInfo TryGetUniqueKeyValueMi =
+            AccessTools.Method(typeof(Player), "TryGetUniqueKeyValue",
+                               new[] { typeof(string), typeof(string).MakeByRefType() });
+
+        /// <summary>
+        /// How many rows vanilla says this character's bag has. Valheim 1.0 keeps it in the unique
+        /// key <c>"invrows"</c> (<c>Player.InventoryRowsKey</c>, Player.cs:109): <c>OnSpawned</c>
+        /// reads it and calls <c>SetInventorySize</c> (Player.cs:2502), the trader writes it through
+        /// <c>m_incrementKey</c> (StoreGui.cs:170-178), and <c>SetInventorySize</c> clamps it to
+        /// 0-9 (Player.cs:5041). Missing key, unparseable value or a pre-1.0 build all mean the
+        /// vanilla four.
+        /// </summary>
+        internal static int VanillaRowsOf(Player p)
+        {
+            if (p == null || TryGetUniqueKeyValueMi == null) return SlotLayout.DefaultVanillaHeight;
+            try
+            {
+                var args = new object[] { "invrows", null };
+                if (!(bool)TryGetUniqueKeyValueMi.Invoke(p, args)) return SlotLayout.DefaultVanillaHeight;
+                int n;
+                if (!int.TryParse(args[1] as string, out n)) return SlotLayout.DefaultVanillaHeight;
+                return Mathf.Clamp(n, 1, SlotLayout.MaxVanillaHeight);
+            }
+            catch { return SlotLayout.DefaultVanillaHeight; }
+        }
+
+        /// <summary>
+        /// THE FIX FOR ISSUES #11 AND #12.
+        ///
+        /// Vanilla's bag is now <paramref name="vanillaRows"/> rows tall, so the extra rows have to
+        /// move to sit under it - and every item already sitting in them has to move WITH its own
+        /// cell. Returns how many items were moved; 0 also means "already there", because the whole
+        /// thing is a no-op when the base has not changed.
+        ///
+        /// Why no item can be lost, in order:
+        ///   1. <c>Collect</c> keys every extra-area item to the slot it is in under the OLD base,
+        ///      and <c>Orphans</c> picks up anything in a padding cell that has no slot. Between
+        ///      them they hold a reference to every single item in the extra area.
+        ///   2. Only then are those items taken out of the inventory list - and they are taken out
+        ///      by POSITION, using the same <c>y &gt;= old base</c> test the two collections used,
+        ///      so the list and the two collections cannot disagree.
+        ///   3. The grid is grown to cover BOTH bases before anything is placed, so a re-base that
+        ///      moves the rows down can never fail <c>PlaceRaw</c>'s bounds check halfway through.
+        ///   4. <c>Inject</c> puts each item back by its SLOT KEY, so "ammo2" is still ammo2, one
+        ///      row lower. Anything that will not go back (a slot that stopped existing because the
+        ///      bag grew into it) goes to <c>Evacuate</c>, which tries a free bag cell, then the
+        ///      player's feet, and as a last resort keeps the item in the inventory rather than
+        ///      dropping it on the floor of a full world.
+        /// Nothing is cloned anywhere along that path, so an item cannot be duplicated either: the
+        /// same <c>ItemDrop.ItemData</c> object comes out of the old cell and goes into the new one.
+        /// </summary>
+        internal static int RebaseTo(Inventory inv, Player player, int vanillaRows, string why)
+        {
+            int want = Mathf.Clamp(vanillaRows, 1, SlotLayout.MaxVanillaHeight);
+            if (want == SlotLayout.VanillaHeight) return 0;      // idempotent: the common case
+
+            if (inv == null)
+            {
+                SlotLayout.Rebase(want);
+                SlotsUi.Invalidate();
+                return 0;
+            }
+
+            int from = SlotLayout.VanillaHeight;
+
+            // 1 + 2: everything in the extra area, keyed and then lifted out.
+            var entries = SlotStore.Collect(inv);
+            var leftovers = SlotStore.Orphans(inv);
+            var list = SlotStore.Items(inv);
+            for (int i = list.Count - 1; i >= 0; i--)
+                if (list[i].m_gridPos.y >= from) list.RemoveAt(i);
+
+            // 3: move the cells, then make the grid big enough for the old AND the new extent.
+            SlotLayout.Rebase(want);
+            int height = Mathf.Max(SlotStore.GetHeight(inv), SlotLayout.TotalHeight);
+            SlotStore.SetHeight(inv, Mathf.Max(height, from + SlotLayout.Rows));
+
+            // 4: back into the same slot, now re-based.
+            int moved = SlotStore.Inject(inv, entries, leftovers);
+            SlotStore.Evacuate(player, inv, leftovers, why);
+
+            SlotStore.SetHeight(inv, SlotLayout.TotalHeight);
+            ForgetSlotMemory();                 // the cells moved; every slot is worn afresh
+            SlotStore.Changed(inv);
+            SlotsUi.Invalidate();
+
+            Log.LogInfo("[Slots] vanilla bag is now " + want + " rows - extra slots re-based below it (" +
+                        moved + " items moved)" + (from == want ? "" : " [was " + from + "]") +
+                        "; " + SlotLayout.Describe());
+            return moved;
+        }
+
         /// <summary>
         /// Valheim 1.0 gave vanilla its own inventory-rows upgrade: <c>Player.SetInventorySize(int
-        /// rows)</c> (Player.cs:5049) does <c>m_inventory.SetHeight(rows)</c> and then
+        /// rows)</c> (Player.cs:5039) does <c>m_inventory.SetHeight(rows)</c> and then
         /// <c>DropInvalidItems()</c> (Humanoid.cs:792), which DROPS ON THE GROUND every item whose
         /// <c>m_gridPos.y &gt;= rows</c> - i.e. the whole extra-slot area. <c>Player.OnSpawned</c>
-        /// calls it on every single login (Player.cs:2510, from the "invrows" unique key), and the
-        /// console has a command that calls DropInvalidItems directly (Terminal.cs:1934).
+        /// calls it on every single login (Player.cs:2502, from the "invrows" unique key), and the
+        /// console has a command that calls DropInvalidItems directly.
         ///
         /// Putting our own grid height back BEFORE vanilla scans makes the extra rows in bounds
         /// again, so vanilla drops only what is genuinely invalid. Cheap, idempotent, and inert on
-        /// any inventory that is not the one we manage.
+        /// any inventory that is not the one we manage. It runs against whatever the base is at that
+        /// instant - INSIDE <c>SetInventorySize</c>, i.e. before <see cref="SetInventorySizePostfix"/>
+        /// has re-based - which is exactly right: the items are still in their old cells there.
         /// </summary>
+        internal static bool GuardGridHeight(Inventory inv)
+        {
+            if (inv == null) return false;
+            int had = SlotStore.GetHeight(inv);
+            if (had >= SlotLayout.TotalHeight) return false;
+            SlotStore.SetHeight(inv, SlotLayout.TotalHeight);
+            Log.LogInfo("[Slots] DropInvalidItems would have dropped the extra rows (grid was " + had +
+                        ", need " + SlotLayout.TotalHeight + ") - grid height restored first");
+            return true;
+        }
+
         private static void DropInvalidItemsPrefix(Humanoid __instance)
         {
             if (!Live() || __instance == null) return;
             try
             {
                 var inv = __instance.GetInventory();
-                if (!IsManaged(inv)) return;
-                if (SlotStore.GetHeight(inv) < SlotLayout.TotalHeight)
-                {
-                    Log.LogWarning("[Slots] DropInvalidItems would have dropped the extra rows (grid was " +
-                                   SlotStore.GetHeight(inv) + ", need " + SlotLayout.TotalHeight +
-                                   ") - grid height restored first");
-                    SlotStore.SetHeight(inv, SlotLayout.TotalHeight);
-                }
+                if (IsManaged(inv)) GuardGridHeight(inv);
             }
             catch (Exception e) { Log.LogWarning("[Slots] DropInvalidItems guard failed: " + e.Message); }
         }
 
         /// <summary>
-        /// Vanilla has just resized the bag (1.0's own rows upgrade). Put our height back, and say
-        /// so loudly if vanilla now wants more than the four rows SlotLayout is built on - the
-        /// panel geometry assumes SlotLayout.VanillaHeight and would overlap a bigger bag.
+        /// Vanilla has just resized the bag - the player bought a row from Haldor, or logged in with
+        /// rows they had already bought. Put our height back and slide the extra rows down under the
+        /// new bag, carrying their items with them.
         /// </summary>
         private static void SetInventorySizePostfix(Player __instance, int rows)
         {
@@ -741,11 +872,9 @@ namespace NoVikingLeftBehind
             {
                 var inv = __instance.GetInventory();
                 if (!IsManaged(inv)) return;
+                GuardGridHeight(inv);
+                RebaseTo(inv, __instance, rows, "vanilla bag grew into an extra-slot cell");
                 SlotStore.SetHeight(inv, SlotLayout.TotalHeight);
-                if (rows != SlotLayout.VanillaHeight)
-                    Log.LogWarning("[Slots] vanilla set the bag to " + rows + " rows; the extra-slot " +
-                                   "layout is built on " + SlotLayout.VanillaHeight +
-                                   " - the panel and the extra rows will overlap the bag");
                 SlotsUi.Invalidate();
             }
             catch (Exception e) { Log.LogWarning("[Slots] SetInventorySize guard failed: " + e.Message); }
@@ -760,6 +889,12 @@ namespace NoVikingLeftBehind
                 SlotStore.Managed = inv;
                 SlotStore.ResetLift();
                 ForgetSlotMemory();
+
+                // A character with no "invrows" key at all never reaches SetInventorySize (vanilla
+                // just writes the key, Player.cs:2506), so this is the only hook that can put the
+                // base back to 4 after a session on a character that HAD bought rows.
+                RebaseTo(inv, __instance, VanillaRowsOf(__instance), "character spawned");
+
                 SlotStore.SetHeight(inv, SlotLayout.TotalHeight);
                 var orphans = SlotStore.Orphans(inv);
                 if (orphans.Count > 0) SlotStore.Evacuate(__instance, inv, orphans, "no slot at that cell");
@@ -1120,7 +1255,11 @@ namespace NoVikingLeftBehind
                 if (__instance.GetComponent<TombStone>() == null) return;
                 var inv = __instance.GetInventory();
                 if (inv == null) return;
-                int want = SlotLayout.VanillaHeight + SlotLayout.MaxExtraRows;
+                // Follows the live bag height (1.0's purchased rows move the extra rows down), but
+                // never below the 4 + 4 this has always guaranteed - a grave is only ever widened,
+                // so a console-shrunk bag cannot make one narrower than it used to be.
+                int want = Mathf.Max(SlotLayout.DefaultVanillaHeight, SlotLayout.VanillaHeight) +
+                           SlotLayout.MaxExtraRows;
                 if (SlotStore.GetHeight(inv) < want) SlotStore.SetHeight(inv, want);
             }
             catch (Exception e) { Log.LogWarning("[Slots] tombstone widening failed: " + e.Message); }

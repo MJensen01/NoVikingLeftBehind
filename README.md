@@ -19,7 +19,7 @@ runs, guardian powers, ore regrowth, portals and a frontier-based catch-up syste
 every player. The server enforces every setting (via [ServerSync](https://github.com/blaxxun-boop/ServerSync)),
 so nobody has to agree on config by hand.
 
-0.11.2 is built against the Valheim `1.0.14` assemblies and smoke-tested on `1.0.14` (network version 40) / BepInEx `5.4.2350`.
+0.11.3 is built against the Valheim `1.0.14` assemblies and smoke-tested on `1.0.15` (network version 40) / BepInEx `5.4.2350`.
 For servers held on the `default_pre1_0` branch (0.221.12) use 0.8.8.
 
 ## Install (players, via r2modman / Thunderstore)
@@ -95,8 +95,10 @@ easier — the newest tier is never touched.
 - **ExtraSlots** `[Slots]` — dedicated equipment (helmet/chest/legs/cape), 2 utility, 3 food
   (auto-eat), 2 ammo and 2 plain generic slots outside the vanilla grid, so a vanilla client
   can't delete them (`QuickSlots` defaults to 0; raise it to swap the generic slots for a
-  hotkeyed row instead). 3 rolling backups + `nvlb.slots.restore`; rescues items left behind by
-  shudnal's ExtraSlots.
+  hotkeyed row instead). The extra rows sit under **whatever the vanilla bag currently is** — buy
+  a row from Haldor and the new row is an ordinary usable bag row while the extra slots slide down
+  under it, items and all (0.11.3, issues #11 / #12). 3 rolling backups + `nvlb.slots.restore`;
+  rescues items left behind by shudnal's ExtraSlots.
 - **AmmoHud** `[AmmoHud]` — a quiet readout of your ammo slots in the bottom-left corner:
   icon and count per non-empty slot, with the quiver you have equipped marked the way vanilla
   marks the equipped hotbar item. Every tile is a clone of vanilla's own hotbar element and the

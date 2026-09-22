@@ -1,6 +1,39 @@
 
 # Changelog — NoVikingLeftBehind
 
+## 0.11.3 (2026-09-22)
+
+Inventory fixes
+
+* **The inventory rows you buy from Haldor now work, and the extra slots move down under them**
+  ([issue #11](https://github.com/MJensen01/NoVikingLeftBehind/issues/11),
+  [issue #12](https://github.com/MJensen01/NoVikingLeftBehind/issues/12)). Valheim 1.0 sells extra bag rows at the
+  trader once Moder is down (`Player.SetInventorySize`, Player.cs:5039, driven by the `invrows` unique key). The
+  extra-slot layout was built on a hard-coded four-row bag, so the instant you paid, vanilla's new fifth row and
+  NVLB's *first* extra row were the same eight cells: the window grew, the new row never appeared, the panel
+  overlapped the bag, and the log said so (`the extra-slot layout is built on 4 - the panel and the extra rows will
+  overlap the bag`). The layout's base is a **live number** now. It follows the bag on login, on purchase and on
+  load, up to vanilla's own nine-row ceiling, and every extra-slot cell shifts down with it — **and so does whatever
+  is sitting in it**: buying a row mid-session moves your helmet, food, ammo and storage slots down one row, item by
+  item, keyed to the slot they were in, with nothing dropped, duplicated or left behind in a bag cell. The panel is
+  measured from the live grid, so nothing overlaps at 4, 5, 6 or 9 rows or at any GUI scale. The
+  `DropInvalidItems` guard, the `Stack all` / hold-E guard, the SafeSlots vault, the character backup and
+  `nvlb.slots.restore` all work against the live base. The old "will overlap" warning is gone, because it cannot
+  happen any more; one plain info line says `vanilla bag is now N rows - extra slots re-based below it (M items
+  moved)` when it does.
+* **Existing characters migrate on the way in, with nothing to do by hand.** A character that had already bought rows
+  was, until now, having that purchased row treated as a migration from shudnal's ExtraSlots on *every* login and
+  its contents shuffled elsewhere. The load grid is opened to vanilla's nine-row ceiling while the save is read —
+  `Player.Load` reads the inventory long before it reads the `invrows` key, so at that instant nothing can know how
+  many rows the character owns, and nine is the only bound that is guaranteed to delete nothing. Once the key is
+  readable the rows are re-based and only what lies *past the real bag* is treated as a leftover from shudnal's mod
+  and rescued the way it always was.
+* `[Slots] SelfTest` gained a fifth headless test: the layout geometry at 4, 5, 6 and 8 bag rows (cell mapping, grid
+  height, no overlap between the vanilla and extra ranges), a 4→5 and a 5→4 re-base of a full set of extra-slot items
+  proving none is lost or moved to the wrong slot, the `DropInvalidItems` guard at every height, and idempotence.
+
+No new settings.
+
 ## 0.11.2 (2026-09-17)
 
 Keybinds

@@ -22,8 +22,12 @@ namespace NoVikingLeftBehind
     /// and quality labels, the equipped tick. So instead of building a UI we simply MOVE the cells
     /// for rows 4+ out of the grid flow and into a panel of our own:
     ///
-    ///   1. m_gridRoot is squeezed back to four rows' worth of height, so the main grid measures
-    ///      and looks exactly like vanilla again (UpdateGui had grown it to the full height).
+    ///   1. m_gridRoot is squeezed back to the VANILLA rows' worth of height, so the main grid
+    ///      measures and looks exactly like vanilla again (UpdateGui had grown it to the full
+    ///      height). That is SlotLayout.VanillaHeight, which since 0.11.3 follows the rows the
+    ///      player bought from Haldor rather than assuming 4 - the cells of a purchased row are
+    ///      below `first` and are left entirely alone, which is what makes that row usable
+    ///      (issues #11 and #12).
     ///   2. Each extra cell's RectTransform.anchoredPosition is set to its SlotDef.PanelTile
     ///      offset from the panel's top-left corner. The cells stay children of m_gridRoot, so
     ///      hover, drag, drop, tooltips and clicks keep working with no code from us - the game
@@ -178,7 +182,8 @@ namespace NoVikingLeftBehind
 
                 float space = __instance.m_elementSpace > 1f ? __instance.m_elementSpace : TileSize;
 
-                // 1. The main grid is four rows tall again, whatever the inventory's real height is.
+                // 1. The main grid is the VANILLA rows tall again - 4 plus whatever this character
+                //    bought from Haldor - whatever the inventory's real (extended) height is.
                 if (__instance.m_gridRoot != null)
                     __instance.m_gridRoot.SetSizeWithCurrentAnchors(RectTransform.Axis.Vertical,
                                                                     SlotLayout.VanillaHeight * space);

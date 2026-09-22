@@ -66,6 +66,58 @@ namespace NoVikingLeftBehind
 
         public static void EndCapture() { _captureInv = null; }
 
+        /// <summary>
+        /// Take every item the just-loaded vanilla package left at or beyond
+        /// <paramref name="vanillaRows"/> and hand it to the rescue, exactly as if the out-of-bounds
+        /// capture had caught it. Returns how many were adopted.
+        ///
+        /// This is the other half of the 0.11.3 fix for issues #11/#12. The load grid is nine rows
+        /// tall on purpose (<c>ExtraSlotsModule.PlayerLoadPrefix</c>) because at load time nobody
+        /// can yet know how many rows this character bought from Haldor, so vanilla's own hard
+        /// ceiling is the only safe bound - it guarantees nothing is deleted. By the time this runs
+        /// "invrows" HAS been read, so the line between "a bag row this character paid for" and "a
+        /// leftover from shudnal's ExtraSlots" is finally knowable, and only the latter is touched.
+        ///
+        /// Items are removed from the inventory list here and are held by <see cref="_captured"/>
+        /// until <see cref="Place"/> puts them somewhere, so nothing is dropped in between.
+        /// </summary>
+        public static int AdoptStranded(Inventory inv, int vanillaRows)
+        {
+            if (inv == null) return 0;
+            int adopted = 0;
+            try
+            {
+                var list = SlotStore.Items(inv);
+                for (int i = list.Count - 1; i >= 0; i--)
+                {
+                    var item = list[i];
+                    if (item == null || item.m_gridPos.y < vanillaRows) continue;
+
+                    // Same instant, same reason as the out-of-bounds capture: the .fch on disk is
+                    // still the only copy of these items, so this is where the backup is taken.
+                    if (_captured.Count == 0)
+                    {
+                        try { SafeSlotsModule.NoteRescueCapture(); }
+                        catch (Exception be)
+                        {
+                            NoVikingLeftBehindPlugin.Log.LogError("[Slots] RESCUE: the character backup " +
+                                "threw, carrying on with the rescue itself: " + be.Message);
+                        }
+                    }
+
+                    list.RemoveAt(i);
+                    _captured.Add(item);
+                    _capturedPos.Add(item.m_gridPos);
+                    adopted++;
+                    NoVikingLeftBehindPlugin.Log.LogWarning("[Slots] RESCUE: adopted " + SlotBlob.Describe(item) +
+                        " from grid position " + item.m_gridPos.x + "," + item.m_gridPos.y +
+                        " - past this character's " + vanillaRows + "-row bag");
+                }
+            }
+            catch (Exception e) { NoVikingLeftBehindPlugin.Log.LogError("[Slots] adopting stranded rows failed: " + e); }
+            return adopted;
+        }
+
         /// <summary>Harmony prefix on the private Inventory.AddItem(string, ...) load path.</summary>
         public static bool AddItemLoadPrefix(Inventory __instance, string name, int stack, float durability,
                                              Vector2i pos, bool equipped, int quality, int variant,

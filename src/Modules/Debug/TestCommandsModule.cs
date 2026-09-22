@@ -121,7 +121,12 @@ namespace NoVikingLeftBehind
                     "nvlb.tier - show the current frontier tier (changing it is a server setting)",
                     new Terminal.ConsoleEvent(CmdTier));
 
-                Log.LogInfo("[TestCommands] console commands 'nvlb.give', 'nvlb.power', 'nvlb.tier' registered");
+                new Terminal.ConsoleCommand("nvlb.bagrows",
+                    "nvlb.bagrows <4-9> - set your character's vanilla inventory rows exactly the way " +
+                    "buying them from Haldor does (Player.SetInventorySize; needs [Debug] AllowTestCommands)",
+                    new Terminal.ConsoleEvent(CmdBagRows));
+
+                Log.LogInfo("[TestCommands] console commands 'nvlb.give', 'nvlb.power', 'nvlb.tier', 'nvlb.bagrows' registered");
             }
             catch (Exception e)
             {
@@ -436,6 +441,32 @@ namespace NoVikingLeftBehind
         }
 
         // ---- nvlb.tier ---------------------------------------------------------------------
+
+        /// <summary>
+        /// Test helper for issues #11/#12: on a dedicated server the vanilla key commands are refused
+        /// for clients, and Haldor's row item is gated by prefab data, so this drives the exact code
+        /// path the purchase does - Player.SetInventorySize(rows) - which writes the per-character
+        /// "invrows" key, resizes the bag and the window, and runs DropInvalidItems (guarded by
+        /// ExtraSlots). Nothing here is unique to the test: it is what the shop button calls.
+        /// </summary>
+        private static void CmdBagRows(Terminal.ConsoleEventArgs args)
+        {
+            Player player;
+            if (!Gate(args, out player)) return;
+            int rows;
+            if (args.Length < 2 || !int.TryParse(args[1], out rows) || rows < 4 || rows > 9)
+            {
+                Print(args, "usage: nvlb.bagrows <4-9>   (vanilla's own range; 4 = no purchased rows)");
+                return;
+            }
+            try
+            {
+                player.SetInventorySize(rows);
+                Print(args, "vanilla inventory rows set to " + rows + " (same call as the Haldor purchase). " +
+                            "Relog once to prove it survives a load.");
+            }
+            catch (Exception e) { Print(args, "nvlb.bagrows failed: " + e.Message); }
+        }
 
         private static void CmdTier(Terminal.ConsoleEventArgs args)
         {
